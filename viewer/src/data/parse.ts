@@ -48,13 +48,20 @@ export async function parseMapBytes(bytes: Uint8Array): Promise<SessionMap> {
 
 export function parseMapJson(json: unknown): SessionMap {
   const parsed = sessionMapSchema.safeParse(json);
-  if (!parsed.success) {
+  if (parsed.success) return parsed.data;
+  const { path, code, message } = parsed.error.issues[0];
+  if (!path.length || path[0] === 'schema') {
     throw new SessionExplorerError(
       'This file is not a valid agentplay session map',
       'unsupported_schema'
     );
   }
-  return parsed.data;
+  // Name the field, never its value: zod's enum message quotes the value,
+  // while a type error names only the two types.
+  throw new SessionExplorerError(
+    `${path.join('.')}: ${code === 'invalid_type' ? message : 'invalid value'}`,
+    'invalid_map'
+  );
 }
 
 /** A cheap, stable content hash (FNV-1a, 32 bit) for cache keys. */

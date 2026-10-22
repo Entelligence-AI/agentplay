@@ -6,7 +6,7 @@ One map is one JSON object. Its machine-readable definition is [`schema/agentpla
 
 - **Media type:** `application/json`. It is commonly stored gzipped as `*.json.gz`.
 - **Schema id:** `"schema": "agentplay/v1"`. Readers must also accept `"entelligence.session-map/v1"`, the format's earlier name. The shape is identical.
-- **Evolution:** fields are only ever added inside v1, never removed or repurposed. Readers must ignore fields they do not know. A breaking change would be `agentplay/v2`.
+- **Evolution:** fields are only ever added inside v1, never removed or repurposed. Readers must ignore fields they do not know. Where the schema allows `null`, readers must read it the same as a missing field. A breaking change would be `agentplay/v2`.
 
 ## Contents
 

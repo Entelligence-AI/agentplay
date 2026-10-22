@@ -199,6 +199,16 @@ export const isMapFound = (
 
 // --- map document ---------------------------------------------------------
 
+// The CLI writes JSON, where an absent value is `null` (`"name": null`), not a
+// missing key. `.optional()` alone rejects null, which took whole blocks down:
+// `tasks` is wrapped in `.catch(undefined)`, so one null name silently discarded
+// every task in the map and the viewer fell back to "Task 1", "Task 2", ...
+const optNum = z.number().nullish();
+const optStr = z.string().nullish();
+const nullAsMissing = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === null ? undefined : v), schema);
+const num0 = nullAsMissing(z.number().default(0));
+
 const touchSchema = z.enum(['hit', 'read', 'edit']).catch('hit');
 
 /** `targets[].op` / `files[].op`: closed vocabulary, but optional and
@@ -210,20 +220,13 @@ const fileOpSchema = z
 
 const targetSchema = z
   .object({
-    file: z.number().optional(),
+    file: optNum,
     scope: z.string().optional(),
-    label: z.string().optional(),
+    label: optStr,
     touch: touchSchema,
     op: fileOpSchema,
   })
   .passthrough();
-
-// The CLI writes JSON, where an absent value is `null` (`"name": null`), not a
-// missing key. `.optional()` alone rejects null, which took whole blocks down:
-// `tasks` is wrapped in `.catch(undefined)`, so one null name silently discarded
-// every task in the map and the viewer fell back to "Task 1", "Task 2", ...
-const optNum = z.number().nullish();
-const optStr = z.string().nullish();
 
 /** `events[].vcs`: a VCS/PR-hosting operation. `action` is an open
  * vocabulary (git subcommands, `<noun>_<verb>` for gh/glab) except the three
@@ -244,8 +247,8 @@ export const sessionMapEventSchema = z
     seq: optNum,
     t: z.number().default(0),
     kind: z.string(),
-    agent: z.string().default('main'),
-    err: z.boolean().default(false),
+    agent: nullAsMissing(z.string().default('main')),
+    err: nullAsMissing(z.boolean().default(false)),
     tool: optStr,
     verb: optStr,
     targets: z.array(targetSchema).optional(),
@@ -274,7 +277,7 @@ export const sessionMapEventSchema = z
     // llm response metadata (never text)
     latency: optNum,
     stop: optStr,
-    thinking: z.boolean().optional(),
+    thinking: z.boolean().nullish(),
     toolCalls: optNum,
     textChars: optNum,
     // error events
@@ -282,7 +285,7 @@ export const sessionMapEventSchema = z
     hook: optStr,
     hookEvent: optStr,
     srcUuid: optStr,
-    retry: z.boolean().optional(),
+    retry: z.boolean().nullish(),
     // delay events
     cause: optStr,
     ms: optNum,
@@ -344,13 +347,13 @@ export const sessionMapSchema = z
     session: z
       .object({
         id: z.string(),
-        agentTool: z.string().default('claude-code'),
+        agentTool: nullAsMissing(z.string().default('claude-code')),
         cliVersion: optStr,
         startedAt: z.string(),
-        durationMs: z.number().default(0),
+        durationMs: num0,
         models: z.array(z.string()).default([]),
         pathMode: optStr,
-        truncated: z.boolean().default(false),
+        truncated: nullAsMissing(z.boolean().default(false)),
         // one of pr_created | verified | blocked | interrupted |
         // unresolved_errors | completed | incomplete; open string so an
         // unrecognized value degrades to its own label instead of failing.
@@ -361,14 +364,14 @@ export const sessionMapSchema = z
       .passthrough(),
     totals: z
       .object({
-        calls: z.number().default(0),
-        requests: z.number().default(0),
-        userTurns: z.number().default(0),
-        subagents: z.number().default(0),
-        errors: z.number().default(0),
-        tokens: z.number().default(0),
-        costUsd: z.number().default(0),
-        filesTouched: z.number().default(0),
+        calls: num0,
+        requests: num0,
+        userTurns: num0,
+        subagents: num0,
+        errors: num0,
+        tokens: num0,
+        costUsd: num0,
+        filesTouched: num0,
         errorsBySource: z.record(z.string(), z.number()).default({}),
         errorsByClass: z.record(z.string(), z.number()).default({}),
         retries: optNum,
@@ -399,9 +402,9 @@ export const sessionMapSchema = z
             id: z.number(),
             repo: z.string(),
             path: z.string(),
-            reads: z.number().default(0),
-            edits: z.number().default(0),
-            hits: z.number().default(0),
+            reads: num0,
+            edits: num0,
+            hits: num0,
             first: optNum,
             // last op seen for this file across the whole doc; a lens must
             // not read this for its own scope (see fileCoverage/recomputeTotals)
@@ -433,15 +436,15 @@ export const sessionMapSchema = z
           .object({
             id: z.string(),
             parent: z.string().nullable().default(null),
-            kind: z.string().default('main'),
+            kind: nullAsMissing(z.string().default('main')),
             subagentType: optStr,
             launchSeq: optNum,
-            start: z.number().default(0),
-            end: z.number().default(0),
-            calls: z.number().default(0),
-            requests: z.number().default(0),
-            tokens: z.number().default(0),
-            cost: z.number().default(0),
+            start: num0,
+            end: num0,
+            calls: num0,
+            requests: num0,
+            tokens: num0,
+            cost: num0,
             outcome: optStr,
           })
           .passthrough()
