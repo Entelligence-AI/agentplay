@@ -174,7 +174,7 @@ Every event has these fields:
 | `error` | `source` (the builder writes `llm`, `hook` or `orchestration`; the schema also accepts `tool`, `mcp` and null, which a builder could use for a standalone error event, but a failed tool or MCP call is instead flagged on its own `tool`/`mcp` event and counted under that source in `totals.errorsBySource`), `errClass`, `hook?`, `hookEvent?`, `srcUuid?`, `ref?`, `retry?` |
 | `delay` | `cause` (`tool`, `subagent`, `llm` or `stall`), `ms`, `ref?` (the causing event) |
 | `compaction` | `trigger` (`auto` or `manual`), `preTokens`, `postTokens`, `ms` |
-| `commit` | `repo`, `sha`, `files`, `ins`, `del` |
+| `commit` | `repo`, `sha?`, `files?`, `ins?`, `del?` (git prints no sha or stats for `git commit -q`, so a quiet commit confirmed by its clean exit has neither) |
 | `pr_merge`, `pr_close`, `pr_comment` | `repo`, `number`, `url?` |
 | `ticket` | `tracker`, `action` (`create` or `update`), `id` |
 | `artifact` | `url`, `title?`, `version?` |
