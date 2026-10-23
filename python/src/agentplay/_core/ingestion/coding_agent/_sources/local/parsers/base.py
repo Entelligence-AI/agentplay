@@ -24,6 +24,7 @@ class AgentType(StrEnum):
     OPENCODE = "opencode"
     CURSOR = "cursor"
     KIRO = "kiro"
+    WINDSURF = "windsurf"
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -57,6 +58,14 @@ def detect_agent(data: bytes) -> AgentType | None:
             continue
 
         line_type = obj.get("type", "")
+
+        # Windsurf / Cascade: synthesized session header or trajectory step record.
+        if line_type in ("windsurf_session", "windsurf_trajectory"):
+            return AgentType.WINDSURF
+        if "step_id" in obj and ("step_type" in obj or "tool_calls" in obj or "thinking" in obj):
+            return AgentType.WINDSURF
+        if obj.get("cascade_id") or obj.get("cascadeId"):
+            return AgentType.WINDSURF
 
         # Cursor CLI/agent: synthesized header line, always first (see
         # agentplay.materialize.find_cursor_store_candidates).

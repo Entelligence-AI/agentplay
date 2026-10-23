@@ -35,6 +35,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_cursor_store,
     parse_kiro,
     parse_opencode,
+    parse_windsurf,
 )
 from agentplay._core.ingestion.coding_agent.spans import DiscoveredSession, SpanData
 
@@ -912,6 +913,32 @@ def _cwd_from_kiro_head(head: bytes) -> str | None:
     return None
 
 
+def _cwd_from_windsurf_head(head: bytes) -> str | None:
+    """The workspace root Windsurf carries (`cwd` or `workspace_path`)."""
+    try:
+        doc = json.loads(head)
+        if isinstance(doc, dict):
+            cwd = doc.get("cwd") or doc.get("workspace_path")
+            if isinstance(cwd, str) and cwd:
+                return cwd.rstrip("/\\")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        pass
+
+    for raw_line in head.split(b"\n")[:10]:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            obj = json.loads(raw_line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if isinstance(obj, dict):
+            cwd = obj.get("cwd") or obj.get("workspace_path")
+            if isinstance(cwd, str) and cwd:
+                return cwd.rstrip("/\\")
+    return None
+
+
 def _kiro_event_count(head: bytes) -> int:
     """Count real (non-header) event lines in a Kiro NDJSON head.
 
@@ -1243,6 +1270,7 @@ class LocalSource:
         kiro_homes: list[Path] | None = None,
         copilot_homes: list[Path] | None = None,
         copilot_vscode_homes: list[Path] | None = None,
+        windsurf_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1274,6 +1302,7 @@ class LocalSource:
         # `globalStorage/emptyWindowChatSessions/`), so this also gets the
         # whole-home rglob treatment, over both `.jsonl` and `.json`.
         self.copilot_vscode_homes = copilot_vscode_homes or []
+        self.windsurf_homes = windsurf_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1297,6 +1326,7 @@ class LocalSource:
             *self.kiro_homes,
             *self.copilot_homes,
             *self.copilot_vscode_homes,
+            *self.windsurf_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1501,6 +1531,16 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Windsurf: `<home>/**/*.jsonl` and `<home>/**/*.json`.
+        for home in self.windsurf_homes:
+            if not home.is_dir():
+                logger.debug("Skipping non-existent path: %s", home)
+                continue
+            for session_file in (*home.rglob("*.jsonl"), *home.rglob("*.json")):
+                ref = self._index_windsurf_file(session_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1512,7 +1552,8 @@ class LocalSource:
             + len(self.cursor_store_homes)
             + len(self.kiro_homes)
             + len(self.copilot_homes)
-            + len(self.copilot_vscode_homes),
+            + len(self.copilot_vscode_homes)
+            + len(self.windsurf_homes),
         )
         return index
 
@@ -2114,6 +2155,55 @@ class LocalSource:
             home=home,
         )
 
+    def _index_windsurf_file(
+        self,
+        session_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Windsurf session transcript file."""
+        if not session_file.is_file():
+            return None
+        size = session_file.stat().st_size
+        if size == 0:
+            self._record_discovery("windsurf", "empty_or_unreadable")
+            return None
+        try:
+            head = _read_head(session_file, stop_when=_agent_detected)
+        except OSError:
+            self._record_discovery("windsurf", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            logger.warning(
+                "agent detection failed for %s (%d bytes); session skipped",
+                session_file,
+                size,
+            )
+            self._record_discovery("windsurf", "detection_failed")
+            return None
+        if agent != AgentType.WINDSURF:
+            self._record_discovery("windsurf", "different_agent")
+            return None
+
+        stem = session_file.stem
+        session_id = f"local:{agent}:{stem}"
+        mtime = datetime.fromtimestamp(session_file.stat().st_mtime, tz=UTC)
+
+        cwd = _cwd_from_windsurf_head(head)
+        project_name = _project_from_cwd(cwd) if cwd else None
+
+        self._record_discovery("windsurf", "indexed")
+        return session_id, _FileRef(
+            path=session_file,
+            agent=agent,
+            mtime=mtime,
+            project_name=project_name,
+            cwd=cwd,
+            home=home,
+        )
+
     def discover_sessions(
         self,
         start_time: datetime | None = None,
@@ -2237,6 +2327,7 @@ class LocalSource:
             AgentType.OPENCODE: parse_opencode,
             AgentType.CURSOR: parse_cursor_store,
             AgentType.KIRO: parse_kiro,
+            AgentType.WINDSURF: parse_windsurf,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label
