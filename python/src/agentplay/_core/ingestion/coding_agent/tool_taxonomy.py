@@ -224,6 +224,27 @@ _COPILOT_VSCODE: dict[str, str] = {
     "runSubagent": "Task",
 }
 
+# Windsurf (Cascade agent) names its tools in snake_case, matching the fields
+# of its internal `CortexTrajectoryStep` protobuf schema. Downstream consumers
+# key off the canonical Claude-cased vocabulary by `tool.name`.
+_WINDSURF: dict[str, str] = {
+    # shell
+    "run_command": "Bash",
+    # reads / search
+    "read_file": "Read",
+    "view_file": "Read",
+    "view_code_item": "Read",
+    "grep_search": "Grep",
+    "find": "Search",
+    "list_directory": "ListDir",
+    "search_knowledge_base": "Search",
+    "lookup_knowledge_base": "Search",
+    # edits / writes
+    "edit": "Edit",
+    "propose_code": "Edit",
+    "write_to_file": "Write",
+}
+
 TOOL_ALIASES: dict[str, dict[str, str]] = {
     "codex": _CODEX,
     "cursor": _CURSOR,
@@ -231,6 +252,7 @@ TOOL_ALIASES: dict[str, dict[str, str]] = {
     "copilot-vscode": _COPILOT_VSCODE,
     "kiro": _KIRO,
     "opencode": _OPENCODE,
+    "windsurf": _WINDSURF,
 }
 
 

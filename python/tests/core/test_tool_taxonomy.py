@@ -16,6 +16,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     cursor_store,
     kiro,
     opencode,
+    windsurf,
 )
 
 
@@ -28,6 +29,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
         (copilot, "copilot"),
         (kiro, "kiro"),
         (opencode, "opencode"),
+        (windsurf, "windsurf"),
     ],
 )
 def test_every_parser_reads_the_shared_table(module, agent) -> None:
@@ -47,6 +49,9 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
         ("copilot", "view", "Read"),
         ("kiro", "execute_bash", "Bash"),
         ("opencode", "todowrite", "TodoWrite"),
+        ("windsurf", "read_file", "Read"),
+        ("windsurf", "run_command", "Bash"),
+        ("windsurf", "edit", "Edit"),
     ],
 )
 def test_known_raw_names_resolve(agent, raw, canonical) -> None:
@@ -71,4 +76,5 @@ def test_table_sizes_are_pinned() -> None:
         "copilot-vscode": 12,
         "kiro": 12,
         "opencode": 14,
+        "windsurf": 12,
     }

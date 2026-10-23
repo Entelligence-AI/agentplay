@@ -13,6 +13,7 @@ Cursor             ``~/.cursor`` agent transcripts, ``chats/*/store.db``,  decod
                    IDE ``state.vscdb``
 OpenCode           ``~/.local/share/opencode/opencode.db``                decoded
 Kiro               ``~/.kiro/sessions``                                   decoded
+Windsurf           ``~/.codeium/windsurf``                                file
 =================  =====================================================  ===========
 
 "Decoded" agents keep sessions in a database; :mod:`agentplay.materialize`
@@ -42,7 +43,7 @@ from ._util import captured
 
 logger = logging.getLogger("agentplay.discover")
 
-AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro")
+AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro", "windsurf")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
 # applies anyway; this keeps one pathological file from stalling a run).
@@ -84,6 +85,7 @@ class Homes:
     copilot_vscode: list[Path]
     opencode: list[Path]
     kiro: list[Path]
+    windsurf: list[Path]
 
     @classmethod
     def default(cls) -> Homes:
@@ -96,6 +98,7 @@ class Homes:
             copilot_vscode=_homes_from_env("AGENTPLAY_COPILOT_VSCODE_HOMES", _vscode_user_dirs()),
             opencode=_homes_from_env("AGENTPLAY_OPENCODE_HOMES", _opencode_data_dirs()),
             kiro=_homes_from_env("AGENTPLAY_KIRO_HOMES", ["~/.kiro"]),
+            windsurf=_homes_from_env("AGENTPLAY_WINDSURF_HOMES", ["~/.codeium/windsurf"]),
         )
 
     def present(self) -> dict[str, list[Path]]:
@@ -109,6 +112,7 @@ class Homes:
             ("copilot-vscode", self.copilot_vscode),
             ("opencode", self.opencode),
             ("kiro", self.kiro),
+            ("windsurf", self.windsurf),
         ):
             found = [p for p in paths if p.is_dir()]
             if found:
@@ -188,6 +192,7 @@ def local_source(homes: Homes, agents: set[str]) -> Any:
         kiro_homes=pick("kiro", _cache_dirs("kiro")),
         copilot_homes=pick("copilot", homes.copilot),
         copilot_vscode_homes=pick("copilot-vscode", homes.copilot_vscode),
+        windsurf_homes=pick("windsurf", homes.windsurf),
     )
 
 

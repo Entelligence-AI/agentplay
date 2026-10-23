@@ -35,6 +35,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_cursor_store,
     parse_kiro,
     parse_opencode,
+    parse_windsurf,
 )
 from agentplay._core.ingestion.coding_agent.spans import DiscoveredSession, SpanData
 
@@ -912,6 +913,172 @@ def _cwd_from_kiro_head(head: bytes) -> str | None:
     return None
 
 
+def _cwd_from_windsurf_head(head: bytes) -> str | None:
+    """The workspace root Windsurf carries (`cwd` or `workspace_path` or `workspacePath`)."""
+    try:
+        doc = json.loads(head)
+        if isinstance(doc, dict):
+            cwd = doc.get("cwd") or doc.get("workspace_path") or doc.get("workspacePath")
+            if isinstance(cwd, str) and cwd:
+                return cwd.rstrip("/\\")
+    except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
+        pass
+
+    for raw_line in head.split(b"\n")[:10]:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            obj = json.loads(raw_line)
+        except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
+            continue
+        if isinstance(obj, dict):
+            cwd = obj.get("cwd") or obj.get("workspace_path") or obj.get("workspacePath")
+            if isinstance(cwd, str) and cwd:
+                return cwd.rstrip("/\\")
+    return None
+
+
+def _windsurf_has_conversation(head: bytes) -> bool:
+    """True when the head holds at least one conversation step, message, or tool call."""
+    for raw_line in head.split(b"\n"):
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            obj = json.loads(raw_line)
+        except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        rtype = obj.get("type", "")
+        if rtype in (
+            "windsurf_session",
+            "windsurfSession",
+            "windsurf_trajectory",
+            "windsurfTrajectory",
+            "cascade_session",
+            "cascadeSession",
+        ):
+            continue
+        # Pure session metadata record
+        if (
+            ("cascade_id" in obj or "cascadeId" in obj)
+            and "step_id" not in obj
+            and "stepId" not in obj
+            and "step_type" not in obj
+            and "stepType" not in obj
+            and "tool_calls" not in obj
+            and "toolCalls" not in obj
+            and "tool_name" not in obj
+            and "toolName" not in obj
+            and "tool" not in obj
+            and "tool_result" not in obj
+            and "toolResult" not in obj
+            and "user_input" not in obj
+            and "userInput" not in obj
+            and "user_message" not in obj
+            and "userMessage" not in obj
+            and "content" not in obj
+            and "visible" not in obj
+        ):
+            continue
+        if (
+            "step_id" in obj
+            or "stepId" in obj
+            or "step_type" in obj
+            or "stepType" in obj
+            or "user_input" in obj
+            or "userInput" in obj
+            or "user_message" in obj
+            or "userMessage" in obj
+            or "tool_calls" in obj
+            or "toolCalls" in obj
+            or "tool_name" in obj
+            or "toolName" in obj
+            or "tool" in obj
+            or "tool_result" in obj
+            or "toolResult" in obj
+            or "content" in obj
+            or "visible" in obj
+            or obj.get("role") in ("user", "assistant", "tool")
+        ):
+            return True
+    return False
+
+
+def _windsurf_json_doc_info(head: bytes) -> tuple[str | None, str | None, bool]:
+    """(session_id, cwd, has_steps) from a Windsurf / Cascade single-document JSON export.
+
+    Confirms the document shape directly rather than relying on single-line scanning,
+    ensuring pretty-printed exports are recognized.
+    """
+    try:
+        obj = json.loads(head)
+    except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
+        return None, None, False
+    if not isinstance(obj, dict):
+        return None, None, False
+
+    line_type = obj.get("type", "")
+    is_windsurf = (
+        line_type in (
+            "windsurf_session",
+            "windsurfSession",
+            "windsurf_trajectory",
+            "windsurfTrajectory",
+            "cascade_session",
+            "cascadeSession",
+        )
+        or "cascade_id" in obj
+        or "cascadeId" in obj
+        or "cascadeSession" in obj
+        or "windsurfSession" in obj
+        or "trajectorySteps" in obj
+    )
+    if not is_windsurf:
+        steps = obj.get("steps") or obj.get("trajectorySteps")
+        if isinstance(steps, list) and steps:
+            for s in steps:
+                if isinstance(s, dict) and (
+                    "step_id" in s
+                    or "stepId" in s
+                    or "step_type" in s
+                    or "stepType" in s
+                    or "tool_calls" in s
+                    or "toolCalls" in s
+                    or "cortex_step" in s
+                    or "cortexStep" in s
+                    or ("role" in s and ("content" in s or "visible" in s))
+                    or "user_input" in s
+                    or "userInput" in s
+                ):
+                    is_windsurf = True
+                    break
+
+    if not is_windsurf:
+        return None, None, False
+
+    raw_session_id = (
+        obj.get("cascade_id")
+        or obj.get("cascadeId")
+        or obj.get("agentId")
+        or obj.get("agent_id")
+        or obj.get("sessionId")
+        or obj.get("session_id")
+        or obj.get("id")
+    )
+    raw_session_id = str(raw_session_id) if raw_session_id else ""
+
+    cwd = obj.get("cwd") or obj.get("workspace_path") or obj.get("workspacePath")
+    cwd = str(cwd).rstrip("/\\") if isinstance(cwd, str) and cwd else None
+
+    steps = obj.get("steps") or obj.get("trajectorySteps")
+    has_steps = isinstance(steps, list) and len(steps) > 0
+
+    return raw_session_id, cwd, has_steps
+
+
 def _kiro_event_count(head: bytes) -> int:
     """Count real (non-header) event lines in a Kiro NDJSON head.
 
@@ -1243,6 +1410,7 @@ class LocalSource:
         kiro_homes: list[Path] | None = None,
         copilot_homes: list[Path] | None = None,
         copilot_vscode_homes: list[Path] | None = None,
+        windsurf_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1274,6 +1442,7 @@ class LocalSource:
         # `globalStorage/emptyWindowChatSessions/`), so this also gets the
         # whole-home rglob treatment, over both `.jsonl` and `.json`.
         self.copilot_vscode_homes = copilot_vscode_homes or []
+        self.windsurf_homes = windsurf_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1297,6 +1466,7 @@ class LocalSource:
             *self.kiro_homes,
             *self.copilot_homes,
             *self.copilot_vscode_homes,
+            *self.windsurf_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1501,6 +1671,16 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Windsurf: `<home>/**/*.jsonl` and `<home>/**/*.json`.
+        for home in self.windsurf_homes:
+            if not home.is_dir():
+                logger.debug("Skipping non-existent path: %s", home)
+                continue
+            for session_file in (*home.rglob("*.jsonl"), *home.rglob("*.json")):
+                ref = self._index_windsurf_file(session_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1512,7 +1692,8 @@ class LocalSource:
             + len(self.cursor_store_homes)
             + len(self.kiro_homes)
             + len(self.copilot_homes)
-            + len(self.copilot_vscode_homes),
+            + len(self.copilot_vscode_homes)
+            + len(self.windsurf_homes),
         )
         return index
 
@@ -2114,6 +2295,97 @@ class LocalSource:
             home=home,
         )
 
+    def _index_windsurf_file(
+        self,
+        session_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Windsurf session transcript file."""
+        if not session_file.is_file():
+            return None
+        size = session_file.stat().st_size
+        if size == 0:
+            self._record_discovery("windsurf", "empty_or_unreadable")
+            return None
+        try:
+            if session_file.suffix == ".json":
+                # Single-document JSON export: read full document within the supported size limit
+                # without stopping after 20 lines or the 5 MB default cap.
+                head = _read_head(
+                    session_file,
+                    max_bytes=MAX_SESSION_BYTES,
+                    stop_when=lambda _buf: False,
+                )
+            else:
+                head = _read_head(session_file, stop_when=_agent_detected)
+        except OSError:
+            self._record_discovery("windsurf", "empty_or_unreadable")
+            return None
+
+        cwd: str | None = None
+        raw_session_id: str | None = None
+
+        if session_file.suffix == ".json":
+            raw_session_id, cwd, has_steps = _windsurf_json_doc_info(head)
+            if raw_session_id is None:
+                self._record_discovery("windsurf", "detection_failed")
+                return None
+            if not has_steps:
+                self._record_discovery("windsurf", "no_conversation")
+                return None
+            agent = AgentType.WINDSURF
+        else:
+            try:
+                agent = detect_agent(head)
+            except RecursionError:
+                self._record_discovery("windsurf", "empty_or_unreadable")
+                return None
+            if agent is None:
+                logger.warning(
+                    "agent detection failed for %s (%d bytes); session skipped",
+                    session_file,
+                    size,
+                )
+                self._record_discovery("windsurf", "detection_failed")
+                return None
+            if agent != AgentType.WINDSURF:
+                self._record_discovery("windsurf", "different_agent")
+                return None
+            if not _windsurf_has_conversation(head):
+                try:
+                    current_size = session_file.stat().st_size
+                except OSError:
+                    self._record_discovery("windsurf", "empty_or_unreadable")
+                    return None
+                if len(head) >= current_size:
+                    logger.debug("windsurf: %s has no conversation steps; session skipped", session_file)
+                    self._record_discovery("windsurf", "no_conversation")
+                    return None
+
+        if not raw_session_id:
+            raw_session_id = session_file.stem
+        session_id = f"local:{agent}:{raw_session_id}"
+        try:
+            mtime = datetime.fromtimestamp(session_file.stat().st_mtime, tz=UTC)
+        except OSError:
+            self._record_discovery("windsurf", "empty_or_unreadable")
+            return None
+
+        if not cwd:
+            cwd = _cwd_from_windsurf_head(head)
+        project_name = _project_from_cwd(cwd) if cwd else None
+
+        self._record_discovery("windsurf", "indexed")
+        return session_id, _FileRef(
+            path=session_file,
+            agent=agent,
+            mtime=mtime,
+            project_name=project_name,
+            cwd=cwd,
+            home=home,
+        )
+
     def discover_sessions(
         self,
         start_time: datetime | None = None,
@@ -2237,6 +2509,7 @@ class LocalSource:
             AgentType.OPENCODE: parse_opencode,
             AgentType.CURSOR: parse_cursor_store,
             AgentType.KIRO: parse_kiro,
+            AgentType.WINDSURF: parse_windsurf,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label
