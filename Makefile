@@ -8,7 +8,7 @@ PY ?= python3
 VPY := $(VENV)/bin/python
 endif
 
-.PHONY: setup test test-python test-viewer check lint viewer run clean companion-dev companion-app companion-dmg companion-test companion-clips
+.PHONY: setup test test-python test-viewer check lint viewer run clean companion-dev companion-app companion-dmg companion-test
 
 setup:
 	$(PY) -m venv $(VENV)
@@ -57,6 +57,3 @@ companion-dmg:
 
 companion-test:
 	sh scripts/companion-test.sh
-
-companion-clips:
-	sh scripts/companion-build.sh dev && sh scripts/companion-clips.sh

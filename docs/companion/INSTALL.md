@@ -25,7 +25,6 @@ sh scripts/companion-dev.sh    # the dev app on your real sessions (first run sh
 make companion-test            # Python contract + leak tests, Swift tests, fixtures, guards, bundle self-test
 make companion-app             # release .app in dist/companion (ad-hoc signed)
 make companion-dmg             # DMG; signs and notarizes only with credentials, see RELEASE_CHECKLIST.md
-make companion-clips           # regenerate docs/companion/media
 ```
 
 Build requirements: Swift 6 (Xcode, or Command Line Tools), `uv` (fetches python-build-standalone 3.12), `pnpm` (builds the viewer), `rsync`. With Command Line Tools only, the build script uses the macOS 26.x SDK it finds, because the 27 SDK's SwiftUI macros aren't in CLT. With Xcode, any current SDK works.
@@ -40,7 +39,6 @@ Dev-build flags (`--args` after `open`, ignored by release builds):
 | `--selftest` | end-to-end check of the bundle, prints JSON, exits |
 | `--render <dir>` | draw every state, light and dark, from the bundled fixtures (or `AGENTPLAY_COMPANION_FIXTURES`) |
 | `--render-live <dir>` | the popover over your real snapshot; contains your repo and file names, never commit |
-| `--render-clips <dir>` | keyframes for the clips |
 
 Point it at another store with `AGENTPLAY_HOME`, for example `open -n --env AGENTPLAY_HOME=/tmp/ap "dist/companion/AgentPlay Companion.app"`.
 
