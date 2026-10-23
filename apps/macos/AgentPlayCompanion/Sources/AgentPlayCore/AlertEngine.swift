@@ -132,7 +132,7 @@ public enum AlertEngine {
                !r.context.isStale(now: ctx.now, maxAge: maxReadingAge), pct >= settings.contextThreshold {
                 let t = Int(settings.contextThreshold)
                 out.append(PendingAlert(
-                    id: "ctx|\(r.sessionId)|\(t)", preset: .contextNearFull, patternKey: "ctx|\(t)",
+                    id: "ctx|\(r.sessionId)|\(t)", preset: .contextNearFull, patternKey: "ctx|\(r.sessionId)",
                     sessionId: r.sessionId, seq: r.lastEvent?.seq,
                     note: .init(title: "Context near full · \(r.agentLabel)",
                                 body: "\(Format.percent(pct)) of the context window, as \(r.agentLabel) reported it.")))

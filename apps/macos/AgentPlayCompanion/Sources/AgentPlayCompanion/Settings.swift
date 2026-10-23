@@ -5,14 +5,15 @@ import UserNotifications
 
 struct SettingsView: View {
     @EnvironmentObject var model: CompanionModel
-    @State var pane: Pane = .general
+    var initialPane: Pane? = nil
 
     enum Pane: String, CaseIterable, Identifiable {
-        case general = "General", sources = "Sources", notifications = "Notifications", privacy = "Privacy",
-             account = "Account", diagnostics = "Diagnostics"
+        case general = "General", claude = "Live Limits", sources = "Sources", notifications = "Notifications",
+             privacy = "Privacy", account = "Account", diagnostics = "Diagnostics"
         var id: String { rawValue }
         var icon: String {
             switch self {
+            case .claude: "gauge.with.dots.needle.33percent"
             case .general: "gearshape"
             case .sources: "folder"
             case .notifications: "bell"
@@ -25,12 +26,15 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(Pane.allCases, selection: $pane) { p in Label(p.rawValue, systemImage: p.icon).tag(p) }
+            List(Pane.allCases, selection: Binding(get: { model.settingsPane }, set: { model.settingsPane = $0 ?? .general })) { p in
+                Label(p.rawValue, systemImage: p.icon).tag(p)
+            }
                 .navigationSplitViewColumnWidth(170)
         } detail: {
             Form {
-                switch pane {
+                switch model.settingsPane {
                 case .general: GeneralPane()
+                case .claude: LiveLimitsPane()
                 case .sources: SourcesPane()
                 case .notifications: NotificationsPane()
                 case .privacy: PrivacyPane()
@@ -41,6 +45,7 @@ struct SettingsView: View {
             .formStyle(.grouped)
         }
         .frame(width: 680, height: 520)
+        .onAppear { if let p = initialPane { model.settingsPane = p }; model.refreshBridgeState() }
     }
 }
 
@@ -48,8 +53,8 @@ struct GeneralPane: View {
     @EnvironmentObject var model: CompanionModel
     var body: some View {
         Section {
-            Toggle("Show recent activity in the menu bar", isOn: $model.prefs.showActivityInMenuBar)
-            Text("Adds \"2 running\" or \"1 needs a look\" next to the mark. Running means a live agent process was seen.")
+            Toggle("Show session % next to the icon", isOn: $model.prefs.showActivityInMenuBar)
+            Text("The icon's two bars are the 5-hour and weekly windows of your most-used provider.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Launch at login", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
             Toggle("Soft sound on actions I take", isOn: $model.prefs.soundOnManualActions)
@@ -60,12 +65,7 @@ struct GeneralPane: View {
                 .foregroundStyle(.secondary)
         }
         if model.isDevBuild {
-            Section("Prototype direction (dev build)") {
-                Picker("Popover", selection: $model.direction) {
-                    ForEach(Direction.allCases) { Text($0.title).tag($0) }
-                }
-                Button("Load sample data") { model.loadSample() }
-            }
+            Section("Developer") { Button("Load Sample Data") { model.loadSample() } }
         }
         Section {
             Button("Quit AgentPlay Companion") { NSApp.terminate(nil) }
@@ -275,5 +275,68 @@ struct DiagnosticsPane: View {
             Text("The same as `agentplay build`: rebuilds maps whose transcripts changed. Your existing maps stay.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+}
+
+
+struct LiveLimitsPane: View {
+    @EnvironmentObject var model: CompanionModel
+    @State private var preview: (before: String, after: String)?
+    @State private var error: String?
+
+    var body: some View {
+        Section {
+            LabeledContent("Claude Code") {
+                Text(model.claudeBridgeOn ? "On" : "Off").foregroundStyle(model.claudeBridgeOn ? .green : .secondary)
+            }
+            Text("Claude Code sends your 5-hour and weekly usage, and each session's context, to its status line (documented by Anthropic for Pro and Max). Turning this on points that status line at a small script that saves the report in ~/.agentplay/live and then runs your previous status line, so it looks the same.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if model.claudeBridgeOn {
+                Button("Turn Off") { model.disableClaudeBridge() }
+            }
+        }
+        if !model.claudeBridgeOn {
+            Section("The change to ~/.claude/settings.json") {
+                if let preview {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Now").font(.caption).foregroundStyle(.secondary)
+                        CodeBlock(text: preview.before)
+                        Text("After").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+                        CodeBlock(text: preview.after)
+                    }
+                    Text("A backup is saved as settings.json.agentplay-backup. Turning it off restores your previous status line.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack { Spacer(); Button("Turn On") { model.enableClaudeBridge() }.buttonStyle(.borderedProminent) }
+                } else if let error {
+                    Text(error).foregroundStyle(.red)
+                }
+            }
+            .onAppear(perform: load)
+        }
+        Section("Codex") {
+            Text("Codex writes its limits into its own session files, so they show without any setup when you've used Codex on this Mac.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        Section("Others") {
+            Text("Cursor, Copilot, OpenCode and Kiro don't report plan limits locally. Their sessions and usage estimates still show.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+    }
+
+    func load() {
+        do { preview = try model.claudeBridge.preview(); error = nil } catch {
+            self.error = (error as? LocalizedError)?.errorDescription ?? "Can't read Claude Code's settings."
+        }
+    }
+}
+
+struct CodeBlock: View {
+    var text: String
+    var body: some View {
+        Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor)))
     }
 }

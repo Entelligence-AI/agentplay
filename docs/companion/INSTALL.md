@@ -38,7 +38,7 @@ Dev-build flags (`--args` after `open`, ignored by release builds):
 | `--direction v1\|A\|B\|C` | switch prototype |
 | `--skip-onboarding` | mark onboarding done |
 | `--selftest` | end-to-end check of the bundle, prints JSON, exits |
-| `--render <dir>` | draw every state, light and dark, from fixtures (needs `AGENTPLAY_COMPANION_FIXTURES`) |
+| `--render <dir>` | draw every state, light and dark, from the bundled fixtures (or `AGENTPLAY_COMPANION_FIXTURES`) |
 | `--render-live <dir>` | the popover over your real snapshot; contains your repo and file names, never commit |
 | `--render-clips <dir>` | keyframes for the clips |
 

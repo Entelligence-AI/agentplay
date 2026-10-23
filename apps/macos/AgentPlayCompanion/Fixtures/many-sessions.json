@@ -236,7 +236,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:codex:sample-m01",
@@ -381,7 +382,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:claude-code:sample-m02",
@@ -526,7 +528,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:opencode:sample-m03",
@@ -684,7 +687,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:claude-code:sample-m04",
@@ -829,7 +833,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:codex:sample-m05",
@@ -974,7 +979,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:claude-code:sample-m06",
@@ -1132,7 +1138,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:opencode:sample-m07",
@@ -1277,7 +1284,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:claude-code:sample-m08",
@@ -1422,7 +1430,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:codex:sample-m09",
@@ -1580,7 +1589,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:claude-code:sample-m10",
@@ -1725,7 +1735,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:opencode:sample-m11",
@@ -1870,7 +1881,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     }
   ],
   "unreadable": [],
@@ -1891,7 +1903,7 @@
         "observedAt": null,
         "window": "none",
         "confidence": "low",
-        "explanation": "Claude Code does not write plan usage into its local transcripts. Check /usage in Claude Code or your Claude settings.",
+        "explanation": "Claude Code doesn't save plan usage locally. Turn on live Claude limits in Settings (it reads Claude Code's statusline), or check /usage in Claude Code.",
         "freshness": "unknown"
       }
     },
@@ -1910,11 +1922,12 @@
         "observedAt": null,
         "window": "none",
         "confidence": "low",
-        "explanation": "No Codex session on this machine has reported plan usage. Check usage in Codex.",
+        "explanation": "No indexed Codex session has reported plan usage. Check usage in Codex.",
         "freshness": "unknown"
       }
     }
   ],
+  "live": [],
   "learn": {
     "signature": "a19e187902006807",
     "patternKey": "90145916b9cb4f0b",
@@ -1967,6 +1980,147 @@
         "at": "2026-10-22T09:46:40Z"
       }
     ]
+  },
+  "usage": {
+    "generatedAt": "2026-10-23T10:46:00Z",
+    "kind": "estimated",
+    "explanation": "Counted from the model requests in your local AgentPlay maps. Costs are estimates at list prices; requests on unpriced models are counted separately, not as $0. Usage on other devices, the web or the API isn't here.",
+    "today": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "last7Days": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "last30Days": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "daily": [
+      {
+        "date": "2026-10-10",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-11",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-12",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-13",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-14",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-15",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-16",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-17",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-18",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-19",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-20",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-21",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-22",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-23",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      }
+    ],
+    "claudeBlock": null,
+    "timingMs": 0
   },
   "timing": {
     "snapshotMs": 0

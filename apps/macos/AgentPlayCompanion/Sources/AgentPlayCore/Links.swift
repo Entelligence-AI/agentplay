@@ -61,6 +61,7 @@ public enum Format {
     }
 
     public static func tokens(_ n: Int) -> String {
+        if n >= 1_000_000_000 { return String(format: "%.2fB", Double(n) / 1_000_000_000) }
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
         if n >= 10_000 { return "\(n / 1000)k" }
         if n >= 1000 { return String(format: "%.1fk", Double(n) / 1000) }
@@ -69,6 +70,22 @@ public enum Format {
 
     public static func percent(_ p: Double) -> String {
         p.rounded() == p ? "\(Int(p))%" : String(format: "%.0f%%", p)
+    }
+
+    /// `$0.42`, `$12.30`, `$1,240`.
+    public static func money(_ usd: Double) -> String {
+        if usd >= 1000 { return "$" + String(format: "%.0f", usd).replacingOccurrences(of: #"(\d)(?=(\d{3})+$)"#, with: "$1,", options: .regularExpression) }
+        if usd >= 100 { return String(format: "$%.0f", usd) }
+        return String(format: "$%.2f", usd)
+    }
+
+    /// `Mon 4:15 PM`.
+    public static func weekdayTime(_ date: Date, timeZone: TimeZone = .current) -> String {
+        let f = DateFormatter()
+        f.timeZone = timeZone
+        f.locale = Locale.current
+        f.setLocalizedDateFormatFromTemplate("EEE j:mm")
+        return f.string(from: date)
     }
 
     public static func clock(_ date: Date?, timeZone: TimeZone = .current) -> String {

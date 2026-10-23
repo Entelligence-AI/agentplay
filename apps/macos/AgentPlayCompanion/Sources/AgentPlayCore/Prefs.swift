@@ -45,6 +45,8 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
 public final class PrefsStore: @unchecked Sendable {
     public static let domain = "ai.entelligence.agentplay.companion"
     private let defaults: UserDefaults
+    /// The same domain, for small UI state (which blocks are open) that isn't worth a schema change.
+    public var ui: UserDefaults { defaults }
     private let key = "prefs.v1"
     private let lock = NSLock()
 

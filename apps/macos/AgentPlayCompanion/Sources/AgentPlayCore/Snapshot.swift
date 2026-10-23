@@ -229,11 +229,102 @@ public struct RunActivity: Codable, Sendable, Equatable, Identifiable {
     public var pendingTool: PendingTool?
     public var context: DataPoint<ContextValue>
     public var imported: Bool?
+    /// Claude Code's own live status for this session: busy, waiting (needs you), idle. Nil when no live process.
+    public var liveStatus: LiveStatus?
     public var id: String { sessionId }
 
     public var state: ActivityState { activity.value ?? .idle }
     /// The newest wall-clock time anything is known to have happened in this run.
     public var latestAt: Date? { [lastEventAt, lastActivityAt].compactMap { $0 }.max() }
+}
+
+public enum LiveStatus: String, TolerantEnum, Sendable {
+    case busy, waiting, idle
+    static var fallback: LiveStatus { .idle }
+    public var label: String {
+        switch self { case .busy: "Working"; case .waiting: "Needs you"; case .idle: "Idle" }
+    }
+}
+
+/// A live agent process, from Claude Code's own session records. `inStore` is false until its map is built.
+public struct LiveSession: Codable, Sendable, Equatable, Identifiable {
+    public var agentTool: String
+    public var sessionId: String
+    public var status: LiveStatus
+    public var project: String?
+    public var startedAt: Date?
+    public var statusSince: Date?
+    public var inStore: Bool
+    public var id: String { sessionId }
+}
+
+public struct UsageTokens: Codable, Sendable, Equatable {
+    public var input: Int
+    public var cacheWrite: Int
+    public var cacheRead: Int
+    public var output: Int
+    public var total: Int
+}
+
+public struct UsageSlice: Codable, Sendable, Equatable, Identifiable {
+    public var key: String
+    public var tokens: UsageTokens
+    public var costUsd: Double
+    public var requests: Int
+    public var unpricedRequests: Int
+    public var sessions: Int
+    public var id: String { key }
+    /// True when every request in the slice is on an unpriced model: show "unpriced", never "$0".
+    public var isUnpriced: Bool { requests > 0 && unpricedRequests == requests }
+}
+
+public struct UsagePeriod: Codable, Sendable, Equatable {
+    public var tokens: UsageTokens
+    public var costUsd: Double
+    public var requests: Int
+    public var unpricedRequests: Int
+    public var sessions: Int
+    public var byModel: [UsageSlice]?
+    public var byAgent: [UsageSlice]?
+    public var byRepo: [UsageSlice]?
+
+    public init(tokens: UsageTokens, costUsd: Double, requests: Int, unpricedRequests: Int, sessions: Int,
+                byModel: [UsageSlice]? = nil, byAgent: [UsageSlice]? = nil, byRepo: [UsageSlice]? = nil) {
+        self.tokens = tokens; self.costUsd = costUsd; self.requests = requests
+        self.unpricedRequests = unpricedRequests; self.sessions = sessions
+        self.byModel = byModel; self.byAgent = byAgent; self.byRepo = byRepo
+    }
+}
+
+public struct UsageDay: Codable, Sendable, Equatable, Identifiable {
+    public var date: String
+    public var tokens: Int
+    public var costUsd: Double
+    public var requests: Int
+    public var id: String { date }
+}
+
+public struct UsageBlock: Codable, Sendable, Equatable {
+    public var start: Date
+    public var end: Date
+    public var tokens: UsageTokens
+    public var costUsd: Double
+    public var requests: Int?
+    public var unpricedRequests: Int?
+    public var burnTokensPerMinute: Int?
+    public var burnCostPerHour: Double?
+    public var projectedCostUsd: Double?
+}
+
+/// Estimated from local maps, like ccusage. Never a plan percentage.
+public struct UsageReport: Codable, Sendable, Equatable {
+    public var generatedAt: Date
+    public var explanation: String
+    public var today: UsagePeriod
+    public var last7Days: UsagePeriod
+    public var last30Days: UsagePeriod
+    public var daily: [UsageDay]
+    public var claudeBlock: UsageBlock?
 }
 
 public enum AlertRuleKind: String, TolerantEnum, Sendable, CaseIterable {
@@ -294,6 +385,8 @@ public struct ProviderLimitWindow: Codable, Sendable, Equatable, Identifiable {
     public var limitId: String?
     public var resetsAt: Date?
     public var usageUrl: String?
+    /// Set when recent sessions reported different plans: the numbers may mix accounts.
+    public var conflictingPlans: [String]?
     public var used: DataPoint<LimitValue>
     public var id: String { "\(provider)|\(window)" }
 
@@ -374,6 +467,8 @@ public struct Snapshot: Codable, Sendable, Equatable {
     public var alerts: [AlertCandidate]
     public var limits: [ProviderLimitWindow]
     public var learn: LearnCard?
+    public var live: [LiveSession]?
+    public var usage: UsageReport?
 
     public var isSample: Bool { sample == true }
     public var foundSources: [SourceCapability] { sources.filter { $0.status == .found } }

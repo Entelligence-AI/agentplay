@@ -149,8 +149,12 @@ func failure(_ sig: String, pattern: String = "aaaaaaaaaaaaaaaa", session: Strin
         var s = try liveSnapshot(now: now)
         var st = settings([.contextNearFull]); st.contextThreshold = 70
         let (out, _) = run(s, st, AlertHistory(watermark: start))
-        // Codex reports 184k of 258k (71%); Claude records tokens without a limit and never alerts.
-        #expect(out.count == 1 && out[0].sessionId == "local:codex:sample-0c1d")
+        // Both report a denominator here: Codex 184k of 258k, Claude 71% through the statusline bridge.
+        #expect(Set(out.map { $0.sessionId ?? "" }) == ["local:codex:sample-0c1d", "local:claude-code:sample-7f3a"])
+        // A run with tokens but no denominator never alerts.
+        var noLimit = s
+        noLimit.runs = noLimit.runs.map { var r = $0; r.context = DataPoint(value: ContextValue(tokens: 190_000, limit: nil, percent: 95), kind: .recorded, source: .agentplayMap, observedAt: now, window: .context, explanation: "x"); return r }
+        #expect(run(noLimit, st, AlertHistory(watermark: start)).0.isEmpty)
         // A stale reading does not alert.
         s.runs = s.runs.map { var r = $0; r.context.observedAt = now.addingTimeInterval(-3600); return r }
         #expect(run(s, st, AlertHistory(watermark: start)).0.isEmpty)
@@ -158,9 +162,10 @@ func failure(_ sig: String, pattern: String = "aaaaaaaaaaaaaaaa", session: Strin
 
     @Test func allowanceNeedsFreshProviderData() throws {
         var s = try liveSnapshot(now: now)
-        var st = settings([.allowanceLow]); st.allowanceThresholdLeft = 60
+        var st = settings([.allowanceLow]); st.allowanceThresholdLeft = 50
         let fired = run(s, st, AlertHistory(watermark: start)).0
-        #expect(fired.count == 1 && fired[0].patternKey == "plan|codex|weekly")  // 59% left weekly; 68% of 5-hour is above
+        // Claude weekly has 42% left; every other window is above 50%.
+        #expect(fired.count == 1 && fired[0].patternKey == "plan|claude-code|weekly")
         s.limits = s.limits.map { var l = $0; l.used.freshness = .stale; return l }
         #expect(run(s, st, AlertHistory(watermark: start)).0.isEmpty)
         var c = try liveSnapshot(now: now)

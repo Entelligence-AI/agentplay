@@ -71,6 +71,7 @@ cp "$BIN" "$STAGE/Contents/MacOS/AgentPlayCompanion"
 cp "$PKG/Resources/AppIcon.icns" "$STAGE/Contents/Resources/AppIcon.icns"
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD_NUMBER/g" "$PKG/Resources/Info.plist" > "$STAGE/Contents/Info.plist"
 cp "$PKG/Resources/PRIVACY.txt" "$STAGE/Contents/Resources/PRIVACY.txt"
+cp "$PKG/Resources/claude-statusline-bridge.sh" "$STAGE/Contents/Resources/claude-statusline-bridge.sh"
 # The sample a user can ask for ("Try a sample") ships in every build; dev builds carry every fixture.
 if [ "$MODE" = dev ]; then cp "$PKG"/Fixtures/*.json "$STAGE/Contents/Resources/Fixtures/"
 else cp "$PKG/Fixtures/two-active.json" "$STAGE/Contents/Resources/Fixtures/"; fi

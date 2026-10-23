@@ -90,16 +90,14 @@ extension Renderer {
               case .success(let s) = await SnapshotService(runtime: rt).fetch(.read) else { print("no snapshot"); return }
         let dir = URL(fileURLWithPath: path)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        for (name, tab, expand) in [("live-now", Tab.now, false), ("live-now-expanded", .now, true), ("live-limits", .limits, false),
-                                    ("live-learn", .learn, false)] {
+        for (name, usageOpen) in [("live-menu", false), ("live-menu-usage", true)] {
             let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "render.\(UUID().uuidString)")!),
                                    isDevBuild: true)
             m.installLiveForRender(s)
-            m.tab = tab
-            if expand { m.expandedRun = m.orderedRuns.first?.sessionId }
+            m.usageExpanded = usageOpen
             for dark in [false, true] {
-                write(AnyView(PopoverView(now: s.generatedAt).environmentObject(m)),
-                      to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"), dark: dark)
+                write(AnyView(MenuView(now: s.generatedAt).environmentObject(m)),
+                      to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"), dark: dark, material: true)
             }
         }
         print("rendered live screens to \(dir.path)")

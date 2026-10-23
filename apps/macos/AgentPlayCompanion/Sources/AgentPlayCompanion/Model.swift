@@ -9,25 +9,6 @@ import os
 
 let companionLog = Logger(subsystem: "ai.entelligence.agentplay.companion", category: "refresh")
 
-enum Tab: String, CaseIterable, Identifiable {
-    case now = "Now", limits = "Limits", learn = "Learn"
-    var id: String { rawValue }
-}
-
-/// Prototype directions (dev builds compare them; release ships the v1 composition).
-enum Direction: String, CaseIterable, Identifiable {
-    case v1, pulse = "A", breakpoint = "B", lab = "C"
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .v1: "v1 (A shell, B alerts, C card)"
-        case .pulse: "A · Pulse"
-        case .breakpoint: "B · Breakpoint"
-        case .lab: "C · Harness Lab"
-        }
-    }
-}
-
 enum Phase: Equatable {
     case starting
     case scanning(found: Int?)
@@ -50,13 +31,13 @@ final class CompanionModel: ObservableObject {
     }
     /// The extra environment for the core, readable from the background scan without touching the main actor.
     private let envBox = EnvBox()
-    @Published var tab: Tab = .now
-    @Published var direction: Direction = .v1
-    @Published var expandedRun: String?
-    @Published var showAll = false
-    @Published var showConstellation = false
-    /// Render-only: the micro-timeline tick a clip frame shows as scrubbed.
-    @Published var renderFocus: Int?
+    /// Provider blocks the user opened or closed (empty: the first one starts open).
+    @Published private(set) var expandedProviders: Set<String> = []
+    @Published var usageExpanded = false
+    @Published private(set) var meterLeft: Set<String> = []
+    @Published var settingsPane: SettingsView.Pane = .general
+    @Published private(set) var claudeBridgeOn = false
+    let claudeBridge = ClaudeBridge()
     @Published var popoverOpen = false { didSet { if popoverOpen { scheduleRefresh(reason: .popoverOpened) } } }
     /// True briefly after new recorded events arrive for an active run: drives the two-frame menu-bar pulse.
     @Published private(set) var heartbeat = false
@@ -90,6 +71,8 @@ final class CompanionModel: ObservableObject {
         self.isDevBuild = isDevBuild
         self.prefs = prefsStore.load()
         envBox.value = prefs.folderEnvironment
+        expandedProviders = Set(prefsStore.ui.stringArray(forKey: "menu.expanded") ?? [])
+        meterLeft = Set(prefsStore.ui.stringArray(forKey: "menu.meterLeft") ?? [])
     }
 
     var isSample: Bool { sampleMode || snapshot?.isSample == true }
@@ -100,6 +83,7 @@ final class CompanionModel: ObservableObject {
     func start(fixture: String? = nil) {
         guard !started else { return }
         started = true
+        refreshBridgeState()
         refreshLoginItem()
         Task { await refreshNotificationStatus() }
         if let fixture {
@@ -525,6 +509,73 @@ final class CompanionModel: ObservableObject {
         s?.play()
     }
 
+    // MARK: menu
+
+    func menuItems(now: Date) -> [MenuItem] {
+        MenuBuilder.items(snapshot: snapshot, phase: phase, prefs: prefs, lastUpdated: lastUpdated, lastError: lastError,
+                          isSample: isSample, now: now, expanded: expandedProviders, usageExpanded: usageExpanded,
+                          bridgeOn: claudeBridgeOn)
+    }
+
+    func setExpanded(_ provider: String, _ open: Bool) {
+        var set = expandedProviders
+        // The first block starts open with nothing stored; make that explicit before the first change.
+        if set.isEmpty, let first = ProviderSummary.build(snapshot?.limits ?? []).first?.provider { set.insert(first) }
+        if open { set.insert(provider) } else { set.remove(provider) }
+        if set.isEmpty { set.insert("_none") }
+        expandedProviders = set
+        prefsStore.ui.set(Array(set), forKey: "menu.expanded")
+    }
+
+    func showsLeft(_ id: String) -> Bool { meterLeft.contains(id) }
+
+    func toggleLeft(_ id: String) {
+        if meterLeft.contains(id) { meterLeft.remove(id) } else { meterLeft.insert(id) }
+        prefsStore.ui.set(Array(meterLeft), forKey: "menu.meterLeft")
+    }
+
+    func refreshBridgeState() {
+        claudeBridgeOn = claudeBridge.state() == .on
+    }
+
+    func enableClaudeBridge() {
+        guard let url = Bundle.main.url(forResource: "claude-statusline-bridge", withExtension: "sh"),
+              let script = try? String(contentsOf: url, encoding: .utf8) else {
+            toast = "The bridge script isn't in this build."; return
+        }
+        do {
+            try claudeBridge.install(script: script)
+            toast = "Live Claude limits on. They appear after Claude Code's next reply."
+        } catch {
+            toast = (error as? LocalizedError)?.errorDescription ?? "Couldn't change Claude Code's settings."
+        }
+        refreshBridgeState()
+    }
+
+    func disableClaudeBridge() {
+        do {
+            try claudeBridge.uninstall()
+            toast = "Live Claude limits off. Your previous status line is back."
+        } catch {
+            toast = (error as? LocalizedError)?.errorDescription ?? "Couldn't change Claude Code's settings."
+        }
+        refreshBridgeState()
+    }
+
+    /// What the status item draws: the tightest provider's session and weekly fractions.
+    var statusBars: (session: Double?, weekly: Double?, stale: Bool) {
+        guard let s = snapshot, !isSample else { return (nil, nil, false) }
+        guard let p = ProviderSummary.build(s.limits).first(where: { !$0.windows.isEmpty }) else { return (nil, nil, false) }
+        let five = p.window("five_hour"), week = p.window("weekly")
+        let now = Date()
+        let stale = [five, week].compactMap { $0 }.allSatisfy {
+            $0.used.freshness == .stale || ($0.resetsAt.map { $0 <= now } ?? false) || $0.used.isStale(now: now, maxAge: 1800)
+        }
+        return (five?.used.value.map { $0.usedPercent / 100 }, week?.used.value.map { $0.usedPercent / 100 }, stale)
+    }
+
+    var hasWaiting: Bool { snapshot?.live?.contains { $0.status == .waiting } == true }
+
     // MARK: derived
 
     /// Runs in display order: pinned first, then by latest activity.
@@ -562,8 +613,8 @@ final class CompanionModel: ObservableObject {
             && ($0.triggerAt ?? .distantPast) > Date().addingTimeInterval(-3600)
             && !prefs.alerts.mutedPatterns.contains($0.patternKey) }.count
         if unresolved > 0 { return unresolved == 1 ? "1 needs a look" : "\(unresolved) need a look" }
-        let active = s.activeRuns.count
-        return active > 0 ? "\(active) running" : nil
+        let working = (s.live ?? []).filter { $0.status == .busy }.count
+        return working > 0 ? "\(working) working" : nil
     }
 
     func run(_ id: String) -> RunActivity? { snapshot?.runs.first { $0.sessionId == id } }

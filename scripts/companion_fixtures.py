@@ -39,8 +39,31 @@ def sh(t_s, verb, err=False, cls="exit_code", kind=None):
     return e
 
 
-def llm(t_s, tokens):
-    return ev(t_s, "llm", model="claude-sonnet-5", **{"in": 12, "cw": 400, "cr": tokens - 412, "out": 300})
+def llm(t_s, tokens, model="claude-sonnet-5"):
+    # Costs as the builder would estimate them at list prices (input + cache + output, roughly).
+    cost = round(tokens * 0.3 / 1e6 + 300 * 15 / 1e6, 4)
+    return ev(t_s, "llm", model=model, cost=cost, **{"in": 12, "cw": 400, "cr": tokens - 412, "out": 300})
+
+
+def live_record(base, pid, sid, status, cwd, started):
+    """A Claude Code live-process record, as ~/.claude/sessions/<pid>.json holds it."""
+    d = base / ".claude" / "sessions"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{pid}-{sid}.json").write_text(json.dumps({
+        "pid": pid, "sessionId": sid, "status": status, "cwd": cwd, "kind": "interactive",
+        "startedAt": int(started.timestamp() * 1000), "statusUpdatedAt": int((NOW - timedelta(seconds=40)).timestamp() * 1000)}))
+
+
+def statusline(base, sid, five, week, ctx_pct, age_s=30):
+    """What the optional statusline bridge saves (Claude Code's documented statusline JSON)."""
+    d = base / "ap" / "live" / "claude"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{sid}.json"
+    f.write_text(json.dumps({"session_id": sid,
+        "context_window": {"used_percentage": ctx_pct, "context_window_size": 200000},
+        "rate_limits": {"five_hour": {"used_percentage": five, "resets_at": int((NOW + timedelta(hours=2, minutes=18)).timestamp())},
+                        "seven_day": {"used_percentage": week, "resets_at": int((NOW + timedelta(days=3, hours=4)).timestamp())}}}))
+    os.utime(f, (NOW.timestamp() - age_s, NOW.timestamp() - age_s))
 
 
 def edit(t_s, f=0):
@@ -115,7 +138,7 @@ def build(name: str, fn) -> None:
         homes_present = fn(store, base, live) or {}
         store.save_index()
         companion.process_evidence = lambda paths: {k: v for k, v in live.items() if k in paths}
-        homes = discover.Homes(*([base / "nowhere"] for _ in range(7)))
+        homes = discover.Homes(*([base / ".claude"] if i == 0 else [base / "nowhere"] for i in range(7)))
         snap = companion.snapshot(Store(base / "ap"), now=NOW, homes=homes)
         for s in snap["sources"]:
             info = homes_present.get(s["agent"])
@@ -143,6 +166,9 @@ FOUND = {"status": "found", "remedy": None}
 def two_active(store, base, live):
     put(store, payments_run(NOW - timedelta(minutes=4)), base / "a.jsonl", 6)
     live["local:claude-code:sample-7f3a"] = "a claude process is running in this project"
+    live_record(base, os.getpid(), "sample-7f3a", "busy", "/Users/you/work/payments-api", NOW - timedelta(minutes=4))
+    live_record(base, os.getpid(), "sample-9e2b", "waiting", "/Users/you/work/docs-site", NOW - timedelta(minutes=26))
+    statusline(base, "sample-7f3a", 34, 58, 71)
     put(store, codex_run(NOW - timedelta(minutes=11)), base / "b.jsonl", 20)
     codex_file(base / "b.jsonl", NOW - timedelta(seconds=20))
     os.utime(base / "b.jsonl", (NOW.timestamp() - 20, NOW.timestamp() - 20))

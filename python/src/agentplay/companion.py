@@ -80,6 +80,7 @@ _AGENT_LABELS = {
 }
 # Agents whose sessions live in one shared database: a fresh mtime says the
 # agent wrote something, not which session.
+_STATUS_WORDS = {"busy": "working", "waiting": "waiting for you", "idle": "idle, waiting for your next prompt"}
 _SHARED_STORE_AGENTS = {"cursor", "opencode", "kiro", "copilot-vscode"}
 # Process names that write each agent's transcripts.
 _PROCESS_NAMES = {"claude-code": ("claude",), "codex": ("codex",)}
@@ -247,6 +248,54 @@ def process_evidence(paths_by_sid: dict[str, tuple[str, str]]) -> dict[str, str]
     return out
 
 
+def live_claude_sessions(homes: discover.Homes, now: datetime) -> list[dict[str, Any]]:
+    """Claude Code's own live-process records, ``<home>/sessions/<pid>.json``, for processes still alive.
+
+    Claude Code writes one per running process with its ``sessionId``, ``status`` (``busy`` working,
+    ``waiting`` needs the user, ``idle`` finished its turn) and ``cwd``. Only the folder name of ``cwd`` is
+    kept (a repo-like label); the path, session name and socket are never read into the snapshot.
+    The file is internal to Claude Code, not a documented interface, so anything unexpected is skipped.
+    """
+    out = []
+    for home in homes.claude_code:
+        d = Path(home) / "sessions"
+        try:
+            files = sorted(d.glob("*.json"))
+        except OSError:
+            continue
+        for f in files[:200]:
+            try:
+                rec = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(rec, dict):
+                continue
+            pid, sid, status = rec.get("pid"), rec.get("sessionId"), rec.get("status")
+            if not isinstance(pid, int) or pid <= 1 or not isinstance(sid, str) or status not in ("busy", "waiting", "idle"):
+                continue
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue  # stale record: that process is gone
+            except PermissionError:
+                pass  # alive, owned by someone else
+            except OSError:
+                continue
+            def ms(v: Any) -> str | None:
+                return iso(v / 1000) if isinstance(v, (int, float)) and v > 0 else None
+            cwd = rec.get("cwd")
+            out.append({
+                "agentTool": "claude-code",
+                "sessionId": f"local:claude-code:{sid}",
+                "status": status,
+                "project": Path(cwd).name if isinstance(cwd, str) and cwd else None,
+                "startedAt": ms(rec.get("startedAt")),
+                "statusSince": ms(rec.get("statusUpdatedAt")) or ms(rec.get("updatedAt")),
+            })
+    out.sort(key=lambda r: ({"waiting": 0, "busy": 1, "idle": 2}[r["status"]], r["startedAt"] or ""), reverse=False)
+    return out
+
+
 # --------------------------------------------------------------------------- context and limits
 def _codex_token_counts(path: str) -> list[tuple[str | None, dict[str, Any]]]:
     """``(timestamp, payload)`` of every ``token_count`` record in the last part of a Codex transcript."""
@@ -380,6 +429,7 @@ def codex_limits(paths: list[tuple[str, str]], now: datetime) -> list[dict[str, 
             "limitId": rl.get("limit_id"),
             "resetsAt": iso(reset_dt),
             "usageUrl": PROVIDER_USAGE_URLS["codex"],
+            "conflictingPlans": sorted(plans) if conflict else None,
             "used": point({"usedPercent": used, "leftPercent": round(100 - used, 1)}, "provider_reported",
                           "agentplay_map", observed_at=ts, window=name,
                           confidence="low" if conflict or stale else "high",
@@ -394,6 +444,64 @@ def codex_limits(paths: list[tuple[str, str]], now: datetime) -> list[dict[str, 
                 "Check usage in Codex.")),
         })
     return out
+
+
+def claude_statusline(base: Path, now: datetime) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """What the optional statusline bridge saved: plan windows and per-session context, as Claude Code reported them.
+
+    The bridge (installed only when the user turns it on) writes Claude Code's documented statusline JSON to
+    ``<store>/live/claude/<session_id>.json``. Only numbers are read: ``rate_limits.five_hour`` and
+    ``seven_day`` (``used_percentage``, ``resets_at``) and ``context_window`` (``used_percentage``,
+    ``context_window_size``). Returns ``(limit rows, {sessionId: context point})``.
+    """
+    d = base / "live" / "claude"
+    try:
+        files = sorted(d.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)[:50]
+    except OSError:
+        return [], {}
+    limits: list[dict[str, Any]] = []
+    contexts: dict[str, dict[str, Any]] = {}
+    for f in files:
+        try:
+            st = f.stat()
+            rec = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(rec, dict) or now.timestamp() - st.st_mtime > 2 * 86400:
+            continue
+        observed = iso(st.st_mtime)
+        sid = rec.get("session_id")
+        cw = rec.get("context_window") if isinstance(rec.get("context_window"), dict) else {}
+        pct, size = _num(cw.get("used_percentage")), _num(cw.get("context_window_size"))
+        if isinstance(sid, str) and sid and pct is not None and size:
+            contexts[f"local:claude-code:{sid}"] = point(
+                {"tokens": int(round(size * pct / 100)), "limit": int(size), "percent": round(pct, 1)},
+                "provider_reported", "approved_provider_cli", observed_at=observed, window="context",
+                explanation="Reported by Claude Code's statusline: how full this session's context window is.",
+                freshness="fresh" if now.timestamp() - st.st_mtime < 600 else "stale")
+        rl = rec.get("rate_limits")
+        if limits or not isinstance(rl, dict):
+            continue
+        for key, name, minutes in (("five_hour", "five_hour", 300), ("seven_day", "weekly", 10080)):
+            w = rl.get(key)
+            if not isinstance(w, dict):
+                continue
+            used, resets = _num(w.get("used_percentage")), _num(w.get("resets_at"))
+            if used is None:
+                continue
+            reset_dt = datetime.fromtimestamp(resets, tz=UTC) if resets else None
+            stale = reset_dt is not None and reset_dt <= now
+            limits.append({
+                "provider": "claude-code", "window": name, "windowMinutes": minutes, "plan": None, "limitId": key,
+                "resetsAt": iso(reset_dt), "usageUrl": PROVIDER_USAGE_URLS["claude-code"],
+                "used": point({"usedPercent": round(used, 1), "leftPercent": round(100 - used, 1)}, "provider_reported",
+                              "approved_provider_cli", observed_at=observed, window=name,
+                              confidence="low" if stale else "high", freshness="stale" if stale else "fresh",
+                              explanation=("This window has reset since Claude Code last reported it."
+                                           if stale else "Reported by Claude Code's statusline. Plan windows are "
+                                           "account-wide, so this includes your other devices.")),
+            })
+    return limits, contexts
 
 
 def unavailable_limit(provider: str, why: str) -> dict[str, Any]:
@@ -654,6 +762,15 @@ def _sources(homes: discover.Homes, rows: list[dict[str, Any]], index_error: str
     return out
 
 
+def _usage(store: Store, now: datetime) -> dict[str, Any] | None:
+    from . import usage
+
+    try:
+        return usage.report(store, now)
+    except Exception:  # noqa: BLE001 - usage is extra; a bad map must not cost the whole snapshot
+        return None
+
+
 def snapshot(store: Store | None = None, *, now: datetime | None = None, max_runs: int = MAX_RUNS,
              homes: discover.Homes | None = None) -> dict[str, Any]:
     """The companion snapshot. Read-only."""
@@ -672,6 +789,10 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
     def activity_key(r: dict[str, Any]) -> str:
         return max(r.get("endedAt") or "", r.get("startedAt") or "", iso(r.get("sourceMtime")) or "")
     by_activity = sorted(rows, key=activity_key, reverse=True)
+    live_sessions = live_claude_sessions(homes, now)
+    status_by_sid = {r["sessionId"]: r for r in live_sessions}
+    # Sessions a live agent process reports come first: they are what "now" means.
+    by_activity.sort(key=lambda r: r["sessionId"] not in status_by_sid)
     top = by_activity[:max_runs]
     recent_paths = {}
     for r in top:
@@ -684,6 +805,8 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
             if now.timestamp() - m <= RECENT_S:
                 recent_paths[r["sessionId"]] = (r.get("agentTool") or "", p)
     live = process_evidence(recent_paths)
+    for r in live_sessions:
+        live[r["sessionId"]] = f"Claude Code reports this session {_STATUS_WORDS[r['status']]}"
     codex_rows = [(r["sessionId"], r["sourcePath"]) for r in by_activity
                   if r.get("agentTool") == "codex" and isinstance(r.get("sourcePath"), str)]
     runs, alerts, errors = [], [], []
@@ -697,15 +820,25 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         if r.get("agentTool") == "codex" and isinstance(r.get("sourcePath"), str):
             ctx = codex_context(r["sourcePath"])
         run, run_alerts = _run(doc, r, now, live, ctx)
+        rec = status_by_sid.get(run["sessionId"])
+        run["liveStatus"] = rec["status"] if rec else None
         runs.append(run)
         alerts.extend(run_alerts)
     limits = codex_limits(codex_rows, now) if codex_rows else []
     if not limits:
-        limits.append(unavailable_limit("codex", "No Codex session on this machine has reported plan usage. "
+        limits.append(unavailable_limit("codex", "No indexed Codex session has reported plan usage. "
                                                  "Check usage in Codex."))
-    limits.insert(0, unavailable_limit(
-        "claude-code", "Claude Code does not write plan usage into its local transcripts. Check /usage in "
-                       "Claude Code or your Claude settings."))
+    claude_limits, claude_contexts = claude_statusline(store.base, now)
+    if claude_limits:
+        limits[:0] = claude_limits
+    else:
+        limits.insert(0, unavailable_limit(
+            "claude-code", "Claude Code doesn't save plan usage locally. Turn on live Claude limits in Settings "
+                           "(it reads Claude Code's statusline), or check /usage in Claude Code."))
+    for run in runs:
+        ctx = claude_contexts.get(run["sessionId"])
+        if ctx is not None:
+            run["context"] = ctx
     return {
         "schema": SCHEMA,
         "schemaVersion": SCHEMA_VERSION,
@@ -717,7 +850,9 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         "unreadable": errors,
         "alerts": alerts,
         "limits": limits,
+        "live": [{**r, "inStore": r["sessionId"] in store.index} for r in live_sessions],
         "learn": learn_card(store, by_activity, now),
+        "usage": _usage(store, now),
         "timing": {"snapshotMs": round(1000 * (time.monotonic() - t_start))},
     }
 

@@ -22,9 +22,13 @@ func fixture(_ name: String) throws -> Snapshot {
     @Test func twoActiveRuns() throws {
         let s = try fixture("two-active")
         #expect(s.activeRuns.count == 2)
+        // With the statusline bridge, Claude reports its own context window.
         let claude = try #require(s.runs.first { $0.agentTool == "claude-code" })
-        #expect(claude.context.kind == .recorded)
-        #expect(claude.context.value?.percent == nil)  // tokens, no denominator
+        #expect(claude.context.kind == .providerReported && claude.context.source == .approvedProviderCLI)
+        #expect(claude.context.value?.limit == 200000 && claude.context.value?.percent == 71)
+        // Without it, a Claude run has tokens and no denominator.
+        let idle = try #require(try fixture("detected-idle").runs.first)
+        #expect(idle.context.kind == .recorded && idle.context.value?.percent == nil)
         let codex = try #require(s.runs.first { $0.agentTool == "codex" })
         #expect(codex.context.kind == .providerReported)
         #expect(codex.context.value?.limit == 258400)
@@ -53,10 +57,12 @@ func fixture(_ name: String) throws -> Snapshot {
         #expect(s.sources.first { $0.agent == "claude-code" }?.status == .error)
     }
 
-    @Test func claudePlanUsageIsNeverAvailable() throws {
-        for name in ["two-active", "stale-quota", "many-sessions"] {
-            let s = try fixture(name)
-            let c = try #require(s.limits.first { $0.provider == "claude-code" })
+    @Test func claudePlanUsageOnlyFromTheBridge() throws {
+        let live = try fixture("two-active").limits.filter { $0.provider == "claude-code" }
+        #expect(Set(live.map(\.window)) == ["five_hour", "weekly"])
+        #expect(live.allSatisfy { $0.used.kind == .providerReported && $0.used.source == .approvedProviderCLI })
+        for name in ["stale-quota", "many-sessions"] {
+            let c = try #require(try fixture(name).limits.first { $0.provider == "claude-code" })
             #expect(c.used.kind == .unavailable && c.used.value == nil)
         }
     }
@@ -171,6 +177,7 @@ func fixture(_ name: String) throws -> Snapshot {
         #expect(Format.tokens(142_000) == "142k")
         #expect(Format.tokens(1_250) == "1.2k")
         #expect(Format.tokens(2_400_000) == "2.4M")
+        #expect(Format.tokens(2_564_900_000) == "2.56B")
         #expect(Format.duration(4 * 60) == "4m")
         #expect(Format.duration(3600 + 12 * 60) == "1h 12m")
     }

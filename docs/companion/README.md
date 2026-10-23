@@ -2,7 +2,7 @@
 
 A native macOS menu-bar companion for AgentPlay: follow coding-agent runs without staring at logs, and jump from a small alert to the exact recorded moment in the replay. Local only, no account.
 
-![Now, light](screens/v1-now-light.png)
+![The menu, light](screens/menu-light.png)
 
 | Doc | What's in it |
 |---|---|

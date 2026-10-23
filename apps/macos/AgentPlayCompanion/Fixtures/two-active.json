@@ -95,7 +95,7 @@
         "observedAt": "2026-10-23T10:46:00Z",
         "window": "none",
         "confidence": "high",
-        "explanation": "A claude process is running in this project.",
+        "explanation": "Claude code reports this session working.",
         "freshness": "unknown"
       },
       "outcome": "completed",
@@ -228,17 +228,18 @@
       "context": {
         "value": {
           "tokens": 142000,
-          "limit": null,
-          "percent": null
+          "limit": 200000,
+          "percent": 71.0
         },
-        "kind": "recorded",
-        "source": "agentplay_map",
-        "observedAt": "2026-10-23T10:45:20Z",
+        "kind": "provider_reported",
+        "source": "approved_provider_cli",
+        "observedAt": "2026-10-23T10:45:30Z",
         "window": "context",
-        "confidence": "medium",
-        "explanation": "Prompt size of the latest recorded request (input plus cache). No context limit is recorded, so there is no percentage. Claude Code's /context shows its own.",
-        "freshness": "unknown"
-      }
+        "confidence": "high",
+        "explanation": "Reported by Claude Code's statusline: how full this session's context window is.",
+        "freshness": "fresh"
+      },
+      "liveStatus": "busy"
     },
     {
       "sessionId": "local:codex:sample-0c1d",
@@ -387,7 +388,8 @@
         "confidence": "high",
         "explanation": "Reported by Codex in its session file: input tokens of the latest request over the model context window. Codex's own indicator may differ slightly.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:claude-code:sample-old0",
@@ -531,7 +533,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:claude-code:sample-old1",
@@ -675,7 +678,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     },
     {
       "sessionId": "local:claude-code:sample-old2",
@@ -819,7 +823,8 @@
         "confidence": "low",
         "explanation": "This session has no recorded model requests with token counts.",
         "freshness": "unknown"
-      }
+      },
+      "liveStatus": null
     }
   ],
   "unreadable": [],
@@ -854,21 +859,46 @@
   "limits": [
     {
       "provider": "claude-code",
-      "window": "none",
-      "windowMinutes": null,
+      "window": "five_hour",
+      "windowMinutes": 300,
       "plan": null,
-      "limitId": null,
-      "resetsAt": null,
+      "limitId": "five_hour",
+      "resetsAt": "2026-10-23T13:04:00Z",
       "usageUrl": "https://claude.ai/settings/usage",
       "used": {
-        "value": null,
-        "kind": "unavailable",
-        "source": "none",
-        "observedAt": null,
-        "window": "none",
-        "confidence": "low",
-        "explanation": "Claude Code does not write plan usage into its local transcripts. Check /usage in Claude Code or your Claude settings.",
-        "freshness": "unknown"
+        "value": {
+          "usedPercent": 34.0,
+          "leftPercent": 66.0
+        },
+        "kind": "provider_reported",
+        "source": "approved_provider_cli",
+        "observedAt": "2026-10-23T10:45:30Z",
+        "window": "five_hour",
+        "confidence": "high",
+        "explanation": "Reported by Claude Code's statusline. Plan windows are account-wide, so this includes your other devices.",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "provider": "claude-code",
+      "window": "weekly",
+      "windowMinutes": 10080,
+      "plan": null,
+      "limitId": "seven_day",
+      "resetsAt": "2026-10-26T14:46:00Z",
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": {
+          "usedPercent": 58.0,
+          "leftPercent": 42.0
+        },
+        "kind": "provider_reported",
+        "source": "approved_provider_cli",
+        "observedAt": "2026-10-23T10:45:30Z",
+        "window": "weekly",
+        "confidence": "high",
+        "explanation": "Reported by Claude Code's statusline. Plan windows are account-wide, so this includes your other devices.",
+        "freshness": "fresh"
       }
     },
     {
@@ -879,6 +909,7 @@
       "limitId": "codex",
       "resetsAt": "2026-10-23T12:57:40Z",
       "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "conflictingPlans": null,
       "used": {
         "value": {
           "usedPercent": 32.0,
@@ -901,6 +932,7 @@
       "limitId": "codex",
       "resetsAt": "2026-10-27T10:45:40Z",
       "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "conflictingPlans": null,
       "used": {
         "value": {
           "usedPercent": 41.0,
@@ -914,6 +946,26 @@
         "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment.",
         "freshness": "fresh"
       }
+    }
+  ],
+  "live": [
+    {
+      "agentTool": "claude-code",
+      "sessionId": "local:claude-code:sample-9e2b",
+      "status": "waiting",
+      "project": "docs-site",
+      "startedAt": "2026-10-23T10:20:00Z",
+      "statusSince": "2026-10-23T10:45:20Z",
+      "inStore": false
+    },
+    {
+      "agentTool": "claude-code",
+      "sessionId": "local:claude-code:sample-7f3a",
+      "status": "busy",
+      "project": "payments-api",
+      "startedAt": "2026-10-23T10:42:00Z",
+      "statusSince": "2026-10-23T10:45:20Z",
+      "inStore": true
     }
   ],
   "learn": {
@@ -962,6 +1014,315 @@
         "at": "2026-10-20T10:46:00Z"
       }
     ]
+  },
+  "usage": {
+    "generatedAt": "2026-10-23T10:46:00Z",
+    "kind": "estimated",
+    "explanation": "Counted from the model requests in your local AgentPlay maps. Costs are estimates at list prices; requests on unpriced models are counted separately, not as $0. Usage on other devices, the web or the API isn't here.",
+    "today": {
+      "tokens": {
+        "input": 36,
+        "cacheWrite": 1200,
+        "cacheRead": 289764,
+        "output": 900,
+        "total": 291900
+      },
+      "costUsd": 0.1008,
+      "requests": 3,
+      "unpricedRequests": 0,
+      "sessions": 1,
+      "byModel": [
+        {
+          "key": "claude-sonnet-5",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byAgent": [
+        {
+          "key": "claude-code",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byRepo": [
+        {
+          "key": "payments-api",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ]
+    },
+    "last7Days": {
+      "tokens": {
+        "input": 36,
+        "cacheWrite": 1200,
+        "cacheRead": 289764,
+        "output": 900,
+        "total": 291900
+      },
+      "costUsd": 0.1008,
+      "requests": 3,
+      "unpricedRequests": 0,
+      "sessions": 1,
+      "byModel": [
+        {
+          "key": "claude-sonnet-5",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byAgent": [
+        {
+          "key": "claude-code",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byRepo": [
+        {
+          "key": "payments-api",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ]
+    },
+    "last30Days": {
+      "tokens": {
+        "input": 36,
+        "cacheWrite": 1200,
+        "cacheRead": 289764,
+        "output": 900,
+        "total": 291900
+      },
+      "costUsd": 0.1008,
+      "requests": 3,
+      "unpricedRequests": 0,
+      "sessions": 1,
+      "byModel": [
+        {
+          "key": "claude-sonnet-5",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byAgent": [
+        {
+          "key": "claude-code",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byRepo": [
+        {
+          "key": "payments-api",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ]
+    },
+    "daily": [
+      {
+        "date": "2026-10-10",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-11",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-12",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-13",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-14",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-15",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-16",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-17",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-18",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-19",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-20",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-21",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-22",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-23",
+        "tokens": 291900,
+        "costUsd": 0.1008,
+        "requests": 3
+      }
+    ],
+    "claudeBlock": {
+      "start": "2026-10-23T10:00:00Z",
+      "end": "2026-10-23T15:00:00Z",
+      "tokens": {
+        "input": 36,
+        "cacheWrite": 1200,
+        "cacheRead": 289764,
+        "output": 900,
+        "total": 291900
+      },
+      "costUsd": 0.1008,
+      "requests": 3,
+      "unpricedRequests": 0,
+      "sessions": 1,
+      "byModel": [
+        {
+          "key": "claude-sonnet-5",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "burnTokensPerMinute": 6346,
+      "burnCostPerHour": 0.1315,
+      "projectedCostUsd": 0.6574
+    },
+    "timingMs": 1
   },
   "timing": {
     "snapshotMs": 0

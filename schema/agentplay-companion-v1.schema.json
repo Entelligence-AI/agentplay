@@ -26,6 +26,7 @@
     "alerts": {"type": "array", "items": {"$ref": "#/$defs/alertCandidate"}},
     "limits": {"type": "array", "items": {"$ref": "#/$defs/providerLimitWindow"}},
     "learn": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/learnCard"}]},
+    "usage": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/usageReport"}]},
     "timing": {"type": "object"}
   },
   "$defs": {
@@ -151,7 +152,32 @@
         "limitId": {"type": ["string", "null"]},
         "resetsAt": {"$ref": "#/$defs/timeOrNull"},
         "usageUrl": {"type": ["string", "null"]},
+        "conflictingPlans": {"type": ["array", "null"], "items": {"type": "string"}},
         "used": {"$ref": "#/$defs/dataPoint"}
+      }
+    },
+    "usagePeriod": {
+      "type": "object",
+      "required": ["tokens", "costUsd", "requests", "unpricedRequests", "sessions"],
+      "properties": {
+        "tokens": {"type": "object", "required": ["input", "cacheWrite", "cacheRead", "output", "total"]},
+        "costUsd": {"type": "number", "description": "Estimate at list prices over priced requests only."},
+        "requests": {"type": "integer"},
+        "unpricedRequests": {"type": "integer", "description": "Requests on models with no price: not counted as $0."},
+        "sessions": {"type": "integer"},
+        "byModel": {"type": "array"}, "byAgent": {"type": "array"}, "byRepo": {"type": "array"}
+      }
+    },
+    "usageReport": {
+      "type": "object",
+      "required": ["generatedAt", "kind", "explanation", "today", "last7Days", "last30Days", "daily", "claudeBlock"],
+      "properties": {
+        "kind": {"const": "estimated"},
+        "today": {"$ref": "#/$defs/usagePeriod"},
+        "last7Days": {"$ref": "#/$defs/usagePeriod"},
+        "last30Days": {"$ref": "#/$defs/usagePeriod"},
+        "daily": {"type": "array", "items": {"type": "object", "required": ["date", "tokens", "costUsd", "requests"]}},
+        "claudeBlock": {"oneOf": [{"type": "null"}, {"type": "object", "required": ["start", "end", "tokens", "costUsd"]}]}
       }
     },
     "learnCard": {

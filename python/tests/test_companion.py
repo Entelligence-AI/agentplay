@@ -33,7 +33,7 @@ def _doc(sid: str, events: list[dict], *, agent: str = "claude-code", started: d
                     "durationMs": evs[-1]["t"] if evs else 0, "models": ["claude-sonnet-5"], "pathMode": "relative",
                     "outcome": outcome, "role": "root", "parentSessionId": None, "truncated": False},
         "totals": {"calls": sum(1 for e in evs if e["kind"] not in ("llm", "user", "error", "delay", "compaction")),
-                   "requests": 0, "subagents": 0, "errors": sum(1 for e in evs if e.get("err")), "filesTouched": 0,
+                   "requests": sum(1 for e in evs if e["kind"] == "llm"), "subagents": 0, "errors": sum(1 for e in evs if e.get("err")), "filesTouched": 0,
                    "costUsd": 0, "tokens": 0, "userTurns": 1, "retries": 0, "compactions": 0},
         "repos": [{"id": f"r{i}", "name": n, "remote": f"acme/{n}-SECRET-REMOTE"} for i, n in enumerate(repos)],
         "files": [{"id": i, "repo": "r0", "path": p} for i, p in enumerate(files)],
@@ -415,6 +415,7 @@ def test_codex_limits_conflicting_plans(tmp_path):
     five = next(r for r in rows if r["window"] == "five_hour")
     assert five["used"]["value"]["usedPercent"] == 32.0  # newest report wins
     assert five["used"]["confidence"] == "low" and "different accounts" in five["used"]["explanation"]
+    assert five["conflictingPlans"] == ["plus", "pro"]
 
 
 def test_codex_limits_without_windows_are_unavailable(tmp_path):
@@ -498,3 +499,146 @@ def test_pending_call_on_a_lagging_map_is_neither_running_nor_failed(store, empt
     assert run["pendingTool"] is None
     assert run["lastEvent"]["pending"] is False and run["lastEvent"]["err"] is False
     assert run["lastError"] is None
+
+
+# ---------------------------------------------------------------- usage
+def _llm(t_s, model="claude-sonnet-5", cost=0.01, **tok):
+    e = {"t": int(t_s * 1000), "kind": "llm", "model": model, "in": 10, "cw": 100, "cr": 1000, "out": 50, **tok}
+    if cost is not None:
+        e["cost"] = cost
+    return e
+
+
+def test_usage_periods_models_and_unpriced(store, empty_homes):
+    from agentplay import usage
+
+    _put(store, _doc("local:claude-code:a", [LS, _llm(0), _llm(60, cost=None, model="mystery-model")],
+                     started=NOW - timedelta(minutes=30)))
+    _put(store, _doc("local:codex:b", [LS, _llm(0, model="gpt-5.5", cost=0.5)], agent="codex",
+                     started=NOW - timedelta(days=3)))
+    r = usage.report(store, NOW)
+    assert r["kind"] == "estimated"
+    assert r["last7Days"]["requests"] == 3 and r["last7Days"]["unpricedRequests"] == 1
+    assert r["last7Days"]["costUsd"] == 0.51
+    assert r["last7Days"]["tokens"]["total"] == 3 * 1160
+    mystery = next(m for m in r["last7Days"]["byModel"] if m["key"] == "mystery-model")
+    assert mystery["unpricedRequests"] == 1 and mystery["costUsd"] == 0  # unpriced is flagged, the UI never says $0
+    assert {a["key"] for a in r["last7Days"]["byAgent"]} == {"claude-code", "codex"}
+    assert r["daily"][-1]["requests"] >= 2
+
+
+def test_usage_cache_is_reused_and_invalidated(store, empty_homes):
+    from agentplay import usage
+
+    _put(store, _doc("local:claude-code:a", [LS, _llm(0)], started=NOW - timedelta(hours=1)))
+    usage.report(store, NOW)
+    cache = json.loads((store.base / "cache" / "companion-usage.json").read_text())
+    assert "local:claude-code:a" in cache["sessions"]
+    _put(store, _doc("local:claude-code:a", [LS, _llm(0), _llm(30)], started=NOW - timedelta(hours=1)))
+    assert usage.report(Store(store.base), NOW)["today"]["requests"] == 2
+
+
+def test_claude_block_follows_ccusage_rules(store, empty_homes):
+    from agentplay import usage
+
+    # Activity at 06:10 opens a window at 06:00 that ends 11:00; activity at 11:50 opens the next at 11:00.
+    day = NOW.replace(hour=0, minute=0, second=0)
+    _put(store, _doc("local:claude-code:a", [LS, _llm(0)], started=day + timedelta(hours=6, minutes=10)))
+    _put(store, _doc("local:claude-code:b", [LS, _llm(0, cost=1.0)], started=day + timedelta(hours=11, minutes=50)))
+    b = usage.report(store, day + timedelta(hours=12))["claudeBlock"]
+    assert b["start"].endswith("T11:00:00Z") and b["end"].endswith("T16:00:00Z")
+    assert b["costUsd"] == 1.0 and b["requests"] == 1
+    assert usage.report(store, day + timedelta(hours=17))["claudeBlock"] is None  # window over, nothing since
+
+
+def test_usage_never_carries_titles_or_paths(store, empty_homes):
+    _put(store, _doc("local:claude-code:a", [LS, _llm(0)]), source=Path("/Users/me/SECRET-USER-DIR/x.jsonl"))
+    raw = json.dumps(_snap(store, empty_homes)["usage"])
+    for secret in ("SECRET-TITLE", "SECRET-TASK", "SECRET-USER-DIR", "SECRET-REMOTE"):
+        assert secret not in raw
+
+
+# ---------------------------------------------------------------- live Claude sessions
+def test_live_claude_sessions_alive_only_and_minimal(tmp_path):
+    home = tmp_path / ".claude"
+    (home / "sessions").mkdir(parents=True)
+    me = os.getpid()
+    rec = {"pid": me, "sessionId": "abc", "status": "waiting", "cwd": "/Users/me/SECRET-USER-DIR/payments-api",
+           "name": "SECRET-SESSION-NAME", "messagingSocketPath": "/tmp/SECRET-SOCK", "startedAt": 1_792_000_000_000,
+           "statusUpdatedAt": 1_792_000_100_000}
+    (home / "sessions" / f"{me}.json").write_text(json.dumps(rec))
+    (home / "sessions" / "999999.json").write_text(json.dumps({**rec, "pid": 999999, "sessionId": "dead"}))
+    (home / "sessions" / "bad.json").write_text("{nope")
+    (home / "sessions" / "weird.json").write_text(json.dumps({**rec, "status": "dancing", "sessionId": "w"}))
+    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(7)))
+    live = companion.live_claude_sessions(homes, NOW)
+    assert [r["sessionId"] for r in live] == ["local:claude-code:abc"]
+    assert live[0]["status"] == "waiting" and live[0]["project"] == "payments-api"
+    raw = json.dumps(live)
+    for secret in ("SECRET-USER-DIR", "SECRET-SESSION-NAME", "SECRET-SOCK"):
+        assert secret not in raw
+
+
+def test_live_status_marks_runs_and_sorts_first(store, tmp_path, monkeypatch):
+    home = tmp_path / ".claude"
+    (home / "sessions").mkdir(parents=True)
+    me = os.getpid()
+    (home / "sessions" / f"{me}.json").write_text(json.dumps({"pid": me, "sessionId": "old", "status": "busy", "cwd": "/x/api"}))
+    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(7)))
+    _put(store, _doc("local:claude-code:old", [_exec(0, "ls", kind="exec")], started=NOW - timedelta(days=2)))
+    _put(store, _doc("local:claude-code:new", [_exec(0, "ls", kind="exec")], started=NOW - timedelta(hours=1)))
+    snap = companion.snapshot(store, now=NOW, homes=homes)
+    assert snap["runs"][0]["sessionId"] == "local:claude-code:old"
+    assert snap["runs"][0]["liveStatus"] == "busy" and snap["runs"][0]["activity"]["value"] == "active"
+    assert snap["live"][0]["inStore"] is True
+
+
+# ---------------------------------------------------------------- Claude statusline bridge
+BRIDGE = Path(__file__).resolve().parents[2] / "apps" / "macos" / "AgentPlayCompanion" / "Resources" / "claude-statusline-bridge.sh"
+STATUSLINE = {"session_id": "abc-123", "transcript_path": "/Users/me/SECRET-USER-DIR/t.jsonl",
+              "model": {"display_name": "Opus"}, "workspace": {"current_dir": "/Users/me/SECRET-USER-DIR"},
+              "context_window": {"used_percentage": 42.5, "context_window_size": 200000},
+              "rate_limits": {"five_hour": {"used_percentage": 31, "resets_at": int((NOW + timedelta(hours=2)).timestamp())},
+                              "seven_day": {"used_percentage": 64, "resets_at": int((NOW + timedelta(days=3)).timestamp())}}}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the bridge is a macOS shell script")
+def test_bridge_saves_statusline_and_chains_previous(tmp_path):
+    import subprocess
+
+    env = {"AGENTPLAY_HOME": str(tmp_path), "PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+    out = subprocess.run(["/bin/sh", str(BRIDGE)], input=json.dumps(STATUSLINE), capture_output=True, text=True, env=env)
+    assert out.returncode == 0 and out.stdout == ""  # no previous statusline: prints nothing
+    saved = json.loads((tmp_path / "live" / "claude" / "abc-123.json").read_text())
+    assert saved["rate_limits"]["five_hour"]["used_percentage"] == 31
+    (tmp_path / "live" / "claude-statusline.previous").write_text("cat | grep -o Opus")
+    out = subprocess.run(["/bin/sh", str(BRIDGE)], input=json.dumps(STATUSLINE), capture_output=True, text=True, env=env)
+    assert out.stdout.strip() == "Opus"  # the user's own statusline still runs, on the same input
+
+
+def test_statusline_limits_and_context_reach_snapshot(store, empty_homes):
+    d = store.base / "live" / "claude"
+    d.mkdir(parents=True)
+    f = d / "abc-123.json"
+    f.write_text(json.dumps(STATUSLINE))
+    os.utime(f, (NOW.timestamp() - 60, NOW.timestamp() - 60))
+    _put(store, _doc("local:claude-code:abc-123", [LS, _llm(0)]))
+    snap = _snap(store, empty_homes)
+    five = next(r for r in snap["limits"] if r["provider"] == "claude-code" and r["window"] == "five_hour")
+    assert five["used"]["value"] == {"usedPercent": 31, "leftPercent": 69} and five["used"]["kind"] == "provider_reported"
+    assert any(r["provider"] == "claude-code" and r["window"] == "weekly" for r in snap["limits"])
+    ctx = snap["runs"][0]["context"]
+    assert ctx["value"] == {"tokens": 85000, "limit": 200000, "percent": 42.5}
+    raw = json.dumps(snap)
+    assert "SECRET-USER-DIR" not in raw and "Opus" not in raw
+
+
+def test_statusline_window_past_reset_is_stale(store, empty_homes):
+    d = store.base / "live" / "claude"
+    d.mkdir(parents=True)
+    old = {**STATUSLINE, "rate_limits": {"five_hour": {"used_percentage": 90, "resets_at": int((NOW - timedelta(minutes=5)).timestamp())}}}
+    f = d / "abc-123.json"
+    f.write_text(json.dumps(old))
+    os.utime(f, (NOW.timestamp() - 7200, NOW.timestamp() - 7200))
+    five = next(r for r in _snap(store, empty_homes)["limits"] if r["provider"] == "claude-code")
+    assert five["used"]["freshness"] == "stale" and five["used"]["confidence"] == "low"

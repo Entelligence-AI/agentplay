@@ -2,86 +2,142 @@ import AgentPlayCore
 import AppKit
 import SwiftUI
 
-/// Dev builds only (`--render <dir>`): draws each prototype and state from the synthetic fixtures into PNGs,
-/// light and dark, through a real NSHostingView in an offscreen window so native controls render as they ship.
+/// Dev builds only (`--render <dir>`): draws the menu, onboarding and Settings from the synthetic fixtures into
+/// PNGs, light and dark, through a real NSHostingView on the menu material, so native controls render as they ship.
 @MainActor
 enum Renderer {
     static let fixedNow = Date(timeIntervalSince1970: 1_792_752_360)  // 2026-10-23 10:46 UTC, the fixtures' clock
+
+    static func fixtureModel(_ name: String) -> CompanionModel {
+        let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "render.\(UUID().uuidString)")!),
+                               isDevBuild: true)
+        // The env override, else the copies a dev build carries in Resources/Fixtures.
+        let dir = ProcessInfo.processInfo.environment["AGENTPLAY_COMPANION_FIXTURES"].map { URL(fileURLWithPath: $0) }
+            ?? Bundle.main.resourceURL?.appendingPathComponent("Fixtures")
+        guard let dir, let data = try? Data(contentsOf: dir.appendingPathComponent("\(name).json")),
+              let s = try? SnapshotDecoder.decode(data) else {
+            fatalError("render: fixture \(name) not found or undecodable")
+        }
+        m.loadForRender(s)
+        return m
+    }
 
     static func renderAll(to path: String) {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         let dir = URL(fileURLWithPath: path)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard let fixtures = ProcessInfo.processInfo.environment["AGENTPLAY_COMPANION_FIXTURES"] else {
-            FileHandle.standardError.write(Data("set AGENTPLAY_COMPANION_FIXTURES\n".utf8)); return
-        }
 
-        func model(_ name: String, tab: Tab = .now, direction: Direction = .v1, expanded: Bool = false,
-                   showAll: Bool = false, constellation: Bool = false) -> CompanionModel {
-            let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "render.\(UUID().uuidString)")!),
-                                   isDevBuild: true)
-            if let data = try? Data(contentsOf: URL(fileURLWithPath: fixtures).appendingPathComponent("\(name).json")),
-               let s = try? SnapshotDecoder.decode(data) {
-                m.loadForRender(s)
-            }
-            m.tab = tab
-            m.direction = direction
-            m.showAll = showAll
-            m.showConstellation = constellation
-            if expanded { m.expandedRun = m.orderedRuns.first?.sessionId }
-            return m
+        var shots: [(String, AnyView)] = []
+        func menu(_ file: String, _ m: CompanionModel, highlight: String? = nil) {
+            shots.append((file, AnyView(MenuView(now: fixedNow, highlighted: highlight).environmentObject(m))))
         }
-
-        var shots: [(String, CompanionModel, AnyView)] = []
-        func popover(_ file: String, _ m: CompanionModel) {
-            shots.append((file, m, AnyView(PopoverView(now: fixedNow).environmentObject(m))))
-        }
-
-        popover("v1-now", model("two-active"))
-        popover("v1-now-expanded", model("two-active", expanded: true))
-        popover("v1-limits", model("two-active", tab: .limits))
-        popover("v1-learn", model("two-active", tab: .learn))
-        popover("v1-constellation", model("two-active", constellation: true))
-        popover("state-no-agents", model("no-agents"))
-        popover("state-detected-idle", model("detected-idle"))
-        popover("state-partial", model("partial-unavailable"))
-        popover("state-partial-limits", model("partial-unavailable", tab: .limits))
-        popover("state-stale-quota", model("stale-quota", tab: .limits))
-        popover("state-conflicting-plans", model("conflicting-plans", tab: .limits))
-        popover("state-many-view-all", model("many-sessions", showAll: true))
-        let scanning = model("two-active"); scanning.setPhaseForRender(.scanning(found: 412))
-        popover("state-scanning", scanning)
-        let failed = model("no-agents"); failed.setPhaseForRender(.failed(.coreTooOld("agentplay 0.2.3")))
-        popover("state-error", failed)
-        popover("proto-A-pulse", model("two-active", direction: .pulse))
-        popover("proto-B-breakpoint", model("two-active", direction: .breakpoint))
-        popover("proto-B-breakpoint-quiet", model("detected-idle", direction: .breakpoint))
-        popover("proto-C-lab", model("two-active", direction: .lab))
+        menu("menu", fixtureModel("two-active"))
+        menu("menu-hover-session", fixtureModel("two-active"), highlight: "session:local:claude-code:sample-9e2b")
+        let usage = fixtureModel("two-active"); usage.usageExpanded = true; usage.setExpanded("claude-code", false)
+        menu("menu-usage-expanded", usage)
+        let both = fixtureModel("two-active"); both.setExpanded("codex", true)
+        menu("menu-both-providers", both)
+        menu("state-no-agents", fixtureModel("no-agents"))
+        menu("state-detected-idle", fixtureModel("detected-idle"))
+        let stale = fixtureModel("stale-quota"); stale.setExpanded("codex", true)
+        menu("state-stale-quota", stale)
+        let conflict = fixtureModel("conflicting-plans"); conflict.setExpanded("codex", true)
+        menu("state-conflicting-plans", conflict)
+        menu("state-partial", fixtureModel("partial-unavailable"))
+        menu("state-many", fixtureModel("many-sessions"))
+        let scanning = fixtureModel("two-active"); scanning.setPhaseForRender(.scanning(found: 412))
+        menu("state-scanning", scanning)
+        let failed = fixtureModel("no-agents"); failed.setPhaseForRender(.failed(.coreTooOld("agentplay 0.2.3")))
+        menu("state-error", failed)
 
         for step in 1...5 {
-            let m = model("two-active")
-            if step == 3 { m.expandedRun = m.orderedRuns.first?.sessionId }
-            shots.append(("onboarding-\(step)", m, AnyView(OnboardingView(step: step).environmentObject(m))))
+            shots.append(("onboarding-\(step)", AnyView(OnboardingView(step: step).environmentObject(fixtureModel("two-active")))))
         }
-        for pane in [SettingsView.Pane.notifications, .privacy, .account, .sources] {
-            let m = model("two-active")
-            shots.append(("settings-\(pane.rawValue.lowercased())", m, AnyView(SettingsView(pane: pane).environmentObject(m))))
+        for pane in [SettingsView.Pane.claude, .notifications, .privacy, .sources] {
+            let m = fixtureModel("two-active")
+            shots.append(("settings-\(pane.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))",
+                          AnyView(SettingsView(initialPane: pane).environmentObject(m))))
         }
 
-        for (name, _, view) in shots {
+        for (name, view) in shots {
+            let isMenu = name.hasPrefix("menu") || name.hasPrefix("state")
             for dark in [false, true] {
-                write(view, to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"), dark: dark)
+                write(view, to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"), dark: dark, material: isMenu)
             }
         }
-        for (name, pulse, alert) in [("mark", false, false), ("mark-pulse", true, false), ("mark-alert", false, true)] {
-            let img = MenuBarMark.image(pulse: pulse, size: 18, alert: alert)
-            writeImage(img, to: dir.appendingPathComponent("\(name).png"), scale: 4)
+        for (name, img) in [
+            ("statusitem-bars", StatusIcon.image(session: 0.34, weekly: 0.58, stale: false, waiting: false, pulse: false)),
+            ("statusitem-waiting", StatusIcon.image(session: 0.34, weekly: 0.58, stale: false, waiting: true, pulse: false)),
+            ("statusitem-stale", StatusIcon.image(session: 0.34, weekly: 0.58, stale: true, waiting: false, pulse: false)),
+            ("statusitem-mark", StatusIcon.image(session: nil, weekly: nil, stale: false, waiting: false, pulse: false)),
+        ] {
+            for dark in [false, true] {
+                writeIcon(img, to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"), dark: dark)
+            }
         }
-        print("rendered \(shots.count * 2) screens to \(dir.path)")
+        print("rendered \(shots.count * 2 + 8) images to \(dir.path)")
     }
 
-    /// The app icon: the mark in ink on a pale-lime squircle, as an .iconset for iconutil.
+    static func write(_ view: AnyView, to url: URL, dark: Bool, material: Bool) {
+        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        let hosting = NSHostingView(rootView: view)
+        hosting.appearance = appearance
+        let size = hosting.fittingSize
+        let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: size.width, height: size.height),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = appearance
+        let container: NSView
+        if material {
+            // What the MenuBarExtra window draws behind its content: the menu material.
+            let fx = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
+            fx.material = .menu
+            fx.blendingMode = .withinWindow
+            fx.state = .active
+            hosting.frame = fx.bounds
+            fx.addSubview(hosting)
+            container = fx
+        } else {
+            hosting.frame = NSRect(origin: .zero, size: size)
+            container = hosting
+        }
+        window.contentView = container
+        window.setContentSize(size)
+        window.orderFrontRegardless()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.35))
+        container.layoutSubtreeIfNeeded()
+        guard let rep = container.bitmapImageRepForCachingDisplay(in: container.bounds) else { return }
+        container.cacheDisplay(in: container.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: url)
+        window.orderOut(nil)
+    }
+
+    /// The icon on a menu-bar coloured strip, tinted the way the system tints template images.
+    static func writeIcon(_ img: NSImage, to url: URL, dark: Bool) {
+        let scale: CGFloat = 4
+        let size = NSSize(width: 44 * scale, height: 24 * scale)
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        (dark ? NSColor(white: 0.16, alpha: 1) : NSColor(white: 0.93, alpha: 1)).setFill()
+        NSRect(origin: .zero, size: size).fill()
+        let ink = dark ? NSColor.white : NSColor.black
+        let r = NSRect(x: (size.width - img.size.width * scale) / 2, y: (size.height - img.size.height * scale) / 2,
+                       width: img.size.width * scale, height: img.size.height * scale)
+        let tinted = NSImage(size: img.size, flipped: false) { rect in
+            img.draw(in: rect)
+            ink.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        tinted.draw(in: r)
+        NSGraphicsContext.restoreGraphicsState()
+        try? rep.representation(using: .png, properties: [:])?.write(to: url)
+    }
+
+    /// The app icon: the mark on a pale-lime squircle, as an .iconset for iconutil.
     static func renderIcon(to path: String) {
         _ = NSApplication.shared
         let dir = URL(fileURLWithPath: path)
@@ -107,111 +163,10 @@ enum Renderer {
             NSColor(srgbRed: 0xA2 / 255, green: 0xE4 / 255, blue: 0x35 / 255, alpha: 1).setFill()
             let center = tile.width * 0.2
             NSBezierPath(ovalIn: NSRect(x: c.x - center / 2, y: c.y - center / 2, width: center, height: center)).fill()
-            NSColor(srgbRed: 0x1A / 255, green: 0x1A / 255, blue: 0x1A / 255, alpha: 1).setStroke()
-            let ring = NSBezierPath(ovalIn: NSRect(x: c.x - center / 2, y: c.y - center / 2, width: center, height: center))
-            ring.lineWidth = max(1, tile.width * 0.018); ring.stroke()
             NSGraphicsContext.restoreGraphicsState()
             let name = scale == 1 ? "icon_\(pt)x\(pt).png" : "icon_\(pt)x\(pt)@2x.png"
             try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent(name))
         }
-    }
-
-    static func write(_ view: AnyView, to url: URL, dark: Bool) {
-        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        let hosting = NSHostingView(rootView: view.environment(\.colorScheme, dark ? .dark : .light))
-        hosting.appearance = appearance
-        let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 400, height: 400),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.appearance = appearance
-        window.contentView = hosting
-        let size = hosting.fittingSize
-        window.setContentSize(size)
-        hosting.frame = NSRect(origin: .zero, size: size)
-        window.orderFrontRegardless()
-        // Let onAppear animations (map to moment) settle before the capture.
-        RunLoop.current.run(until: Date().addingTimeInterval(0.45))
-        hosting.layoutSubtreeIfNeeded()
-        guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { return }
-        hosting.cacheDisplay(in: hosting.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: url)
-        window.orderOut(nil)
-    }
-
-    static func writeImage(_ img: NSImage, to url: URL, scale: CGFloat) {
-        let size = NSSize(width: img.size.width * scale, height: img.size.height * scale)
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
-                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        NSColor.white.setFill(); NSRect(origin: .zero, size: size).fill()
-        img.isTemplate = false
-        img.draw(in: NSRect(origin: .zero, size: size))
-        NSGraphicsContext.restoreGraphicsState()
-        try? rep.representation(using: .png, properties: [:])?.write(to: url)
-    }
-}
-
-extension Renderer {
-    /// `--render-clips <dir>`: keyframes for the three prototype clips and the proof clip, one PNG per beat,
-    /// rendered from the real views over the synthetic fixtures. scripts/companion-clips.sh turns them into MP4s.
-    static func renderClips(to path: String) {
-        _ = NSApplication.shared
-        NSApp.setActivationPolicy(.prohibited)
-        guard let fixtures = ProcessInfo.processInfo.environment["AGENTPLAY_COMPANION_FIXTURES"] else { return }
-        let dir = URL(fileURLWithPath: path)
-        func model(_ name: String) -> CompanionModel {
-            let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "clip.\(UUID().uuidString)")!),
-                                   isDevBuild: true)
-            if let d = try? Data(contentsOf: URL(fileURLWithPath: fixtures).appendingPathComponent("\(name).json")),
-               let s = try? SnapshotDecoder.decode(d) { m.loadForRender(s) }
-            return m
-        }
-        typealias Beat = (CompanionModel) -> Void
-        let clips: [(String, String, Direction, [Beat])] = [
-            ("A-pulse", "two-active", .pulse, [
-                { _ in },
-                { $0.expandedRun = $0.orderedRuns.first?.sessionId },
-                { $0.renderFocus = 0 }, { $0.renderFocus = 1 }, { $0.renderFocus = 2 }, { $0.renderFocus = 3 },
-                { $0.renderFocus = 4 },
-                { $0.renderFocus = nil },
-            ]),
-            ("B-breakpoint", "detected-idle", .breakpoint, [
-                { _ in },
-                { m in m.loadForRender(try! SnapshotDecoder.decode(Data(contentsOf: URL(fileURLWithPath: fixtures)
-                    .appendingPathComponent("two-active.json")))) },
-                { m in m.mutePattern(m.worthALook?.patternKey ?? "") },
-            ]),
-            ("C-lab", "two-active", .lab, [
-                { _ in },
-                { m in m.dismissLearn(m.learnCard?.patternKey ?? "") },
-            ]),
-            ("proof", "two-active", .v1, [
-                { _ in },
-                { m in m.showAll = false },
-            ]),
-            ("v1-tour", "two-active", .v1, [
-                { _ in },
-                { $0.expandedRun = $0.orderedRuns.first?.sessionId },
-                { $0.expandedRun = nil; $0.tab = .limits },
-                { $0.tab = .learn },
-                { $0.tab = .now; $0.showConstellation = true },
-            ]),
-        ]
-        for (name, fixture, direction, beats) in clips {
-            let m = model(fixture)
-            m.direction = direction
-            let sub = dir.appendingPathComponent(name)
-            try? FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
-            for (i, beat) in beats.enumerated() {
-                beat(m)
-                for dark in [false, true] {
-                    write(AnyView(PopoverView(now: fixedNow).environmentObject(m)),
-                          to: sub.appendingPathComponent(String(format: "%02d-%@.png", i, dark ? "dark" : "light")), dark: dark)
-                }
-            }
-        }
-        print("rendered clip keyframes to \(dir.path)")
     }
 }
 

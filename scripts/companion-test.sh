@@ -16,7 +16,13 @@ echo "== Swift: AgentPlayCore"
 if [ -z "${SDKROOT:-}" ] && ! xcode-select -p | grep -q Xcode.app && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
   export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 fi
-(cd "$ROOT/apps/macos/AgentPlayCompanion" && swift test --scratch-path "$ROOT/.build/companion-test")
+# One reused build directory: a new one per run fills the disk. Incremental rebuilds can lose the Swift
+# Testing macro plugin path, so pass it explicitly from the active toolchain.
+TEST_BUILD="${TMPDIR:-/tmp}/agentplay-companion-test-build"
+PLUGINS="$(dirname "$(xcrun --find swift)")/../lib/swift/host/plugins/testing"
+set --
+[ -d "$PLUGINS" ] && set -- -Xswiftc -plugin-path -Xswiftc "$PLUGINS"
+(cd "$ROOT/apps/macos/AgentPlayCompanion" && swift test --scratch-path "$TEST_BUILD" "$@")
 echo "== Repo guards"
 python3 "$ROOT/scripts/check_clean.py"
 # Only a dev build has --selftest (it carries every fixture); a release build would just launch.
