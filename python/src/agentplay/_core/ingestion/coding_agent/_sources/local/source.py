@@ -2352,15 +2352,25 @@ class LocalSource:
             if agent != AgentType.WINDSURF:
                 self._record_discovery("windsurf", "different_agent")
                 return None
-            if not _windsurf_has_conversation(head) and len(head) >= session_file.stat().st_size:
-                logger.debug("windsurf: %s has no conversation steps; session skipped", session_file)
-                self._record_discovery("windsurf", "no_conversation")
-                return None
+            if not _windsurf_has_conversation(head):
+                try:
+                    current_size = session_file.stat().st_size
+                except OSError:
+                    self._record_discovery("windsurf", "empty_or_unreadable")
+                    return None
+                if len(head) >= current_size:
+                    logger.debug("windsurf: %s has no conversation steps; session skipped", session_file)
+                    self._record_discovery("windsurf", "no_conversation")
+                    return None
 
         if not raw_session_id:
             raw_session_id = session_file.stem
         session_id = f"local:{agent}:{raw_session_id}"
-        mtime = datetime.fromtimestamp(session_file.stat().st_mtime, tz=UTC)
+        try:
+            mtime = datetime.fromtimestamp(session_file.stat().st_mtime, tz=UTC)
+        except OSError:
+            self._record_discovery("windsurf", "empty_or_unreadable")
+            return None
 
         if not cwd:
             cwd = _cwd_from_windsurf_head(head)

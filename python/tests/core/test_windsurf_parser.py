@@ -841,4 +841,57 @@ def test_windsurf_role_based_jsonl_detection_and_indexing(tmp_path):
     assert "I will inspect sort.py" in turn.attributes["output.value"]
 
 
+def test_windsurf_file_disappears_during_stat_recheck(tmp_path, monkeypatch):
+    """Verify that if a metadata-only file disappears or raises OSError during size recheck, it is safely skipped."""
+    from pathlib import Path
+    from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+    ws_dir = tmp_path / "windsurf_home"
+    traj_dir = ws_dir / "trajectories"
+    traj_dir.mkdir(parents=True)
+
+    session_file = traj_dir / "disappearing_session.jsonl"
+    session_file.write_text(
+        json.dumps({
+            "type": "windsurf_session",
+            "agentId": "disappearing-1",
+            "createdAt": "2026-03-12T14:00:00Z",
+        })
+        + "\n"
+    )
+
+    import agentplay._core.ingestion.coding_agent._sources.local.source as source_module
+
+    read_head_done = False
+    orig_read_head = source_module._read_head
+
+    def mock_read_head(*args, **kwargs):
+        nonlocal read_head_done
+        res = orig_read_head(*args, **kwargs)
+        read_head_done = True
+        return res
+
+    monkeypatch.setattr(source_module, "_read_head", mock_read_head)
+
+    orig_stat = Path.stat
+
+    def mock_stat(self, *args, **kwargs):
+        if read_head_done and "disappearing_session" in str(self):
+            raise FileNotFoundError("File disappeared")
+        return orig_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", mock_stat)
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        windsurf_homes=[ws_dir],
+    )
+    # Should not raise FileNotFoundError or OSError
+    sessions = source.discover_sessions()
+    assert not any("disappearing-1" in s.session_id for s in sessions)
+    assert source.discovery_stats().get("windsurf", {}).get("skipped", {}).get("empty_or_unreadable") == 1
+
+
+
 
