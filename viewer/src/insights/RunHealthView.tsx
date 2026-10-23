@@ -22,8 +22,9 @@ type Range = { from?: string; to?: string };
 
 /** Navigate to one session (and event) in the explorer. */
 function useOpenSession() {
-  const [, setNav] = useQueryStates({ tab: parseAsString, session: parseAsString, at: parseAsString });
-  return (sessionId: string) => void setNav({ tab: null, session: sessionId, at: null });
+  const [, setNav] = useQueryStates({ tab: parseAsString, session: parseAsString, at: parseAsString, sq: parseAsString });
+  // sq is cleared: a leftover search could filter the evidence session out of the list.
+  return (sessionId: string) => void setNav({ tab: null, session: sessionId, at: null, sq: null });
 }
 
 export function RunHealthView({ range }: { range: Range }) {

@@ -461,6 +461,16 @@ def test_a_replacement_check_must_cover_the_same_target():
     assert health._scope("pnpm run type-check") == health._scope("pnpm tsc")
 
 
+def test_purpose_matches_whole_command_words_not_substrings():
+    assert health.purpose("pnpm test") == health.purpose("pnpm run tests") == "test"
+    assert health.purpose("pnpm test:check") == "test"
+    assert health.purpose("pnpm run type-check") == "typecheck"
+    assert health.purpose("./node_modules/.bin/vitest") == "test"
+    assert health.purpose("cargo clippy") == "lint"
+    for verb in ("npm run latest", "pnpm rebuild", "git commit", "make specific", "node splint.js", "pnpm contest"):
+        assert health.purpose(verb) is None, verb
+
+
 def test_one_multi_file_reread_charges_one_request():
     evs = [
         {"seq": 1, "kind": "read", "agent": "main", "targets": [{"file": 1, "touch": "read"}, {"file": 2, "touch": "read"}]},

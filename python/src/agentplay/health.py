@@ -56,18 +56,23 @@ _PURPOSES = (
 )
 
 
+def _tokens(verb: str) -> list[str]:
+    """The lowercase words of a command, split on anything but letters and digits."""
+    low = verb.lower()
+    # A compound job word (`type-check`) is one word: joined before splitting, so its
+    # pieces (`check`) never become generic and strip a real target.
+    for w in (w for _, ws in _PURPOSES for w in ws if not w.isalnum()):
+        low = low.replace(w, re.sub(r"[^a-z0-9]+", "", w))
+    return [w for w in re.split(r"[^a-z0-9]+", low) if w]
+
+
 def _scope(verb: str) -> frozenset[str]:
     """What a check is narrowed to beyond its job: ``pnpm test:unit`` -> {"unit"}, ``pnpm vitest`` -> {}.
 
     Two checks only stand in for each other when their scopes match, so a
     failing unit suite is never "replaced" by a passing e2e one.
     """
-    low = verb.lower()
-    # A compound job word (`type-check`) is one word: joined before splitting, so its
-    # pieces (`check`) never become generic and strip a real target.
-    for w in (w for _, ws in _PURPOSES for w in ws if not w.isalnum()):
-        low = low.replace(w, re.sub(r"[^a-z0-9]+", "", w))
-    words = [w for w in re.split(r"[^a-z0-9]+", low) if w][1:]
+    words = _tokens(verb)[1:]
     # Whole job words only (and their plurals): `unittest` or `e2etests` keep their target.
     job_words = {re.sub(r"[^a-z0-9]+", "", w) for _, ws in _PURPOSES for w in ws}
     generic = job_words | {"run", "exec", "x"}
@@ -75,9 +80,11 @@ def _scope(verb: str) -> frozenset[str]:
 
 
 def purpose(verb: str) -> str | None:
-    low = verb.lower()
-    for name, words in _PURPOSES:
-        if any(w in low for w in words):
+    # Whole words (and their plurals), so `latest` is not a test and `rebuild` is not a build.
+    words = _tokens(verb)
+    tokens = {*words, *(t.removesuffix("s") for t in words)}
+    for name, names in _PURPOSES:
+        if any(re.sub(r"[^a-z0-9]+", "", w) in tokens for w in names):
             return name
     return None
 

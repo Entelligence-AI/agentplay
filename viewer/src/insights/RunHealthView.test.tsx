@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
+import { NuqsTestingAdapter, type OnUrlUpdateFunction } from 'nuqs/adapters/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HealthReport } from '@/core/health';
 import { SessionMapSourceProvider } from '@/data/SourceContext';
@@ -16,7 +16,7 @@ const fix = (id: string) => ({
   component: 'efficiency',
   pattern: 'pattern',
   effect: 'effect',
-  sessions: [],
+  sessions: ['s1'],
   points: 1,
   repo: 'r',
   actions: [{ label: 'Add rule' }],
@@ -37,13 +37,17 @@ afterEach(() => {
   root = host = null;
 });
 
-function mount(source: Partial<SessionMapSource>, ids: string[]) {
+function mount(
+  source: Partial<SessionMapSource>,
+  ids: string[],
+  nuqs: { searchParams?: string; onUrlUpdate?: OnUrlUpdateFunction } = {}
+) {
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   act(() =>
     root!.render(
-      <NuqsTestingAdapter>
+      <NuqsTestingAdapter {...nuqs}>
         <QueryClientProvider client={client}>
           <SessionMapSourceProvider source={source as SessionMapSource}>
             <PointsOnTheTable h={report(ids)} range={{}} />
@@ -57,6 +61,20 @@ function mount(source: Partial<SessionMapSource>, ids: string[]) {
 const button = (el: HTMLElement, text: string) =>
   [...el.querySelectorAll('button')].find((b) => b.textContent?.includes(text)) as HTMLButtonElement;
 const flush = () => act(async () => {});
+
+describe('PointsOnTheTable evidence links', () => {
+  it('clears the explorer search so the evidence session is not filtered out', async () => {
+    const onUrlUpdate = vi.fn();
+    const el = mount({}, ['a'], { searchParams: '?sq=unrelated&win=7d&tab=insights', onUrlUpdate });
+    await act(async () => button(el, '1 session').click());
+    // nuqs flushes the URL update on a later tick than the click.
+    await vi.waitFor(() => expect(onUrlUpdate).toHaveBeenCalled());
+    const url = onUrlUpdate.mock.calls.at(-1)![0].searchParams;
+    expect(url.get('session')).toBe('s1');
+    expect(url.has('sq')).toBe(false);
+    expect(url.get('win')).toBe('7d');
+  });
+});
 
 describe('PointsOnTheTable writes', () => {
   it('shows a failed per-card Apply instead of a dead button', async () => {

@@ -165,6 +165,42 @@ def test_a_symlink_out_of_the_repo_is_still_refused(repo, tmp_path):
     assert exc.value.code == "outside_repo" and outside.read_text() == "x"
 
 
+def test_a_link_swapped_in_after_the_check_cannot_redirect_the_write(repo, tmp_path, monkeypatch):
+    base, root = repo
+    outside = tmp_path / "outside.md"
+    outside.write_text("x")
+
+    def swap(*args):  # between _target's check and the write, the file becomes a link out
+        (root / "CLAUDE.md").symlink_to(outside)
+        return "changed\n"
+
+    monkeypatch.setattr(fixes, "_apply_text", swap)
+    with pytest.raises(fixes.FixError) as exc:
+        fixes.apply(base, FIX, MD)
+    assert exc.value.code == "outside_repo" and outside.read_text() == "x"
+    assert fixes.journal(base) == []
+
+
+def test_undo_never_writes_through_a_link_swapped_in_after_the_check(repo, tmp_path, monkeypatch):
+    base, root = repo
+    entry = fixes.apply(base, FIX, MD)
+    outside = tmp_path / "outside.md"
+    outside.write_text("x")
+    real = fixes._undo_text
+
+    def swap(*args):
+        (root / "CLAUDE.md").unlink()
+        (root / "CLAUDE.md").symlink_to(outside)
+        return "changed\n"
+
+    monkeypatch.setattr(fixes, "_undo_text", swap)
+    with pytest.raises(fixes.FixError) as exc:
+        fixes.undo(base, entry["id"])
+    assert exc.value.code == "outside_repo" and outside.read_text() == "x"
+    monkeypatch.setattr(fixes, "_undo_text", real)
+    assert fixes.active(base)
+
+
 # ------------------------------------------------------------------ 4. unexpected JSON shapes
 
 

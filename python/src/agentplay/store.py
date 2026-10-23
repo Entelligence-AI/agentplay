@@ -30,16 +30,23 @@ def root() -> Path:
     return Path(os.environ.get("AGENTPLAY_HOME") or Path.home() / ".agentplay")
 
 
-def _atomic_write(path: Path, data: bytes, *, private: bool = True) -> None:
+class OutsideRoot(OSError):
+    """A write resolved to somewhere outside the directory it was confined to."""
+
+def _atomic_write(path: Path, data: bytes, *, private: bool = True, within: Path | None = None) -> None:
     """Replace ``path`` with ``data`` atomically, keeping an existing file's mode.
 
     A new file is 0600 when ``private`` (agentplay's own store), else the umask
-    default like any editor would create (files in a person's repo).
+    default like any editor would create (files in a person's repo). ``within`` refuses a
+    write whose final, symlink-resolved path left that directory.
     """
     # A person's file may be a dotfiles-managed symlink: write its target, never replace the link.
     # agentplay's own store never follows one, so a link planted there cannot redirect a write.
     if not private:
         path = Path(os.path.realpath(path))
+        # Checked on the same resolved path the write uses, not on an earlier resolution of it.
+        if within is not None and not path.is_relative_to(within):
+            raise OutsideRoot(f"{path} is outside {within}")
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         # lstat for the store: a link planted there must not lend its target's mode

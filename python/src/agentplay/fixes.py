@@ -30,7 +30,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from .store import _atomic_write
+from .store import OutsideRoot, _atomic_write
 
 ALLOWED_FILES = ("CLAUDE.md", "CLAUDE.local.md", ".claude/settings.json", ".claude/settings.local.json")
 START = "<!-- agentplay:start -->"
@@ -198,8 +198,18 @@ def current(base: Path, repo: str, rel: str) -> str | None:
     return _read(_target(base, repo, rel))
 
 
-def _write(path: Path, text: str) -> None:
-    _atomic_write(path, text.encode("utf-8"), private=False)
+def _write(path: Path, text: str, root: Path) -> None:
+    # Confined at the write itself: a link swapped in after _target resolved must not lead outside the checkout.
+    try:
+        _atomic_write(path, text.encode("utf-8"), private=False, within=root)
+    except OutsideRoot:
+        raise FixError("outside_repo", f"{path.name} now points outside {root}. Nothing was written.") from None
+
+
+def _unlink(path: Path, root: Path) -> None:
+    if not Path(os.path.realpath(path)).is_relative_to(root):
+        raise FixError("outside_repo", f"{path.name} now points outside {root}. Nothing was removed.")
+    path.unlink(missing_ok=True)
 
 
 def _newline(text: str) -> str:
@@ -457,6 +467,7 @@ def _apply_locked(
            and not e.get("undoneAt") for e in entries):
         raise FixError("already_applied", f"This fix is already in {rel}. Undo it first to write it again.")
     target = _target(base, repo, rel)
+    root = Path(grants(base)[repo]).resolve()
     before = _read(target)
     if expect_hash is not None and expect_hash != file_hash(before):
         raise FixError("changed", f"{rel} changed since the preview. Look again before applying.")
@@ -464,8 +475,7 @@ def _apply_locked(
     if after == before or (action.get("kind") != "claude_md" and _settings(before, rel) == _settings(after, rel)):
         # Already there (the person added it themselves): nothing to write, so nothing to undo later.
         raise FixError("already_present", f"{rel} already has this.")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    _write(target, after)
+    _write(target, after, root)
     entry = {
         "id": uuid.uuid4().hex[:10],
         "fixId": fix["id"],
@@ -491,12 +501,12 @@ def _apply_locked(
     except BaseException:
         # Never leave a repo change that cannot be undone.
         if before is None:
-            target.unlink(missing_ok=True)
+            _unlink(target, root)
         else:
-            _write(target, before)
+            _write(target, before, root)
         raise
     if before is None and rel in ("CLAUDE.local.md", ".claude/settings.local.json"):
-        _ignore_locally(Path(grants(base)[repo]).resolve(), rel)
+        _ignore_locally(root, rel)
     return entry
 
 
@@ -512,13 +522,14 @@ def _undo_locked(base: Path, entry_id: str, reason: str) -> dict[str, Any]:
         raise FixError("not_found", "Nothing to undo with that id.")
     # The checkout it was written to, even if the grant has since moved to another one.
     target = _target(base, entry["repo"], entry["file"], entry.get("root"))
+    root = Path(entry.get("root") or grants(base)[entry["repo"]]).resolve()
     text = _read(target)
     if text is not None:
         after = _undo_text(entry, text)
         if after is None:
-            target.unlink()
+            _unlink(target, root)
         else:
-            _write(target, after)
+            _write(target, after, root)
     entry["undoneAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     entry["undoReason"] = reason
     _save_journal(base, entries)
