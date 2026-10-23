@@ -586,3 +586,145 @@ def test_local_source_windsurf_single_document_export(tmp_path):
     assert spans[0].name == "Session (windsurf)"
     assert spans[0].attributes["project.name"] == "project_alpha"
     assert len(spans) == 2  # Root and Turn 1
+
+
+def test_windsurf_top_level_tool_with_cascade_id():
+    """Verify that a JSONL record with cascade_id and top-level toolName is not classified as session metadata."""
+    lines = [
+        json.dumps({
+            "type": "cascade_session",
+            "cascade_id": "c-top-tool-1",
+            "cwd": "/app",
+        }),
+        json.dumps({
+            "user_input": "Run test command",
+        }),
+        # Top-level tool record with cascade_id but no step_id or tool_calls
+        json.dumps({
+            "cascade_id": "c-top-tool-1",
+            "toolName": "run_command",
+            "params": {"command": "pytest"},
+            "result": "1 passed",
+        }),
+    ]
+    raw_data = "\n".join(lines).encode()
+    trace, spans = parse_windsurf(raw_data, trace_id="local:windsurf:c-top-tool-1")
+
+    tool_spans = [s for s in spans if s.name == "Bash"]
+    assert len(tool_spans) == 1
+    assert tool_spans[0].attributes["tool.name"] == "Bash"
+    assert "pytest" in tool_spans[0].attributes["input.value"]
+    assert "1 passed" in tool_spans[0].attributes["output.value"]
+
+
+def test_windsurf_large_json_export_over_5mb(tmp_path):
+    """Verify that a Windsurf JSON export > 5 MB is read completely and indexed without data loss."""
+    from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+    ws_dir = tmp_path / "windsurf_home"
+    cascade_dir = ws_dir / "cascade"
+    cascade_dir.mkdir(parents=True)
+
+    # Construct an export > 5.5 MB
+    big_chunk = "x" * (6 * 1024 * 1024)
+    doc = {
+        "cascadeId": "cascade-big-export",
+        "workspacePath": str(tmp_path / "big_project"),
+        "steps": [
+            {
+                "stepId": 1,
+                "stepType": 19,
+                "timestamp": "2026-03-12T14:00:00Z",
+                "userInput": "Start big job",
+            },
+            {
+                "stepId": 2,
+                "stepType": 20,
+                "timestamp": "2026-03-12T14:00:05Z",
+                "visible": big_chunk,
+            },
+        ],
+    }
+    export_file = cascade_dir / "big_session.json"
+    export_file.write_text(json.dumps(doc))
+    assert export_file.stat().st_size > 5_000_000
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        windsurf_homes=[ws_dir],
+    )
+    sessions = source.discover_sessions()
+    ws_sessions = [s for s in sessions if "cascade-big-export" in s.session_id]
+    assert len(ws_sessions) == 1
+    assert ws_sessions[0].session_id == "local:windsurf:cascade-big-export"
+
+    spans = source.get_spans_by_session(ws_sessions[0].session_id)
+    assert len(spans) >= 2
+
+
+def test_windsurf_deeply_nested_json_recursion_safe(tmp_path):
+    """Verify that a deeply nested JSON document does not crash indexing with RecursionError."""
+    from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+    ws_dir = tmp_path / "windsurf_home"
+    cascade_dir = ws_dir / "cascade"
+    cascade_dir.mkdir(parents=True)
+
+    # Build deeply nested brackets
+    depth = 3000
+    nested_str = ("[" * depth) + "1" + ("]" * depth)
+    bad_file = cascade_dir / "bad_nested.json"
+    bad_file.write_text(nested_str)
+
+    # Also test detect_agent directly
+    assert detect_agent(nested_str.encode()) is None
+
+    # Discover sessions should catch the recursion error and continue
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        windsurf_homes=[ws_dir],
+    )
+    sessions = source.discover_sessions()
+    # It safely didn't crash and skipped the corrupt file
+    assert not any("bad_nested" in s.session_id for s in sessions)
+    assert source.discovery_stats().get("windsurf", {}).get("skipped", {}).get("detection_failed") == 1
+
+
+def test_windsurf_generic_steps_list_not_detected():
+    """Verify that a non-Windsurf JSON file with generic steps is not detected as Windsurf."""
+    # Empty steps without Cascade marker
+    assert detect_agent(b'{"steps": []}') is None
+    assert detect_agent(b'{\n  "steps": []\n}') is None
+
+    # Generic steps without Cascade step markers
+    generic_workflow = b'{\n  "steps": [\n    {"name": "Checkout", "uses": "actions/checkout@v3"}\n  ]\n}'
+    assert detect_agent(generic_workflow) is None
+
+
+def test_windsurf_empty_steps_export_skipped(tmp_path):
+    """Verify that a Windsurf JSON export with steps: [] is skipped with no_conversation."""
+    from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+    ws_dir = tmp_path / "windsurf_home"
+    cascade_dir = ws_dir / "cascade"
+    cascade_dir.mkdir(parents=True)
+
+    doc = {
+        "cascadeId": "cascade-empty-steps-1",
+        "workspacePath": str(tmp_path / "empty_project"),
+        "steps": [],
+    }
+    empty_file = cascade_dir / "empty_session.json"
+    empty_file.write_text(json.dumps(doc))
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        windsurf_homes=[ws_dir],
+    )
+    sessions = source.discover_sessions()
+    assert not any("cascade-empty-steps-1" in s.session_id for s in sessions)
+    assert source.discovery_stats().get("windsurf", {}).get("skipped", {}).get("no_conversation") == 1
+

@@ -44,7 +44,7 @@ def detect_agent(data: bytes) -> AgentType | None:
             continue
         try:
             obj = json.loads(raw_line)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
             # UnicodeDecodeError: a fixed-size byte head can split a
             # multi-byte UTF-8 char at the boundary (unicode
             # in transcripts). Skip the unparseable line, don't crash
@@ -199,10 +199,20 @@ def detect_agent(data: bytes) -> AgentType | None:
                     or "userInput" in obj
                 ):
                     return AgentType.WINDSURF
-                if "steps" in obj and isinstance(obj["steps"], list):
-                    return AgentType.WINDSURF
-                if "trajectorySteps" in obj and isinstance(obj["trajectorySteps"], list):
-                    return AgentType.WINDSURF
+                steps = obj.get("steps") or obj.get("trajectorySteps")
+                if isinstance(steps, list) and steps:
+                    for s in steps:
+                        if isinstance(s, dict) and (
+                            "step_id" in s
+                            or "stepId" in s
+                            or "step_type" in s
+                            or "stepType" in s
+                            or "tool_calls" in s
+                            or "toolCalls" in s
+                            or "cortex_step" in s
+                            or "cortexStep" in s
+                        ):
+                            return AgentType.WINDSURF
     except (json.JSONDecodeError, RecursionError):
         pass
 

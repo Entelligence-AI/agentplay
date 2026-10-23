@@ -135,13 +135,26 @@ def _extract_steps(data: bytes) -> tuple[dict[str, Any] | None, list[dict[str, A
             if header is None:
                 header = rec
             continue
-        # Also treat session-level metadata object as header
+        # Also treat session-level metadata object as header (only if not a tool, message, or step)
         if (
             ("cascade_id" in rec or "cascadeId" in rec)
             and "step_id" not in rec
             and "stepId" not in rec
+            and "step_type" not in rec
+            and "stepType" not in rec
             and "tool_calls" not in rec
             and "toolCalls" not in rec
+            and "tool_name" not in rec
+            and "toolName" not in rec
+            and "tool" not in rec
+            and "tool_result" not in rec
+            and "toolResult" not in rec
+            and "user_input" not in rec
+            and "userInput" not in rec
+            and "user_message" not in rec
+            and "userMessage" not in rec
+            and "content" not in rec
+            and "visible" not in rec
         ):
             if header is None:
                 header = rec

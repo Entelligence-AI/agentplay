@@ -965,22 +965,24 @@ def _windsurf_json_doc_info(head: bytes) -> tuple[str | None, str | None, bool]:
         or "cascade_id" in obj
         or "cascadeId" in obj
         or "cascadeSession" in obj
-        or "trajectorySteps" in obj
-        or ("steps" in obj and ("agentId" in obj or "agent_id" in obj or "model" in obj or "cascade_id" in obj or "cascadeId" in obj))
+        or "windsurfSession" in obj
     )
     if not is_windsurf:
         steps = obj.get("steps") or obj.get("trajectorySteps")
-        if isinstance(steps, list) and steps and isinstance(steps[0], dict):
-            first = steps[0]
-            if (
-                "step_id" in first
-                or "stepId" in first
-                or "step_type" in first
-                or "stepType" in first
-                or "tool_calls" in first
-                or "toolCalls" in first
-            ):
-                is_windsurf = True
+        if isinstance(steps, list) and steps:
+            for s in steps:
+                if isinstance(s, dict) and (
+                    "step_id" in s
+                    or "stepId" in s
+                    or "step_type" in s
+                    or "stepType" in s
+                    or "tool_calls" in s
+                    or "toolCalls" in s
+                    or "cortex_step" in s
+                    or "cortexStep" in s
+                ):
+                    is_windsurf = True
+                    break
 
     if not is_windsurf:
         return None, None, False
@@ -994,7 +996,7 @@ def _windsurf_json_doc_info(head: bytes) -> tuple[str | None, str | None, bool]:
         or obj.get("session_id")
         or obj.get("id")
     )
-    raw_session_id = str(raw_session_id) if raw_session_id else None
+    raw_session_id = str(raw_session_id) if raw_session_id else ""
 
     cwd = obj.get("cwd") or obj.get("workspace_path") or obj.get("workspacePath")
     cwd = str(cwd).rstrip("/\\") if isinstance(cwd, str) and cwd else None
@@ -2236,8 +2238,13 @@ class LocalSource:
             return None
         try:
             if session_file.suffix == ".json":
-                # Single-document JSON export: read full document without stopping after 20 lines
-                head = _read_head(session_file, stop_when=lambda _buf: False)
+                # Single-document JSON export: read full document within the supported size limit
+                # without stopping after 20 lines or the 5 MB default cap.
+                head = _read_head(
+                    session_file,
+                    max_bytes=MAX_SESSION_BYTES,
+                    stop_when=lambda _buf: False,
+                )
             else:
                 head = _read_head(session_file, stop_when=_agent_detected)
         except OSError:
@@ -2249,13 +2256,19 @@ class LocalSource:
 
         if session_file.suffix == ".json":
             raw_session_id, cwd, has_steps = _windsurf_json_doc_info(head)
-            agent = detect_agent(head)
-            if raw_session_id is None and agent != AgentType.WINDSURF:
+            if raw_session_id is None:
                 self._record_discovery("windsurf", "detection_failed")
+                return None
+            if not has_steps:
+                self._record_discovery("windsurf", "no_conversation")
                 return None
             agent = AgentType.WINDSURF
         else:
-            agent = detect_agent(head)
+            try:
+                agent = detect_agent(head)
+            except RecursionError:
+                self._record_discovery("windsurf", "empty_or_unreadable")
+                return None
             if agent is None:
                 logger.warning(
                     "agent detection failed for %s (%d bytes); session skipped",
