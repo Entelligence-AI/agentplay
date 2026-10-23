@@ -215,6 +215,8 @@ public struct RunActivity: Codable, Sendable, Equatable, Identifiable {
     public var startedAt: Date?
     public var lastEventAt: Date?
     public var lastActivityAt: Date?
+    /// Seconds the transcript changed after its map was built: events in that gap aren't here yet.
+    public var mapBehindSeconds: Int?
     public var activity: DataPoint<ActivityState>
     public var outcome: String?
     public var models: [String]?

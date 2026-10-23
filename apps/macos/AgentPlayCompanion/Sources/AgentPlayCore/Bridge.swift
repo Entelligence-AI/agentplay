@@ -61,6 +61,8 @@ public final class ChildProcess: @unchecked Sendable {
         p.arguments = args
         p.environment = env
         p.currentDirectoryURL = FileManager.default.temporaryDirectory
+        // Scans are background work: lower CPU priority and energy impact than anything the user is doing.
+        p.qualityOfService = .utility
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err

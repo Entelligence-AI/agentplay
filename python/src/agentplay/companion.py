@@ -364,10 +364,10 @@ def codex_limits(paths: list[tuple[str, str]], now: datetime) -> list[dict[str, 
         name = _WINDOW_NAMES.get(int(minutes), f"window_{int(minutes)}m")
         reset_dt = datetime.fromtimestamp(resets, tz=UTC) if resets else None
         stale = reset_dt is not None and reset_dt <= now
-        explanation = (f"Reported by Codex in a session file at {ts}. Plan windows are shared across devices, "
+        explanation = ("Reported by Codex in its session file. Plan windows are shared across devices, "
                        "so this is the account at that moment.")
         if stale:
-            explanation = (f"Last reported {ts}. This window reset at {iso(reset_dt)}, so current usage is unknown "
+            explanation = ("This window has reset since Codex last reported it, so current usage is unknown "
                            "until Codex runs again.")
         if conflict:
             explanation += f" Recent Codex sessions reported different plans ({', '.join(sorted(plans))}); " \
@@ -390,8 +390,8 @@ def codex_limits(paths: list[tuple[str, str]], now: datetime) -> list[dict[str, 
             "provider": "codex", "window": "none", "windowMinutes": None, "plan": rl.get("plan_type"),
             "limitId": rl.get("limit_id"), "resetsAt": None, "usageUrl": PROVIDER_USAGE_URLS["codex"],
             "used": point(None, "unavailable", "none", explanation=(
-                f"The latest Codex report ({ts}) carried no plan windows for plan "
-                f"{rl.get('plan_type') or 'unknown'}. Check usage in Codex.")),
+                f"Codex's latest report carried no plan windows (plan: {rl.get('plan_type') or 'unknown'}). "
+                "Check usage in Codex.")),
         })
     return out
 
@@ -507,15 +507,16 @@ def learn_card(store: Store, rows: list[dict[str, Any]], now: datetime) -> dict[
         "kind": "observed",
         "command": fam,
         "title": f"`{fam}` failed {n} times in {m} runs.",
-        "denominator": f"Across {len(recent)} recent sessions (last {LEARN_DAYS} days, newest {LEARN_MAX_SESSIONS} at most).",
+        "denominator": f"Across {len(recent)} recent sessions, last {LEARN_DAYS} days",
         "detail": (f"It passed later in the same run in {later} of those {m} runs. A retry that ends in a pass "
                    "is often normal work, not waste."),
         "failures": point(n, "derived", "local_index", observed_at=iso(now), window="project",
-                          explanation=f"Counted from recorded {fam} events whose call failed, in {len(recent)} "
-                                      "sessions. Calls still running are not counted."),
+                          explanation=f"Counted from recorded {fam} events whose call failed, in the newest "
+                                      f"{len(recent)} sessions of the last {LEARN_DAYS} days (at most "
+                                      f"{LEARN_MAX_SESSIONS}). Calls still running are not counted."),
         "runs": m,
         "sessions": len(recent),
-        "evidence": evidence[fam][:5],
+        "evidence": sorted(evidence[fam], key=lambda x: x["at"] or "", reverse=True)[:5],
     }
 
 
@@ -551,15 +552,26 @@ def _run(doc: dict[str, Any], row: dict[str, Any], now: datetime, live: dict[str
                          explanation="No recent changes to the transcript." if mtime
                          else "The transcript is not on this machine (imported map, or the file moved).")
     active = activity["value"] == "active"
+    # How far the map lags its transcript: it was built at `updatedAt`, the transcript has moved since.
+    built = _parse_iso(row.get("updatedAt"))
+    behind = int(mtime - built.timestamp()) if (mtime and built) else None
+    behind = behind if behind is not None and behind > 10 else None
     visible = [e for e in events if e.get("kind") not in ("llm", "delay")]
     pending_seq = None
-    if active and visible and visible[-1].get("errClass") == "no_result":
+    trailing_no_result = bool(visible) and visible[-1].get("errClass") == "no_result"
+    # A call with no result is "running" only on a live run whose map is current. On a map that lags
+    # its transcript, the result has most likely landed since: neither running nor failed.
+    if trailing_no_result and (active or behind is not None):
         pending_seq = visible[-1].get("seq")
-    tail = [session_event(e, files, t0, pending=e.get("seq") == pending_seq) for e in visible[-TAIL_EVENTS:]]
+    pending_is_live = active and behind is None
+    tail = [session_event(e, files, t0, pending=pending_is_live and e.get("seq") == pending_seq)
+            for e in visible[-TAIL_EVENTS:]]
+    if pending_seq is not None and not pending_is_live and tail and tail[-1]["seq"] == pending_seq:
+        tail[-1]["err"], tail[-1]["errClass"] = False, None
     last_err = next((e for e in reversed(visible) if e.get("err") and e.get("seq") != pending_seq), None)
     cats = Counter(e.get("kind") for e in events)
     pending_tool = None
-    if pending_seq is not None and t0:
+    if pending_seq is not None and pending_is_live and t0:
         started = t0 + timedelta(milliseconds=int(visible[-1].get("t") or 0))
         pending_tool = {
             "event": tail[-1],
@@ -593,6 +605,7 @@ def _run(doc: dict[str, Any], row: dict[str, Any], now: datetime, live: dict[str
         "startedAt": s.get("startedAt"),
         "lastEventAt": last_at,
         "lastActivityAt": iso(mtime) if mtime else None,
+        "mapBehindSeconds": behind,
         "activity": activity,
         "outcome": outcome,
         "models": s.get("models") or [],

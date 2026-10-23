@@ -476,3 +476,22 @@ def test_cli_prints_one_json_document(store, monkeypatch):
 def test_cli_companion_needs_a_subcommand():
     with pytest.raises(SystemExit):
         cli.main(["companion"])
+
+
+def test_pending_call_on_a_lagging_map_is_neither_running_nor_failed(store, empty_homes, tmp_path, monkeypatch):
+    """The map was built mid-call; the transcript moved on since. The call has most likely finished."""
+    src = tmp_path / "s.jsonl"
+    src.write_text("x")
+    os.utime(src, (NOW.timestamp(), NOW.timestamp()))
+    _put(store, _doc("local:claude-code:a", [_exec(0, "ls", kind="exec"), _exec(1, "python", True, "no_result",
+                                                                               kind="exec")]),
+         source=src, mtime=NOW.timestamp())
+    store.index["local:claude-code:a"]["updatedAt"] = companion.iso(NOW - timedelta(minutes=18))
+    store.save_index()
+    monkeypatch.setattr(companion, "process_evidence", lambda paths: {k: "a claude process is running in this project"
+                                                                      for k in paths})
+    run = _snap(Store(store.base), empty_homes)["runs"][0]
+    assert run["mapBehindSeconds"] == 18 * 60
+    assert run["pendingTool"] is None
+    assert run["lastEvent"]["pending"] is False and run["lastEvent"]["err"] is False
+    assert run["lastError"] is None

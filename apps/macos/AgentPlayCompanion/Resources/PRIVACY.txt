@@ -1,0 +1,18 @@
+AgentPlay Companion: privacy
+
+Local only. The app makes no network requests: no account, no analytics, no update checks,
+no fonts or scripts from the web.
+
+It reads:
+  - AgentPlay's local maps and index in ~/.agentplay (built from your agents' transcript folders:
+    ~/.claude, ~/.codex, ~/.cursor, ~/.copilot, VS Code's storage, OpenCode's data folder, ~/.kiro,
+    and any folder you add).
+  - For Codex, the numeric usage record Codex writes into its own session files.
+  - Which agent processes are running (lsof), to tell "running" from "recently active".
+
+It never shows, stores or sends prompt text, session titles, assistant text, file contents,
+command arguments, tool inputs or outputs, or repo remotes. Notifications are off by default and
+carry only the agent, a command name and a count.
+
+It writes only its own preferences (ai.entelligence.agentplay.companion), and the same maps
+`agentplay build` writes in ~/.agentplay. Deleting the app leaves your maps in place.

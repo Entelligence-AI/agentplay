@@ -87,6 +87,7 @@
       "startedAt": "2026-10-23T10:06:00Z",
       "lastEventAt": "2026-10-23T10:06:30Z",
       "lastActivityAt": "2026-10-23T10:44:00Z",
+      "mapBehindSeconds": null,
       "activity": {
         "value": "recent",
         "kind": "derived",
@@ -203,6 +204,7 @@
       "startedAt": "2026-10-23T07:46:00Z",
       "lastEventAt": "2026-10-23T07:49:35Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",

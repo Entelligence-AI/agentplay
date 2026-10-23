@@ -85,6 +85,7 @@
       "startedAt": "2026-10-22T08:46:00Z",
       "lastEventAt": "2026-10-22T08:47:10Z",
       "lastActivityAt": "2026-10-22T08:46:00Z",
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",

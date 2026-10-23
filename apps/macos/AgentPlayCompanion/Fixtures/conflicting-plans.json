@@ -85,6 +85,7 @@
       "startedAt": "2026-10-23T10:16:00Z",
       "lastEventAt": "2026-10-23T10:26:40Z",
       "lastActivityAt": "2026-10-23T10:36:00Z",
+      "mapBehindSeconds": null,
       "activity": {
         "value": "recent",
         "kind": "derived",
@@ -233,6 +234,7 @@
       "startedAt": "2026-10-23T09:56:00Z",
       "lastEventAt": "2026-10-23T09:56:05Z",
       "lastActivityAt": "2026-10-23T10:31:00Z",
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -371,7 +373,7 @@
         "observedAt": "2026-10-23T10:36:00Z",
         "window": "five_hour",
         "confidence": "low",
-        "explanation": "Reported by Codex in a session file at 2026-10-23T10:36:00Z. Plan windows are shared across devices, so this is the account at that moment. Recent Codex sessions reported different plans (plus, pro); they may be different accounts.",
+        "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment. Recent Codex sessions reported different plans (plus, pro); they may be different accounts.",
         "freshness": "fresh"
       }
     },
@@ -393,7 +395,7 @@
         "observedAt": "2026-10-23T10:36:00Z",
         "window": "weekly",
         "confidence": "low",
-        "explanation": "Reported by Codex in a session file at 2026-10-23T10:36:00Z. Plan windows are shared across devices, so this is the account at that moment. Recent Codex sessions reported different plans (plus, pro); they may be different accounts.",
+        "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment. Recent Codex sessions reported different plans (plus, pro); they may be different accounts.",
         "freshness": "fresh"
       }
     }

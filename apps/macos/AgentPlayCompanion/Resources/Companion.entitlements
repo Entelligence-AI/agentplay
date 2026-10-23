@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Hardened runtime, nothing extra. Every Mach-O in the bundle (the Python interpreter and its
+	     extension modules included) is signed with the same identity, so library validation holds
+	     without disable-library-validation. No sandbox: the app reads agents' transcript folders
+	     the user already owns, and runs lsof to see which agent processes are live. -->
+</dict>
+</plist>

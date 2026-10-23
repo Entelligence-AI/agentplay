@@ -102,6 +102,7 @@
         "startedAt": {"$ref": "#/$defs/timeOrNull"},
         "lastEventAt": {"$ref": "#/$defs/timeOrNull"},
         "lastActivityAt": {"$ref": "#/$defs/timeOrNull"},
+        "mapBehindSeconds": {"type": ["integer", "null"], "description": "Seconds the transcript changed after this map was built. Events after that are not in the snapshot yet."},
         "activity": {"allOf": [{"$ref": "#/$defs/dataPoint"},
                                {"properties": {"value": {"enum": ["active", "recent", "idle", null]}}}]},
         "outcome": {"type": ["string", "null"]},

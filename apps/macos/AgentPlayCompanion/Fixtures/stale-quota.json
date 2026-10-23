@@ -85,6 +85,7 @@
       "startedAt": "2026-10-23T03:46:00Z",
       "lastEventAt": "2026-10-23T03:56:40Z",
       "lastActivityAt": "2026-10-23T04:46:00Z",
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -265,7 +266,7 @@
         "observedAt": "2026-10-23T04:46:00Z",
         "window": "five_hour",
         "confidence": "low",
-        "explanation": "Last reported 2026-10-23T04:46:00Z. This window reset at 2026-10-23T07:46:00Z, so current usage is unknown until Codex runs again.",
+        "explanation": "This window has reset since Codex last reported it, so current usage is unknown until Codex runs again.",
         "freshness": "stale"
       }
     },
@@ -287,7 +288,7 @@
         "observedAt": "2026-10-23T04:46:00Z",
         "window": "weekly",
         "confidence": "high",
-        "explanation": "Reported by Codex in a session file at 2026-10-23T04:46:00Z. Plan windows are shared across devices, so this is the account at that moment.",
+        "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment.",
         "freshness": "fresh"
       }
     }

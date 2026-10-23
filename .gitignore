@@ -10,3 +10,6 @@ __pycache__/
 # The built viewer is copied into the Python package by `make viewer`;
 # release CI rebuilds it, so it is never committed.
 python/src/agentplay/viewer/
+
+# SwiftPM build output (macOS companion)
+.build/

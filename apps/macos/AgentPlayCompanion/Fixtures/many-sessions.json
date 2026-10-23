@@ -89,6 +89,7 @@
       "startedAt": "2026-10-23T09:46:00Z",
       "lastEventAt": "2026-10-23T09:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -246,6 +247,7 @@
       "startedAt": "2026-10-23T07:46:00Z",
       "lastEventAt": "2026-10-23T07:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -390,6 +392,7 @@
       "startedAt": "2026-10-23T05:46:00Z",
       "lastEventAt": "2026-10-23T05:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -534,6 +537,7 @@
       "startedAt": "2026-10-23T03:46:00Z",
       "lastEventAt": "2026-10-23T03:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -691,6 +695,7 @@
       "startedAt": "2026-10-23T01:46:00Z",
       "lastEventAt": "2026-10-23T01:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -835,6 +840,7 @@
       "startedAt": "2026-10-22T23:46:00Z",
       "lastEventAt": "2026-10-22T23:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -979,6 +985,7 @@
       "startedAt": "2026-10-22T21:46:00Z",
       "lastEventAt": "2026-10-22T21:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -1136,6 +1143,7 @@
       "startedAt": "2026-10-22T19:46:00Z",
       "lastEventAt": "2026-10-22T19:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -1280,6 +1288,7 @@
       "startedAt": "2026-10-22T17:46:00Z",
       "lastEventAt": "2026-10-22T17:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -1424,6 +1433,7 @@
       "startedAt": "2026-10-22T15:46:00Z",
       "lastEventAt": "2026-10-22T15:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -1581,6 +1591,7 @@
       "startedAt": "2026-10-22T13:46:00Z",
       "lastEventAt": "2026-10-22T13:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -1725,6 +1736,7 @@
       "startedAt": "2026-10-22T11:46:00Z",
       "lastEventAt": "2026-10-22T11:47:00Z",
       "lastActivityAt": null,
+      "mapBehindSeconds": null,
       "activity": {
         "value": "idle",
         "kind": "derived",
@@ -1909,7 +1921,7 @@
     "kind": "observed",
     "command": "pytest",
     "title": "`pytest` failed 5 times in 5 runs.",
-    "denominator": "Across 14 recent sessions (last 14 days, newest 40 at most).",
+    "denominator": "Across 14 recent sessions, last 14 days",
     "detail": "It passed later in the same run in 5 of those 5 runs. A retry that ends in a pass is often normal work, not waste.",
     "failures": {
       "value": 5,
@@ -1918,7 +1930,7 @@
       "observedAt": "2026-10-23T10:46:00Z",
       "window": "project",
       "confidence": "high",
-      "explanation": "Counted from recorded pytest events whose call failed, in 14 sessions. Calls still running are not counted.",
+      "explanation": "Counted from recorded pytest events whose call failed, in the newest 14 sessions of the last 14 days (at most 40). Calls still running are not counted.",
       "freshness": "unknown"
     },
     "runs": 5,
