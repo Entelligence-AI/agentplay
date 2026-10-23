@@ -59,6 +59,15 @@ enum SelfTest {
                 viewer.stop()
                 try? await Task.sleep(for: .milliseconds(500))
                 report["viewerStopped"] = pid.map { kill($0, 0) != 0 } ?? false
+                // Crash recovery: a viewer left behind is reaped by the next launch through its PID file.
+                let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("apc-selftest-\(getpid()).pid")
+                let crashed = ViewerManager(runtime: rt, pidFile: pidFile)
+                _ = try await crashed.ensure()
+                let orphan = crashed.pid
+                let next = ViewerManager(runtime: rt, pidFile: pidFile)
+                report["leftoverReaped"] = next.reapLeftover()
+                try? await Task.sleep(for: .milliseconds(500))
+                report["leftoverGone"] = orphan.map { kill($0, 0) != 0 } ?? false
             } catch {
                 return fail("viewer", (error as? SnapshotError)?.localizedDescription ?? "\(error)")
             }

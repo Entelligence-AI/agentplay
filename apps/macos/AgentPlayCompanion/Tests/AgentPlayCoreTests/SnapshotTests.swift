@@ -218,3 +218,26 @@ func fixture(_ name: String) throws -> Snapshot {
         }
     }
 }
+
+@Suite struct ViewerOwnership {
+    let py = "/Applications/AgentPlay Companion.app/Contents/Resources/python/bin/python3"
+
+    @Test func onlyOurOwnViewerMatches() {
+        #expect(ViewerManager.isOurViewer("\(py) -I -m agentplay view --no-open --no-build --port 0", python: py))
+        // The user's own viewers never match, whatever they run.
+        #expect(!ViewerManager.isOurViewer("/Users/me/.local/bin/uvx agentplay view", python: py))
+        #expect(!ViewerManager.isOurViewer("/opt/homebrew/bin/python3 -m agentplay view --port 7317", python: py))
+        #expect(!ViewerManager.isOurViewer("\(py) -I -m agentplay companion snapshot --json", python: py))
+    }
+
+    @Test func reapIgnoresForeignPidAndClearsFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let pidFile = dir.appendingPathComponent("viewer.pid")
+        try "4242\n".write(to: pidFile, atomically: true, encoding: .utf8)
+        let v = ViewerManager(runtime: Runtime(python: URL(fileURLWithPath: py), bundled: true), pidFile: pidFile)
+        // PID reused by an unrelated process: left alone.
+        #expect(v.reapLeftover(commandOf: { _ in "/usr/bin/vim notes.txt" }) == false)
+        #expect(!FileManager.default.fileExists(atPath: pidFile.path))
+    }
+}

@@ -5,6 +5,9 @@ import CoreGraphics
 import ServiceManagement
 import SwiftUI
 import UserNotifications
+import os
+
+let companionLog = Logger(subsystem: "ai.entelligence.agentplay.companion", category: "refresh")
 
 enum Tab: String, CaseIterable, Identifiable {
     case now = "Now", limits = "Limits", learn = "Learn"
@@ -60,6 +63,8 @@ final class CompanionModel: ObservableObject {
     @Published private(set) var loginItemEnabled = false
     @Published var toast: String?
     @Published private(set) var viewerBusy = false
+    /// A scan running long enough that something outside it is probably holding it up (a macOS folder prompt).
+    @Published private(set) var scanStalled = false
 
     let prefsStore: PrefsStore
     let isDevBuild: Bool
@@ -70,6 +75,8 @@ final class CompanionModel: ObservableObject {
     private var debounce: Task<Void, Never>?
     private var fallback: Timer?
     private var lastRefreshStarted = Date.distantPast
+    private var refreshQueued = false
+    private var lastRefreshDuration: TimeInterval = 0
     private var lastEventSeen: [String: Date] = [:]
     private var lastStates: [String: ActivityState] = [:]
     private var heartbeatTask: Task<Void, Never>?
@@ -97,12 +104,18 @@ final class CompanionModel: ObservableObject {
             loadSample(named: fixture)
             return
         }
+        if isDevBuild, ProcessInfo.processInfo.arguments.contains("--skip-onboarding") { prefs.onboardingDone = true }
         switch Runtime.locate(allowDevOverride: isDevBuild) {
         case .success(let r):
             runtime = r
             let box = envBox
             service = SnapshotService(runtime: r, extraEnv: { box.value })
-            viewer = ViewerManager(runtime: r, extraEnv: { box.value })
+            let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+            viewer = ViewerManager(runtime: r,
+                                   pidFile: caches.appendingPathComponent("\(PrefsStore.domain)/viewer.pid"),
+                                   extraEnv: { box.value })
+            viewer?.reapLeftover()
+            installTerminationHandler()
         case .failure(let e):
             phase = .failed(e)
             return
@@ -114,10 +127,24 @@ final class CompanionModel: ObservableObject {
         observeSystem()
     }
 
+    private var sigterm: DispatchSourceSignal?
+
+    /// `kill` and logout send SIGTERM, which skips applicationWillTerminate: stop our viewer first.
+    private func installTerminationHandler() {
+        signal(SIGTERM, SIG_IGN)
+        let src = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        src.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.shutdown() }
+            exit(0)
+        }
+        src.resume()
+        sigterm = src
+    }
+
     func shutdown() {
         viewer?.stop()
         watcher?.stop()
-        Task { await service?.cancel() }
+        service?.cancelNow()
     }
 
     // MARK: data
@@ -127,8 +154,14 @@ final class CompanionModel: ObservableObject {
         lastRefreshStarted = Date()
         if snapshot == nil || mode == .fullScan { phase = .scanning(found: nil) }
         let progress = mode == .fullScan ? Task { await self.watchScanProgress() } : nil
+        let t0 = Date()
+        let stallWatch = Task { try? await Task.sleep(for: .seconds(45)); if !Task.isCancelled { scanStalled = true } }
+        defer { stallWatch.cancel(); scanStalled = false }
         let result = await service.fetch(mode)
         progress?.cancel()
+        if mode == .refresh { lastRefreshDuration = Date().timeIntervalSince(t0) }
+        // Mode and timing only: never ids, paths or anything from a session.
+        companionLog.info("refresh \(String(describing: mode), privacy: .public) \(Int(Date().timeIntervalSince(t0) * 1000), privacy: .public)ms ok=\((try? result.get()) != nil, privacy: .public)")
         switch result {
         case .success(let s):
             apply(s)
@@ -266,21 +299,35 @@ final class CompanionModel: ObservableObject {
         guard service != nil, !sampleMode, prefs.onboardingDone else { return }
         // A refresh costs a few seconds of CPU (see docs/companion/EXPERIMENTS.md), so it is rationed:
         // file events are debounced and spaced out, more tightly while the popover is open.
-        let minGap: TimeInterval = switch reason {
+        let base: TimeInterval = switch reason {
         case .manual, .wake: 0
         case .popoverOpened: 10
         case .fileEvent, .timer: popoverOpen ? 20 : 60
         }
-        let wait = max(reason == .fileEvent ? 4 : 0, minGap - Date().timeIntervalSince(lastRefreshStarted))
+        // Never let the scan run more than about a fifth of the time: a big live transcript can take
+        // 10 to 20 s to rebuild. Low Power Mode spaces it out three times further.
+        var minGap = urgentReason(reason) ? 0 : max(base, 4 * lastRefreshDuration)
+        if ProcessInfo.processInfo.isLowPowerModeEnabled { minGap *= 3 }
+        let urgent = urgentReason(reason)
+        // Opening the popover shows what is already built at once (a cheap read), then joins the queue.
+        if reason == .popoverOpened { Task { await refresh(.read) } }
+        // Coalesce: a refresh already queued will pick up these changes too. Later events must not push it
+        // back, or an agent writing every second would starve it forever.
+        if refreshQueued && !urgent { return }
+        let wait = urgent ? 0 : max(reason == .fileEvent ? 4 : 0, minGap - Date().timeIntervalSince(lastRefreshStarted))
+        companionLog.debug("schedule \(String(describing: reason), privacy: .public) wait=\(Int(wait), privacy: .public)s")
         debounce?.cancel()
+        refreshQueued = true
         debounce = Task {
             if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
             guard !Task.isCancelled else { return }
-            await refresh(reason == .popoverOpened ? .read : .refresh)
-            if reason == .popoverOpened { await refresh(.refresh) }
+            await refresh(.refresh)
+            refreshQueued = false
             resetFallbackTimer()
         }
     }
+
+    private func urgentReason(_ r: RefreshReason) -> Bool { r == .manual || r == .wake }
 
     private func observeSystem() {
         let ws = NSWorkspace.shared.notificationCenter
@@ -289,7 +336,7 @@ final class CompanionModel: ObservableObject {
             Task { @MainActor in self?.lastEventSeen = [:]; self?.scheduleRefresh(reason: .wake) }
         }
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.debounce?.cancel() }
+            Task { @MainActor in self?.debounce?.cancel(); self?.refreshQueued = false }
         }
         NotificationCenter.default.addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.objectWillChange.send() }

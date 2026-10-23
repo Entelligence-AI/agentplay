@@ -145,7 +145,7 @@ struct NowView: View {
             switch model.phase {
             case .starting:
                 ScanningState(found: nil)
-            case .scanning(let found) where model.snapshot == nil || found != nil:
+            case .scanning(let found) where model.snapshot == nil:
                 ScanningState(found: found)
             case .failed(let e):
                 ErrorState(error: e)
@@ -156,6 +156,16 @@ struct NowView: View {
     }
 
     @ViewBuilder private func content(_ s: Snapshot) -> some View {
+        if model.scanStalled { PermissionHint() }
+        if case .scanning(let found) = model.phase {
+            // A rescan with data already on screen: keep the cards, say what's happening.
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text(found.map { "Rescanning · \($0) sessions indexed" } ?? "Rescanning")
+                    .font(.system(size: 11)).foregroundStyle(Theme.muted(scheme))
+                Button("Cancel") { model.cancelScan() }.buttonStyle(LinkButtonStyle())
+            }
+        }
         if let e = model.lastError {
             Text(e.localizedDescription).font(.system(size: 11)).foregroundStyle(Theme.error(scheme))
         }
@@ -272,6 +282,7 @@ struct ScanningState: View {
             Text(found.map { "\($0) sessions indexed so far. Only known agent folders are read, and nothing leaves this Mac." }
                  ?? "Reading known agent folders on this Mac. Nothing leaves it.")
                 .font(.system(size: 12)).foregroundStyle(Theme.muted(scheme))
+            if model.scanStalled { PermissionHint() }
             Button("Cancel") { model.cancelScan() }.buttonStyle(QuietButtonStyle())
         }
         .accessibilityElement(children: .combine)
@@ -578,5 +589,22 @@ struct ExternalLink: View {
         }
         .buttonStyle(LinkButtonStyle())
         .help(url.host ?? url.absoluteString)
+    }
+}
+
+/// Shown when a scan stalls. The usual cause is a macOS Files and Folders prompt waiting for an answer.
+struct PermissionHint: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Still scanning. Is macOS asking for folder access?").font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.ink(scheme))
+            Text("If your repos live in Documents, Desktop or Downloads, macOS asks once before AgentPlay can look there. It checks paths and git settings to tell which repo a file belongs to. If you decline, it can't tell which repo those sessions worked in.")
+                .font(.system(size: 11)).foregroundStyle(Theme.muted(scheme)).fixedSize(horizontal: false, vertical: true)
+            ExternalLink(title: "Open Files and Folders settings",
+                         url: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
+        }
+        .padding(Theme.s2)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.card(scheme)))
     }
 }

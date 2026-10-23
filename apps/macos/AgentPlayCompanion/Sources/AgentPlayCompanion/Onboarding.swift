@@ -63,7 +63,7 @@ struct OnboardingView: View {
     private var find: some View {
         VStack(alignment: .leading, spacing: Theme.s3) {
             title(scanning ? "Finding your sessions…" : "Here's what's on this Mac")
-            body("Only the folders these agents use are read. No Full Disk Access, no network.")
+            body("Only the folders these agents use are read. No Full Disk Access, no network. If your repos live in Documents or Desktop, macOS may ask once: AgentPlay looks there only to tell which repo a session worked in.")
             if let s = model.snapshot {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(s.sources) { src in

@@ -131,7 +131,7 @@ public actor SnapshotService {
     private var running = false
     private var queued: Mode?
     private var waiters: [CheckedContinuation<Result<Snapshot, SnapshotError>, Never>] = []
-    private let child = ChildProcess()
+    private nonisolated let child = ChildProcess()
     public private(set) var lastDurationMs: Int = 0
 
     public init(runtime: Runtime, extraEnv: @escaping @Sendable () -> [String: String] = { [:] }) {
@@ -169,6 +169,9 @@ public actor SnapshotService {
     }
 
     public func cancel() { child.cancel() }
+
+    /// Synchronous, for app shutdown: a Task scheduled at exit may never run.
+    public nonisolated func cancelNow() { child.cancel() }
 
     private func runOnce(_ mode: Mode) async -> Result<Snapshot, SnapshotError> {
         let t0 = Date()
@@ -215,9 +218,42 @@ public final class ViewerManager: @unchecked Sendable {
     private let runtime: Runtime
     private let extraEnv: @Sendable () -> [String: String]
 
-    public init(runtime: Runtime, extraEnv: @escaping @Sendable () -> [String: String] = { [:] }) {
+    /// Where the PID of the viewer this app started is kept, so a crash can't leave it running forever.
+    public let pidFile: URL?
+
+    public init(runtime: Runtime, pidFile: URL? = nil, extraEnv: @escaping @Sendable () -> [String: String] = { [:] }) {
         self.runtime = runtime
+        self.pidFile = pidFile
         self.extraEnv = extraEnv
+    }
+
+    /// Stop a viewer left by an earlier run of this app (crash, force quit). Only a process whose executable is
+    /// this app's own Python is touched; a viewer the user started with `uvx agentplay` never matches.
+    @discardableResult
+    public func reapLeftover(commandOf: (Int32) -> String? = ViewerManager.command(of:)) -> Bool {
+        guard let pidFile, let raw = try? String(contentsOf: pidFile, encoding: .utf8),
+              let pid = Int32(raw.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 1 else { return false }
+        try? FileManager.default.removeItem(at: pidFile)
+        guard let cmd = commandOf(pid), Self.isOurViewer(cmd, python: runtime.python.path) else { return false }
+        return kill(pid, SIGTERM) == 0
+    }
+
+    public static func isOurViewer(_ command: String, python: String) -> Bool {
+        command.hasPrefix(python + " ") && command.contains(" -m agentplay view ")
+    }
+
+    public static func command(of pid: Int32) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/ps")
+        p.arguments = ["-o", "command=", "-p", String(pid)]
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return nil }
+        p.waitUntilExit()
+        let s = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.isEmpty ? nil : s
     }
 
     public var isRunning: Bool { lock.withLock { process?.isRunning == true } }
@@ -265,6 +301,10 @@ public final class ViewerManager: @unchecked Sendable {
         // Keep draining stdout (the scan-done lines) so the child never blocks on a full pipe.
         out.fileHandleForReading.readabilityHandler = { h in _ = h.availableData }
         lock.withLock { process = p; baseURL = started }
+        if let pidFile {
+            try? FileManager.default.createDirectory(at: pidFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? "\(p.processIdentifier)\n".write(to: pidFile, atomically: true, encoding: .utf8)
+        }
         return started
     }
 
@@ -274,6 +314,7 @@ public final class ViewerManager: @unchecked Sendable {
             process = nil
             baseURL = nil
         }
+        if let pidFile { try? FileManager.default.removeItem(at: pidFile) }
     }
 
     /// `GET /api/status` answers like AgentPlay. A client with no Origin passes the server's guards.
