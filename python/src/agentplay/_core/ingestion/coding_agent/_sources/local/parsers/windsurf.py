@@ -102,17 +102,19 @@ def _normalize_file_path_arg(args: dict) -> dict:
 
 def _extract_steps(data: bytes) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Extract header and steps from data (supports NDJSON lines or a single JSON document)."""
-    # First, test if this is a single JSON document with a "steps" array.
+    # First, test if this is a single JSON document with a "steps" or "trajectorySteps" array.
     try:
         text = data.decode("utf-8").strip()
         if text.startswith("{") and text.endswith("}"):
             doc = json.loads(text)
             if isinstance(doc, dict):
-                steps = doc.get("steps")
+                steps = doc.get("steps") or doc.get("trajectorySteps")
                 if isinstance(steps, list):
-                    header = {k: v for k, v in doc.items() if k != "steps"}
+                    header = {
+                        k: v for k, v in doc.items() if k not in ("steps", "trajectorySteps")
+                    }
                     return header, [s for s in steps if isinstance(s, dict)]
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
         pass
 
     # Otherwise parse as JSONL / NDJSON lines.
@@ -122,12 +124,25 @@ def _extract_steps(data: bytes) -> tuple[dict[str, Any] | None, list[dict[str, A
 
     for rec in records:
         rtype = rec.get("type")
-        if rtype in ("windsurf_session", "windsurf_trajectory"):
+        if rtype in (
+            "windsurf_session",
+            "windsurfSession",
+            "windsurf_trajectory",
+            "windsurfTrajectory",
+            "cascade_session",
+            "cascadeSession",
+        ):
             if header is None:
                 header = rec
             continue
         # Also treat session-level metadata object as header
-        if "cascade_id" in rec and "step_id" not in rec and "tool_calls" not in rec:
+        if (
+            ("cascade_id" in rec or "cascadeId" in rec)
+            and "step_id" not in rec
+            and "stepId" not in rec
+            and "tool_calls" not in rec
+            and "toolCalls" not in rec
+        ):
             if header is None:
                 header = rec
             continue
@@ -160,7 +175,11 @@ def parse_windsurf(
     if not steps and not header:
         return TraceData(trace_id=trace_id, start_time=now, end_time=now), []
 
-    cwd = header.get("cwd") or header.get("workspace_path")
+    cwd = (
+        header.get("cwd")
+        or header.get("workspace_path")
+        or header.get("workspacePath")
+    )
     if not project_name and cwd and isinstance(cwd, str):
         project_name = path_basename(cwd) or None
 
@@ -172,6 +191,7 @@ def parse_windsurf(
         ts = (
             _parse_timestamp(s.get("timestamp"))
             or _parse_timestamp(s.get("timestamp_unix_ms"))
+            or _parse_timestamp(s.get("timestampUnixMs"))
             or _parse_timestamp(s.get("time"))
         )
         if ts is not None:
@@ -180,9 +200,14 @@ def parse_windsurf(
             if last_step_time is None or ts > last_step_time:
                 last_step_time = ts
 
-    header_start = _parse_timestamp(header.get("createdAt"))
-    header_end = _parse_timestamp(header.get("updatedAt")) or _parse_timestamp(
-        header.get("lastModifiedAt")
+    header_start = _parse_timestamp(header.get("createdAt")) or _parse_timestamp(
+        header.get("created_at")
+    )
+    header_end = (
+        _parse_timestamp(header.get("updatedAt"))
+        or _parse_timestamp(header.get("updated_at"))
+        or _parse_timestamp(header.get("lastModifiedAt"))
+        or _parse_timestamp(header.get("last_modified_at"))
     )
 
     session_start = header_start or first_step_time or now
@@ -212,7 +237,12 @@ def parse_windsurf(
             current_turn.attributes["output.value"] = "\n".join(turn_output_parts)[:_TRUNCATE]
             if turn_model:
                 current_turn.attributes["llm.model_name"] = turn_model
-            current_turn.end_time = max(current_turn.end_time, clock)
+            # Ensure turn.end_time is at least the end_time of any child tool span
+            child_ends = [
+                s.end_time for s in all_spans if s.parent_id == current_turn.span_id
+            ]
+            if child_ends:
+                current_turn.end_time = max(current_turn.end_time, max(child_ends))
         current_turn = None
         turn_output_parts = []
 
@@ -250,14 +280,15 @@ def parse_windsurf(
         return current_turn
 
     for step in steps:
-        step_id = step.get("step_id")
-        step_type = step.get("step_type")
+        step_id = step.get("step_id") or step.get("stepId")
+        step_type = step.get("step_type") or step.get("stepType")
         raw_role = step.get("role") or step.get("type")
 
         # Step timestamp or synthetic increment
         step_ts = (
             _parse_timestamp(step.get("timestamp"))
             or _parse_timestamp(step.get("timestamp_unix_ms"))
+            or _parse_timestamp(step.get("timestampUnixMs"))
             or _parse_timestamp(step.get("time"))
         )
         if step_ts is None:
@@ -271,18 +302,35 @@ def parse_windsurf(
         if isinstance(step_provider, str) and step_provider:
             turn_model = step_provider
 
+        # Check for finish step
+        is_finish = (
+            step_type == 2
+            or step.get("finish") is True
+            or step.get("status") in ("finished", "completed")
+            or raw_role in ("finish", "completed")
+        )
+        if is_finish:
+            if current_turn is not None:
+                current_turn.end_time = max(current_turn.end_time, step_ts)
+                _close_turn()
+            continue
+
         # 1. User message / turn start
         is_user = (
             raw_role == "user"
             or step_type == 19  # user_input step in CortexTrajectoryStep
             or "user_input" in step
+            or "userInput" in step
             or "user_message" in step
+            or "userMessage" in step
         )
 
         if is_user:
             user_msg = (
                 step.get("user_input")
+                or step.get("userInput")
                 or step.get("user_message")
+                or step.get("userMessage")
                 or step.get("content")
                 or step.get("content_preview")
                 or ""
@@ -304,13 +352,26 @@ def parse_windsurf(
         is_tool_result = (
             step_type == 21
             or "tool_result" in step
+            or "toolResult" in step
             or "result" in step
             or raw_role == "tool"
         )
         if is_tool_result:
             call_id = step.get("tool_id") or step.get("toolCallId") or step.get("id")
-            result_val = step.get("tool_result") or step.get("result") or step.get("output") or ""
-            is_err = bool(step.get("is_error") or step.get("error") or step.get("exit_code", 0) != 0)
+            result_val = (
+                step.get("tool_result")
+                or step.get("toolResult")
+                or step.get("result")
+                or step.get("output")
+                or ""
+            )
+            is_err = bool(
+                step.get("is_error")
+                or step.get("isError")
+                or step.get("error")
+                or step.get("exit_code", 0) != 0
+                or step.get("exitCode", 0) != 0
+            )
 
             if call_id and str(call_id) in active_tool_spans:
                 tool_span = active_tool_spans[str(call_id)]
@@ -335,7 +396,7 @@ def parse_windsurf(
                     current_turn.end_time = max(current_turn.end_time, step_ts)
 
         # 4. Tool calls
-        raw_tool_calls = step.get("tool_calls")
+        raw_tool_calls = step.get("tool_calls") or step.get("toolCalls")
         tool_call_list: list[dict[str, Any]] = []
         if isinstance(raw_tool_calls, list):
             for tc in raw_tool_calls:
@@ -346,15 +407,15 @@ def parse_windsurf(
 
         for tc in tool_call_list:
             tool_span_count += 1
-            call_id = tc.get("tool_id") or tc.get("id") or f"call_{step_id or tool_span_count}"
-            raw_tool_name = tc.get("tool_name") or tc.get("name") or tc.get("tool") or "unknown"
+            call_id = tc.get("tool_id") or tc.get("toolCallId") or tc.get("id") or f"call_{step_id or tool_span_count}"
+            raw_tool_name = tc.get("tool_name") or tc.get("toolName") or tc.get("name") or tc.get("tool") or "unknown"
             canonical_tool_name = _TOOL_ALIASES.get(raw_tool_name, raw_tool_name)
 
             params = tc.get("params") or tc.get("args") or tc.get("parameters") or {}
             if isinstance(params, str):
                 try:
                     params = json.loads(params)
-                except (json.JSONDecodeError, TypeError):
+                except (json.JSONDecodeError, RecursionError, TypeError):
                     params = {"raw": params}
             elif not isinstance(params, dict):
                 params = {"value": params}
@@ -365,8 +426,14 @@ def parse_windsurf(
             turn = _ensure_turn(step_ts, src=step)
 
             # Check if this tool call already contains its result or error flag
-            tc_result = tc.get("result") or tc.get("output")
-            tc_err = bool(tc.get("is_error") or tc.get("error") or tc.get("exit_code", 0) != 0)
+            tc_result = tc.get("result") or tc.get("output") or tc.get("toolResult")
+            tc_err = bool(
+                tc.get("is_error")
+                or tc.get("isError")
+                or tc.get("error")
+                or tc.get("exit_code", 0) != 0
+                or tc.get("exitCode", 0) != 0
+            )
             status_code = "ERROR" if tc_err else "OK"
             out_val = ""
             if tc_result is not None:
@@ -379,7 +446,7 @@ def parse_windsurf(
                 cmd_attrs.get("pr.create.repository"),
             )
 
-            has_result = tc_result is not None or "output" in tc or "result" in tc
+            has_result = tc_result is not None or "output" in tc or "result" in tc or "toolResult" in tc
             tool_span = SpanData(
                 span_id=f"{trace_id}:tool:{tool_span_count}",
                 trace_id=trace_id,
@@ -417,8 +484,13 @@ def parse_windsurf(
         overall_status = "ERROR"
 
     if all_spans:
-        session_start = min(s.start_time for s in all_spans)
-        session_end = max(s.end_time for s in all_spans)
+        span_min = min(s.start_time for s in all_spans)
+        span_max = max(s.end_time for s in all_spans)
+        session_start = min(header_start, span_min) if header_start else span_min
+        session_end = max(header_end, span_max) if header_end else span_max
+
+    if session_end < session_start:
+        session_end = session_start
 
     root_span = SpanData(
         span_id=root_id,

@@ -452,3 +452,137 @@ def test_discover_windsurf_homes(monkeypatch, tmp_path):
     homes = Homes.default()
     assert ws_dir in homes.windsurf
     assert "windsurf" in homes.present()
+
+
+def test_windsurf_camel_case_detection():
+    assert detect_agent(b'{"type": "windsurfSession", "cascadeId": "c-1"}\n') == AgentType.WINDSURF
+    assert detect_agent(b'{"type": "cascadeSession", "agentId": "a-1"}\n') == AgentType.WINDSURF
+    assert detect_agent(b'{"stepId": 1, "stepType": 19, "userInput": "hi"}\n') == AgentType.WINDSURF
+    assert detect_agent(b'{"cascadeId": "c-789", "title": "My Cascade"}\n') == AgentType.WINDSURF
+
+    # Pretty-printed multi-line JSON document
+    pretty = b'{\n  "cascadeId": "c-pretty",\n  "steps": [\n    {"stepId": 1, "stepType": 19}\n  ]\n}'
+    assert detect_agent(pretty) == AgentType.WINDSURF
+
+
+def test_windsurf_turn_closing_and_header_bounds():
+    from datetime import datetime, UTC
+
+    lines = [
+        json.dumps({
+            "type": "windsurf_session",
+            "agentId": "ws-bounds",
+            "createdAt": "2026-03-12T14:00:00Z",
+            "lastModifiedAt": "2026-03-12T14:30:00Z",
+            "cwd": "/workspace/app",
+        }),
+        # Turn 1: 14:00:05 to 14:00:10
+        json.dumps({
+            "step_id": 1,
+            "step_type": 19,
+            "timestamp": "2026-03-12T14:00:05Z",
+            "user_input": "Start task",
+        }),
+        json.dumps({
+            "step_id": 2,
+            "step_type": 20,
+            "timestamp": "2026-03-12T14:00:10Z",
+            "visible": "Step 1 done",
+        }),
+        # Turn 2 starts 10 minutes later: 14:10:00 to 14:10:15
+        json.dumps({
+            "step_id": 3,
+            "step_type": 19,
+            "timestamp": "2026-03-12T14:10:00Z",
+            "user_input": "Next task",
+        }),
+        json.dumps({
+            "step_id": 4,
+            "step_type": 20,
+            "timestamp": "2026-03-12T14:10:15Z",
+            "visible": "Step 2 done",
+        }),
+        json.dumps({
+            "step_id": 5,
+            "step_type": 2,  # STEP_TYPE_FINISH
+            "timestamp": "2026-03-12T14:10:15Z",
+        }),
+    ]
+    raw_data = "\n".join(lines).encode()
+    trace, spans = parse_windsurf(raw_data, trace_id="local:windsurf:bounds-1")
+
+    # Header bounds preserved on root span
+    root = spans[0]
+    assert root.start_time == datetime(2026, 3, 12, 14, 0, 0, tzinfo=UTC)
+    assert root.end_time == datetime(2026, 3, 12, 14, 30, 0, tzinfo=UTC)
+
+    # Turn 1 closed at its last event (14:00:10), NOT stretched to Turn 2's start (14:10:00)
+    turn1 = next(s for s in spans if s.name == "Turn 1")
+    assert turn1.start_time == datetime(2026, 3, 12, 14, 0, 5, tzinfo=UTC)
+    assert turn1.end_time == datetime(2026, 3, 12, 14, 0, 10, tzinfo=UTC)
+
+    # Turn 2 closed at finish (14:10:15)
+    turn2 = next(s for s in spans if s.name == "Turn 2")
+    assert turn2.start_time == datetime(2026, 3, 12, 14, 10, 0, tzinfo=UTC)
+    assert turn2.end_time == datetime(2026, 3, 12, 14, 10, 15, tzinfo=UTC)
+
+
+def test_windsurf_recursion_error_handling(monkeypatch):
+    import json
+
+    def mock_loads(s, *args, **kwargs):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(json, "loads", mock_loads)
+    # Should safely fail without crashing
+    trace, spans = parse_windsurf(b'{"steps": []}', trace_id="local:windsurf:rec-1")
+    assert spans == []
+
+
+def test_local_source_windsurf_single_document_export(tmp_path):
+    from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+    ws_dir = tmp_path / "windsurf_home"
+    cascade_dir = ws_dir / "cascade"
+    cascade_dir.mkdir(parents=True)
+
+    # Write a pretty-printed single-document export
+    doc = {
+        "cascadeId": "cascade-export-pretty-1",
+        "workspacePath": str(tmp_path / "project_alpha"),
+        "steps": [
+            {
+                "stepId": 1,
+                "stepType": 19,
+                "timestamp": "2026-03-12T14:00:00Z",
+                "userInput": "Find files",
+            },
+            {
+                "stepId": 2,
+                "stepType": 20,
+                "timestamp": "2026-03-12T14:00:05Z",
+                "visible": "Found files.",
+            },
+        ],
+    }
+    export_file = cascade_dir / "session.json"
+    export_file.write_text(json.dumps(doc, indent=2))
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        windsurf_homes=[ws_dir],
+    )
+
+    sessions = source.discover_sessions()
+    ws_sessions = [s for s in sessions if "cascade-export-pretty-1" in s.session_id]
+    assert len(ws_sessions) == 1
+    assert ws_sessions[0].session_id == "local:windsurf:cascade-export-pretty-1"
+
+    assert source.get_agent_type(ws_sessions[0].session_id) == "windsurf"
+    assert source.get_project_name(ws_sessions[0].session_id) == "project_alpha"
+
+    spans = source.get_spans_by_session(ws_sessions[0].session_id)
+    assert spans[0].name == "Session (windsurf)"
+    assert spans[0].attributes["project.name"] == "project_alpha"
+    assert len(spans) == 2  # Root and Turn 1

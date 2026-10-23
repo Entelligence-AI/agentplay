@@ -59,12 +59,27 @@ def detect_agent(data: bytes) -> AgentType | None:
 
         line_type = obj.get("type", "")
 
-        # Windsurf / Cascade: synthesized session header or trajectory step record.
-        if line_type in ("windsurf_session", "windsurf_trajectory"):
+        # Windsurf / Cascade: session header or trajectory step record (supports snake_case and camelCase).
+        if line_type in (
+            "windsurf_session",
+            "windsurfSession",
+            "windsurf_trajectory",
+            "windsurfTrajectory",
+            "cascade_session",
+            "cascadeSession",
+        ):
             return AgentType.WINDSURF
-        if "step_id" in obj and ("step_type" in obj or "tool_calls" in obj or "thinking" in obj):
+        if ("step_id" in obj or "stepId" in obj) and (
+            "step_type" in obj
+            or "stepType" in obj
+            or "tool_calls" in obj
+            or "toolCalls" in obj
+            or "thinking" in obj
+            or "user_input" in obj
+            or "userInput" in obj
+        ):
             return AgentType.WINDSURF
-        if obj.get("cascade_id") or obj.get("cascadeId"):
+        if "cascade_id" in obj or "cascadeId" in obj or "cascadeSession" in obj:
             return AgentType.WINDSURF
 
         # Cursor CLI/agent: synthesized header line, always first (see
@@ -155,6 +170,41 @@ def detect_agent(data: bytes) -> AgentType | None:
             and "content" in message
         ):
             return AgentType.CURSOR
+
+    # If line-by-line scanning did not match, check if data is a whole pretty-printed JSON document.
+    try:
+        text = data.decode("utf-8", errors="ignore").strip()
+        if text.startswith("{") and text.endswith("}"):
+            obj = json.loads(text)
+            if isinstance(obj, dict):
+                line_type = obj.get("type", "")
+                if line_type in (
+                    "windsurf_session",
+                    "windsurfSession",
+                    "windsurf_trajectory",
+                    "windsurfTrajectory",
+                    "cascade_session",
+                    "cascadeSession",
+                ):
+                    return AgentType.WINDSURF
+                if "cascade_id" in obj or "cascadeId" in obj or "cascadeSession" in obj:
+                    return AgentType.WINDSURF
+                if ("step_id" in obj or "stepId" in obj) and (
+                    "step_type" in obj
+                    or "stepType" in obj
+                    or "tool_calls" in obj
+                    or "toolCalls" in obj
+                    or "thinking" in obj
+                    or "user_input" in obj
+                    or "userInput" in obj
+                ):
+                    return AgentType.WINDSURF
+                if "steps" in obj and isinstance(obj["steps"], list):
+                    return AgentType.WINDSURF
+                if "trajectorySteps" in obj and isinstance(obj["trajectorySteps"], list):
+                    return AgentType.WINDSURF
+    except (json.JSONDecodeError, RecursionError):
+        pass
 
     return None
 

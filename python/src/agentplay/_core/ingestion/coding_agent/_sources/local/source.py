@@ -914,14 +914,14 @@ def _cwd_from_kiro_head(head: bytes) -> str | None:
 
 
 def _cwd_from_windsurf_head(head: bytes) -> str | None:
-    """The workspace root Windsurf carries (`cwd` or `workspace_path`)."""
+    """The workspace root Windsurf carries (`cwd` or `workspace_path` or `workspacePath`)."""
     try:
         doc = json.loads(head)
         if isinstance(doc, dict):
-            cwd = doc.get("cwd") or doc.get("workspace_path")
+            cwd = doc.get("cwd") or doc.get("workspace_path") or doc.get("workspacePath")
             if isinstance(cwd, str) and cwd:
                 return cwd.rstrip("/\\")
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
         pass
 
     for raw_line in head.split(b"\n")[:10]:
@@ -930,13 +930,79 @@ def _cwd_from_windsurf_head(head: bytes) -> str | None:
             continue
         try:
             obj = json.loads(raw_line)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
             continue
         if isinstance(obj, dict):
-            cwd = obj.get("cwd") or obj.get("workspace_path")
+            cwd = obj.get("cwd") or obj.get("workspace_path") or obj.get("workspacePath")
             if isinstance(cwd, str) and cwd:
                 return cwd.rstrip("/\\")
     return None
+
+
+def _windsurf_json_doc_info(head: bytes) -> tuple[str | None, str | None, bool]:
+    """(session_id, cwd, has_steps) from a Windsurf / Cascade single-document JSON export.
+
+    Confirms the document shape directly rather than relying on single-line scanning,
+    ensuring pretty-printed exports are recognized.
+    """
+    try:
+        obj = json.loads(head)
+    except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
+        return None, None, False
+    if not isinstance(obj, dict):
+        return None, None, False
+
+    line_type = obj.get("type", "")
+    is_windsurf = (
+        line_type in (
+            "windsurf_session",
+            "windsurfSession",
+            "windsurf_trajectory",
+            "windsurfTrajectory",
+            "cascade_session",
+            "cascadeSession",
+        )
+        or "cascade_id" in obj
+        or "cascadeId" in obj
+        or "cascadeSession" in obj
+        or "trajectorySteps" in obj
+        or ("steps" in obj and ("agentId" in obj or "agent_id" in obj or "model" in obj or "cascade_id" in obj or "cascadeId" in obj))
+    )
+    if not is_windsurf:
+        steps = obj.get("steps") or obj.get("trajectorySteps")
+        if isinstance(steps, list) and steps and isinstance(steps[0], dict):
+            first = steps[0]
+            if (
+                "step_id" in first
+                or "stepId" in first
+                or "step_type" in first
+                or "stepType" in first
+                or "tool_calls" in first
+                or "toolCalls" in first
+            ):
+                is_windsurf = True
+
+    if not is_windsurf:
+        return None, None, False
+
+    raw_session_id = (
+        obj.get("cascade_id")
+        or obj.get("cascadeId")
+        or obj.get("agentId")
+        or obj.get("agent_id")
+        or obj.get("sessionId")
+        or obj.get("session_id")
+        or obj.get("id")
+    )
+    raw_session_id = str(raw_session_id) if raw_session_id else None
+
+    cwd = obj.get("cwd") or obj.get("workspace_path") or obj.get("workspacePath")
+    cwd = str(cwd).rstrip("/\\") if isinstance(cwd, str) and cwd else None
+
+    steps = obj.get("steps") or obj.get("trajectorySteps")
+    has_steps = isinstance(steps, list) and len(steps) > 0
+
+    return raw_session_id, cwd, has_steps
 
 
 def _kiro_event_count(head: bytes) -> int:
@@ -2169,29 +2235,46 @@ class LocalSource:
             self._record_discovery("windsurf", "empty_or_unreadable")
             return None
         try:
-            head = _read_head(session_file, stop_when=_agent_detected)
+            if session_file.suffix == ".json":
+                # Single-document JSON export: read full document without stopping after 20 lines
+                head = _read_head(session_file, stop_when=lambda _buf: False)
+            else:
+                head = _read_head(session_file, stop_when=_agent_detected)
         except OSError:
             self._record_discovery("windsurf", "empty_or_unreadable")
             return None
 
-        agent = detect_agent(head)
-        if agent is None:
-            logger.warning(
-                "agent detection failed for %s (%d bytes); session skipped",
-                session_file,
-                size,
-            )
-            self._record_discovery("windsurf", "detection_failed")
-            return None
-        if agent != AgentType.WINDSURF:
-            self._record_discovery("windsurf", "different_agent")
-            return None
+        cwd: str | None = None
+        raw_session_id: str | None = None
 
-        stem = session_file.stem
-        session_id = f"local:{agent}:{stem}"
+        if session_file.suffix == ".json":
+            raw_session_id, cwd, has_steps = _windsurf_json_doc_info(head)
+            agent = detect_agent(head)
+            if raw_session_id is None and agent != AgentType.WINDSURF:
+                self._record_discovery("windsurf", "detection_failed")
+                return None
+            agent = AgentType.WINDSURF
+        else:
+            agent = detect_agent(head)
+            if agent is None:
+                logger.warning(
+                    "agent detection failed for %s (%d bytes); session skipped",
+                    session_file,
+                    size,
+                )
+                self._record_discovery("windsurf", "detection_failed")
+                return None
+            if agent != AgentType.WINDSURF:
+                self._record_discovery("windsurf", "different_agent")
+                return None
+
+        if not raw_session_id:
+            raw_session_id = session_file.stem
+        session_id = f"local:{agent}:{raw_session_id}"
         mtime = datetime.fromtimestamp(session_file.stat().st_mtime, tz=UTC)
 
-        cwd = _cwd_from_windsurf_head(head)
+        if not cwd:
+            cwd = _cwd_from_windsurf_head(head)
         project_name = _project_from_cwd(cwd) if cwd else None
 
         self._record_discovery("windsurf", "indexed")
