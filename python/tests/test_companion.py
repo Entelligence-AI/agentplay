@@ -6,6 +6,7 @@ import io
 import json
 import os
 import socket
+import sys
 from contextlib import redirect_stdout
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -109,6 +110,7 @@ def test_corrupt_index_is_reported_not_hidden(store, empty_homes):
     assert all(s["status"] == "error" and s["remedy"] for s in snap["sources"])
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="creating symlinks needs admin rights on Windows")
 def test_planted_symlink_in_maps_is_unreadable_not_followed(store, empty_homes, tmp_path):
     doc = _doc("local:claude-code:a", [_exec(0, "pytest")])
     _put(store, doc)
@@ -207,9 +209,9 @@ def test_snapshot_never_leaks_prompt_args_paths_or_remotes(fake_home, tmp_path, 
 
 
 def test_synthetic_index_fields_never_reach_snapshot(store, empty_homes):
-    _put(store, _doc("local:claude-code:a", [_exec(0, "pytest", err=True)] * 3), source=Path("/Users/SECRET-USER/x.jsonl"))
+    _put(store, _doc("local:claude-code:a", [_exec(0, "pytest", err=True)] * 3), source=Path("/Users/me/SECRET-USER-DIR/x.jsonl"))
     raw = json.dumps(_snap(store, empty_homes))
-    for secret in ("SECRET-TITLE", "SECRET-TASK", "SECRET-REMOTE", "SECRET-PR", "SECRET-USER"):
+    for secret in ("SECRET-TITLE", "SECRET-TASK", "SECRET-REMOTE", "SECRET-PR", "SECRET-USER-DIR"):
         assert secret not in raw, secret
 
 
