@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode, type RefObject } from 'react';
-import { CaretDown, Check } from '@phosphor-icons/react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { CaretDown, Check, Link } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -49,25 +49,79 @@ interface Props {
  */
 export function ExplorerToolbar(props: Props) {
   return (
-    <div
-      role="group"
-      aria-label="Filter the map, timeline and side panel"
-      className="flex shrink-0 flex-wrap items-center gap-1.5"
-    >
-      {props.tasks.length > 1 ? <TaskPicker {...props} /> : null}
-      {props.agents.length ? <AgentPicker {...props} /> : null}
-      {props.models.length > 1 ? <ModelPicker {...props} /> : null}
-      {props.filtered ? (
-        <Button
-          variant="link"
-          size="sm"
-          onClick={props.onClear}
-          className="h-7 px-1.5 text-ds-text-subtle"
-        >
-          Clear filters
-        </Button>
-      ) : null}
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+      <div
+        role="group"
+        aria-label="Filter the map, timeline and side panel"
+        className="flex flex-wrap items-center gap-1.5"
+      >
+        {props.tasks.length > 1 ? <TaskPicker {...props} /> : null}
+        {props.agents.length ? <AgentPicker {...props} /> : null}
+        {props.models.length > 1 ? <ModelPicker {...props} /> : null}
+        {props.filtered ? (
+          <Button
+            variant="link"
+            size="sm"
+            onClick={props.onClear}
+            className="h-7 px-1.5 text-ds-text-subtle"
+          >
+            Clear filters
+          </Button>
+        ) : null}
+      </div>
+      <CopyLinkButton />
     </div>
+  );
+}
+
+/** A local button that copies the current viewer URL to clipboard. */
+function CopyLinkButton() {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch {
+      // Fallback or ignore clipboard errors quietly in non-secure contexts
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleCopy}
+      aria-label={copied ? 'Link copied' : 'Copy link to current view'}
+      aria-live="polite"
+      className={cn(
+        'h-7 gap-1.5 px-2.5 font-normal text-ds-text-darker transition-colors',
+        copied && 'border-ds-brand-subtler bg-ds-brand-lightest text-ds-brand-default'
+      )}
+    >
+      {copied ? (
+        <>
+          <Check size={12} aria-hidden className="shrink-0" />
+          <span>Copied</span>
+        </>
+      ) : (
+        <>
+          <Link size={12} aria-hidden className="shrink-0 text-ds-text-subtle" />
+          <span>Copy link</span>
+        </>
+      )}
+    </Button>
   );
 }
 
