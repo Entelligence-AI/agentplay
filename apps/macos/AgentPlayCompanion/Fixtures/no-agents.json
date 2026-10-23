@@ -1,0 +1,124 @@
+{
+  "schema": "agentplay.companion/v1",
+  "schemaVersion": 1,
+  "agentplayVersion": "0.2.3",
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "store": {
+    "available": false,
+    "sessionCount": 0,
+    "indexError": null
+  },
+  "sources": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "cursor",
+      "label": "Cursor",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot",
+      "label": "Copilot CLI",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot-vscode",
+      "label": "Copilot (VS Code)",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "kiro",
+      "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    }
+  ],
+  "runs": [],
+  "unreadable": [],
+  "alerts": [],
+  "limits": [
+    {
+      "provider": "claude-code",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "Claude Code does not write plan usage into its local transcripts. Check /usage in Claude Code or your Claude settings.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "No Codex session on this machine has reported plan usage. Check usage in Codex.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "learn": null,
+  "timing": {
+    "snapshotMs": 0
+  },
+  "sample": true
+}

@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Entelligence-AI/agentplay/schema/agentplay-companion-v1.schema.json",
+  "title": "AgentPlay companion snapshot (agentplay.companion/v1)",
+  "description": "Output of `agentplay companion snapshot --json`. Read-only, local. Never carries prompt text, session titles, transcript paths, command arguments, repo remotes or PR URLs. Fields are only added within v1; readers ignore unknown fields.",
+  "type": "object",
+  "required": ["schema", "schemaVersion", "agentplayVersion", "generatedAt", "store", "sources", "runs", "alerts", "limits", "learn"],
+  "properties": {
+    "schema": {"const": "agentplay.companion/v1"},
+    "schemaVersion": {"type": "integer", "minimum": 1},
+    "agentplayVersion": {"type": "string"},
+    "generatedAt": {"$ref": "#/$defs/time"},
+    "sample": {"type": "boolean", "description": "Synthetic fixture data. A reader must label it as a sample, never as live."},
+    "store": {
+      "type": "object",
+      "required": ["available", "sessionCount", "indexError"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "sessionCount": {"type": "integer", "minimum": 0},
+        "indexError": {"type": ["string", "null"]}
+      }
+    },
+    "sources": {"type": "array", "items": {"$ref": "#/$defs/sourceCapability"}},
+    "runs": {"type": "array", "items": {"$ref": "#/$defs/runActivity"}},
+    "unreadable": {"type": "array", "items": {"type": "object", "required": ["sessionId", "message"]}},
+    "alerts": {"type": "array", "items": {"$ref": "#/$defs/alertCandidate"}},
+    "limits": {"type": "array", "items": {"$ref": "#/$defs/providerLimitWindow"}},
+    "learn": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/learnCard"}]},
+    "timing": {"type": "object"}
+  },
+  "$defs": {
+    "time": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"},
+    "timeOrNull": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/time"}]},
+    "dataPoint": {
+      "type": "object",
+      "required": ["value", "kind", "source", "observedAt", "window", "confidence", "explanation"],
+      "properties": {
+        "kind": {"enum": ["recorded", "derived", "estimated", "provider_reported", "unavailable"]},
+        "source": {"enum": ["agentplay_map", "local_index", "approved_provider_cli", "official_provider_api", "none"]},
+        "observedAt": {"$ref": "#/$defs/timeOrNull"},
+        "window": {"enum": ["context", "five_hour", "weekly", "session", "project", "none"]},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "explanation": {"type": "string", "minLength": 1},
+        "freshness": {"enum": ["fresh", "stale", "unknown"]}
+      },
+      "if": {"properties": {"kind": {"const": "unavailable"}}},
+      "then": {"properties": {"value": {"type": "null"}, "source": {"const": "none"}}}
+    },
+    "contextValue": {
+      "type": "object",
+      "required": ["tokens", "limit", "percent"],
+      "properties": {
+        "tokens": {"type": "integer", "minimum": 0},
+        "limit": {"type": ["integer", "null"]},
+        "percent": {"type": ["number", "null"]}
+      },
+      "description": "percent is non-null only when limit is non-null: no percentage without a denominator.",
+      "if": {"properties": {"limit": {"type": "null"}}},
+      "then": {"properties": {"percent": {"type": "null"}}}
+    },
+    "sourceCapability": {
+      "type": "object",
+      "required": ["agent", "label", "status", "paths", "sessionCount", "latestAt", "remedy"],
+      "properties": {
+        "agent": {"type": "string"},
+        "label": {"type": "string"},
+        "status": {"enum": ["found", "not_found", "error"]},
+        "paths": {"type": "array", "items": {"type": "string"}},
+        "sessionCount": {"type": "integer", "minimum": 0},
+        "latestAt": {"type": ["string", "null"]},
+        "remedy": {"type": ["string", "null"]}
+      }
+    },
+    "sessionEvent": {
+      "type": "object",
+      "required": ["seq", "at", "kind", "agent", "label", "err", "pending"],
+      "properties": {
+        "seq": {"type": "integer", "minimum": 0},
+        "at": {"$ref": "#/$defs/timeOrNull"},
+        "kind": {"type": "string"},
+        "cat": {"type": ["string", "null"]},
+        "agent": {"type": "string"},
+        "label": {"type": "string"},
+        "target": {"type": ["string", "null"]},
+        "err": {"type": "boolean"},
+        "pending": {"type": "boolean"},
+        "errClass": {"type": ["string", "null"]},
+        "retryOf": {"type": ["integer", "null"]},
+        "attempt": {"type": ["integer", "null"]}
+      }
+    },
+    "runActivity": {
+      "type": "object",
+      "required": ["sessionId", "agentTool", "agentLabel", "repo", "startedAt", "lastEventAt", "activity", "outcome",
+                   "counts", "categories", "lastEvent", "lastError", "recentEvents", "pendingTool", "context"],
+      "properties": {
+        "sessionId": {"type": "string"},
+        "agentTool": {"type": ["string", "null"]},
+        "agentLabel": {"type": "string"},
+        "repo": {"type": ["string", "null"]},
+        "repoCount": {"type": "integer"},
+        "startedAt": {"$ref": "#/$defs/timeOrNull"},
+        "lastEventAt": {"$ref": "#/$defs/timeOrNull"},
+        "lastActivityAt": {"$ref": "#/$defs/timeOrNull"},
+        "activity": {"allOf": [{"$ref": "#/$defs/dataPoint"},
+                               {"properties": {"value": {"enum": ["active", "recent", "idle", null]}}}]},
+        "outcome": {"type": ["string", "null"]},
+        "models": {"type": "array", "items": {"type": "string"}},
+        "pathMode": {"enum": ["relative", "dirs_only", "hashed"]},
+        "counts": {"type": "object"},
+        "categories": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "lastEvent": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sessionEvent"}]},
+        "lastError": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sessionEvent"}]},
+        "recentEvents": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/sessionEvent"}},
+        "pendingTool": {"oneOf": [{"type": "null"}, {"type": "object", "required": ["event", "elapsed"],
+                                  "properties": {"event": {"$ref": "#/$defs/sessionEvent"},
+                                                 "elapsed": {"$ref": "#/$defs/dataPoint"}}}]},
+        "context": {"allOf": [{"$ref": "#/$defs/dataPoint"},
+                              {"properties": {"value": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/contextValue"}]}}}]}
+      }
+    },
+    "alertCandidate": {
+      "type": "object",
+      "required": ["rule", "signature", "patternKey", "sessionId", "triggerSeq", "triggerAt", "resolvedSeq", "evidence"],
+      "properties": {
+        "rule": {"enum": ["repeated_failure", "unresolved_end"]},
+        "signature": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "patternKey": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "sessionId": {"type": "string"},
+        "agentTool": {"type": ["string", "null"]},
+        "command": {"type": ["string", "null"]},
+        "errClass": {"type": ["string", "null"]},
+        "count": {"type": "integer"},
+        "firstSeq": {"type": ["integer", "null"]},
+        "triggerSeq": {"type": ["integer", "null"]},
+        "triggerAt": {"$ref": "#/$defs/timeOrNull"},
+        "resolvedSeq": {"type": ["integer", "null"]},
+        "evidence": {"$ref": "#/$defs/dataPoint"}
+      }
+    },
+    "providerLimitWindow": {
+      "type": "object",
+      "required": ["provider", "window", "resetsAt", "usageUrl", "used"],
+      "properties": {
+        "provider": {"type": "string"},
+        "window": {"type": "string"},
+        "windowMinutes": {"type": ["integer", "null"]},
+        "plan": {"type": ["string", "null"]},
+        "limitId": {"type": ["string", "null"]},
+        "resetsAt": {"$ref": "#/$defs/timeOrNull"},
+        "usageUrl": {"type": ["string", "null"]},
+        "used": {"$ref": "#/$defs/dataPoint"}
+      }
+    },
+    "learnCard": {
+      "type": "object",
+      "required": ["signature", "patternKey", "kind", "command", "title", "denominator", "detail", "failures", "runs",
+                   "sessions", "evidence"],
+      "properties": {
+        "kind": {"enum": ["observed", "suggested"]},
+        "title": {"type": "string"},
+        "denominator": {"type": "string", "minLength": 1},
+        "failures": {"$ref": "#/$defs/dataPoint"},
+        "runs": {"type": "integer", "minimum": 1},
+        "sessions": {"type": "integer", "minimum": 1},
+        "evidence": {"type": "array", "items": {"type": "object", "required": ["sessionId", "seq"]}}
+      }
+    }
+  }
+}

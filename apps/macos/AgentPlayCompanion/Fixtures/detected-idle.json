@@ -1,0 +1,261 @@
+{
+  "schema": "agentplay.companion/v1",
+  "schemaVersion": 1,
+  "agentplayVersion": "0.2.3",
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "store": {
+    "available": true,
+    "sessionCount": 1,
+    "indexError": null
+  },
+  "sources": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "status": "found",
+      "paths": [
+        "~/.claude"
+      ],
+      "sessionCount": 1,
+      "latestAt": "2026-10-22T08:46:00Z",
+      "remedy": null
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "cursor",
+      "label": "Cursor",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot",
+      "label": "Copilot CLI",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot-vscode",
+      "label": "Copilot (VS Code)",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "kiro",
+      "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    }
+  ],
+  "runs": [
+    {
+      "sessionId": "local:claude-code:sample-idle",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "billing",
+      "repoCount": 1,
+      "startedAt": "2026-10-22T08:46:00Z",
+      "lastEventAt": "2026-10-22T08:47:10Z",
+      "lastActivityAt": "2026-10-22T08:46:00Z",
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-22T08:46:00Z",
+        "window": "none",
+        "confidence": "medium",
+        "explanation": "No recent changes to the transcript.",
+        "freshness": "unknown"
+      },
+      "outcome": "verified",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 6,
+        "calls": 3,
+        "errors": 0,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 1,
+        "search": 0,
+        "edit": 1,
+        "exec": 0,
+        "verify": 1,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 4,
+        "at": "2026-10-22T08:47:10Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pytest",
+        "target": null,
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": null,
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-22T08:46:00Z",
+          "kind": "user",
+          "cat": null,
+          "agent": "main",
+          "label": "prompt",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-22T08:46:10Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "app/models.py",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-22T08:46:40Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "app/models.py",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 4,
+          "at": "2026-10-22T08:47:10Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pytest",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 52000,
+          "limit": null,
+          "percent": null
+        },
+        "kind": "recorded",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-22T08:47:20Z",
+        "window": "context",
+        "confidence": "medium",
+        "explanation": "Prompt size of the latest recorded request (input plus cache). No context limit is recorded, so there is no percentage. Claude Code's /context shows its own.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "unreadable": [],
+  "alerts": [],
+  "limits": [
+    {
+      "provider": "claude-code",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "Claude Code does not write plan usage into its local transcripts. Check /usage in Claude Code or your Claude settings.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "No Codex session on this machine has reported plan usage. Check usage in Codex.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "learn": null,
+  "timing": {
+    "snapshotMs": 0
+  },
+  "sample": true
+}

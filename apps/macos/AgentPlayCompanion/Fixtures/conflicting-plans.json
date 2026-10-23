@@ -1,0 +1,406 @@
+{
+  "schema": "agentplay.companion/v1",
+  "schemaVersion": 1,
+  "agentplayVersion": "0.2.3",
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "store": {
+    "available": true,
+    "sessionCount": 2,
+    "indexError": null
+  },
+  "sources": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "status": "found",
+      "paths": [
+        "~/.codex"
+      ],
+      "sessionCount": 2,
+      "latestAt": "2026-10-23T10:16:00Z",
+      "remedy": null
+    },
+    {
+      "agent": "cursor",
+      "label": "Cursor",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot",
+      "label": "Copilot CLI",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot-vscode",
+      "label": "Copilot (VS Code)",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "kiro",
+      "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    }
+  ],
+  "runs": [
+    {
+      "sessionId": "local:codex:sample-0c1d",
+      "agentTool": "codex",
+      "agentLabel": "Codex",
+      "repo": "frontend",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T10:16:00Z",
+      "lastEventAt": "2026-10-23T10:26:40Z",
+      "lastActivityAt": "2026-10-23T10:36:00Z",
+      "activity": {
+        "value": "recent",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:36:00Z",
+        "window": "none",
+        "confidence": "medium",
+        "explanation": "The transcript changed recently. No running process was seen, so this is recorded activity, not proof it is running.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "gpt-5.5-codex"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 7,
+        "calls": 6,
+        "errors": 0,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 3,
+        "search": 0,
+        "edit": 2,
+        "exec": 1,
+        "verify": 0,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 6,
+        "at": "2026-10-23T10:26:40Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "src/api.ts",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": null,
+      "recentEvents": [
+        {
+          "seq": 2,
+          "at": "2026-10-23T10:17:00Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/cart.css",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-23T10:20:00Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/cart.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 4,
+          "at": "2026-10-23T10:22:40Z",
+          "kind": "exec",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm lint",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 5,
+          "at": "2026-10-23T10:26:00Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/cart.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 6,
+          "at": "2026-10-23T10:26:40Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/api.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 184000,
+          "limit": 258400,
+          "percent": 71.2
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:36:00Z",
+        "window": "context",
+        "confidence": "high",
+        "explanation": "Reported by Codex in its session file: input tokens of the latest request over the model context window. Codex's own indicator may differ slightly.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "sessionId": "local:codex:sample-other",
+      "agentTool": "codex",
+      "agentLabel": "Codex",
+      "repo": "infra",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T09:56:00Z",
+      "lastEventAt": "2026-10-23T09:56:05Z",
+      "lastActivityAt": "2026-10-23T10:31:00Z",
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:31:00Z",
+        "window": "none",
+        "confidence": "medium",
+        "explanation": "No recent changes to the transcript.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "gpt-5.5-codex"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 2,
+        "calls": 1,
+        "errors": 0,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 1,
+        "search": 0,
+        "edit": 0,
+        "exec": 0,
+        "verify": 0,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 1,
+        "at": "2026-10-23T09:56:05Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "main.tf",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": null,
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-23T09:56:00Z",
+          "kind": "user",
+          "cat": null,
+          "agent": "main",
+          "label": "prompt",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-23T09:56:05Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "main.tf",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 184000,
+          "limit": 258400,
+          "percent": 71.2
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:31:00Z",
+        "window": "context",
+        "confidence": "high",
+        "explanation": "Reported by Codex in its session file: input tokens of the latest request over the model context window. Codex's own indicator may differ slightly.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "unreadable": [],
+  "alerts": [],
+  "limits": [
+    {
+      "provider": "claude-code",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "Claude Code does not write plan usage into its local transcripts. Check /usage in Claude Code or your Claude settings.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "five_hour",
+      "windowMinutes": 300,
+      "plan": "plus",
+      "limitId": "codex",
+      "resetsAt": "2026-10-23T12:48:00Z",
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "used": {
+        "value": {
+          "usedPercent": 32.0,
+          "leftPercent": 68.0
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:36:00Z",
+        "window": "five_hour",
+        "confidence": "low",
+        "explanation": "Reported by Codex in a session file at 2026-10-23T10:36:00Z. Plan windows are shared across devices, so this is the account at that moment. Recent Codex sessions reported different plans (plus, pro); they may be different accounts.",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "weekly",
+      "windowMinutes": 10080,
+      "plan": "plus",
+      "limitId": "codex",
+      "resetsAt": "2026-10-27T10:36:00Z",
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "used": {
+        "value": {
+          "usedPercent": 41.0,
+          "leftPercent": 59.0
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:36:00Z",
+        "window": "weekly",
+        "confidence": "low",
+        "explanation": "Reported by Codex in a session file at 2026-10-23T10:36:00Z. Plan windows are shared across devices, so this is the account at that moment. Recent Codex sessions reported different plans (plus, pro); they may be different accounts.",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "learn": null,
+  "timing": {
+    "snapshotMs": 0
+  },
+  "sample": true
+}

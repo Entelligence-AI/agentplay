@@ -323,6 +323,12 @@ def cmd_agents(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_companion(args: argparse.Namespace) -> int:
+    from . import companion
+
+    return companion.main(args)
+
+
 # --------------------------------------------------------------------------- parser
 def _build_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--since", help="only sessions changed since (30d, 12h, 2w, YYYY-MM-DD)")
@@ -376,6 +382,16 @@ def parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("agents", parents=[common], help="show which agents were found on this machine")
     a.set_defaults(fn=cmd_agents)
+
+    c = sub.add_parser("companion", parents=[common], help="read-only data for the macOS companion app")
+    csub = c.add_subparsers(dest="companion_cmd", required=True)
+    snap = csub.add_parser("snapshot", help="print one JSON snapshot (no prompt text, paths or arguments)")
+    snap.add_argument("--json", action="store_true", help="JSON output (the only format)")
+    snap.add_argument("--pretty", action="store_true")
+    snap.add_argument("--refresh", action="store_true", help="build recently changed sessions first")
+    snap.add_argument("--agents", help="with --refresh: only these agents (comma-separated)")
+    snap.add_argument("--max-runs", type=int)
+    snap.set_defaults(fn=cmd_companion)
     return ap
 
 

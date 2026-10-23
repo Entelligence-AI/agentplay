@@ -1,0 +1,964 @@
+{
+  "schema": "agentplay.companion/v1",
+  "schemaVersion": 1,
+  "agentplayVersion": "0.2.3",
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "store": {
+    "available": true,
+    "sessionCount": 5,
+    "indexError": null
+  },
+  "sources": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "status": "found",
+      "paths": [
+        "~/.claude"
+      ],
+      "sessionCount": 4,
+      "latestAt": "2026-10-23T10:42:00Z",
+      "remedy": null
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "status": "found",
+      "paths": [
+        "~/.codex"
+      ],
+      "sessionCount": 1,
+      "latestAt": "2026-10-23T10:35:00Z",
+      "remedy": null
+    },
+    {
+      "agent": "cursor",
+      "label": "Cursor",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot",
+      "label": "Copilot CLI",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot-vscode",
+      "label": "Copilot (VS Code)",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "kiro",
+      "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    }
+  ],
+  "runs": [
+    {
+      "sessionId": "local:claude-code:sample-7f3a",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T10:42:00Z",
+      "lastEventAt": "2026-10-23T10:45:35Z",
+      "lastActivityAt": "2026-10-23T10:45:54Z",
+      "activity": {
+        "value": "active",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:46:00Z",
+        "window": "none",
+        "confidence": "high",
+        "explanation": "A claude process is running in this project.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 13,
+        "calls": 9,
+        "errors": 3,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 3,
+        "search": 0,
+        "edit": 3,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 12,
+        "at": "2026-10-23T10:45:35Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "src/charge.test.ts",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 10,
+        "at": "2026-10-23T10:44:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 7,
+          "at": "2026-10-23T10:43:15Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 8,
+          "at": "2026-10-23T10:43:36Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 9,
+          "at": "2026-10-23T10:44:10Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.test.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 10,
+          "at": "2026-10-23T10:44:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 12,
+          "at": "2026-10-23T10:45:35Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/charge.test.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 142000,
+          "limit": null,
+          "percent": null
+        },
+        "kind": "recorded",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:45:20Z",
+        "window": "context",
+        "confidence": "medium",
+        "explanation": "Prompt size of the latest recorded request (input plus cache). No context limit is recorded, so there is no percentage. Claude Code's /context shows its own.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "sessionId": "local:codex:sample-0c1d",
+      "agentTool": "codex",
+      "agentLabel": "Codex",
+      "repo": "frontend",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T10:35:00Z",
+      "lastEventAt": "2026-10-23T10:45:40Z",
+      "lastActivityAt": "2026-10-23T10:45:40Z",
+      "activity": {
+        "value": "active",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:46:00Z",
+        "window": "none",
+        "confidence": "high",
+        "explanation": "Transcript held open by a running process.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "gpt-5.5-codex"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 7,
+        "calls": 6,
+        "errors": 0,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 3,
+        "search": 0,
+        "edit": 2,
+        "exec": 1,
+        "verify": 0,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 6,
+        "at": "2026-10-23T10:45:40Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "src/api.ts",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": null,
+      "recentEvents": [
+        {
+          "seq": 2,
+          "at": "2026-10-23T10:36:00Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/cart.css",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-23T10:39:00Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/cart.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 4,
+          "at": "2026-10-23T10:41:40Z",
+          "kind": "exec",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm lint",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 5,
+          "at": "2026-10-23T10:45:00Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/cart.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 6,
+          "at": "2026-10-23T10:45:40Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/api.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 184000,
+          "limit": 258400,
+          "percent": 71.2
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:45:40Z",
+        "window": "context",
+        "confidence": "high",
+        "explanation": "Reported by Codex in its session file: input tokens of the latest request over the model context window. Codex's own indicator may differ slightly.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "sessionId": "local:claude-code:sample-old0",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-22T10:46:00Z",
+      "lastEventAt": "2026-10-22T10:47:30Z",
+      "lastActivityAt": null,
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 4,
+        "calls": 4,
+        "errors": 2,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 0,
+        "search": 0,
+        "edit": 1,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 3,
+        "at": "2026-10-22T10:47:30Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 2,
+        "at": "2026-10-22T10:46:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-22T10:46:00Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-22T10:46:20Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-22T10:46:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-22T10:47:30Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "context",
+        "confidence": "low",
+        "explanation": "This session has no recorded model requests with token counts.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "sessionId": "local:claude-code:sample-old1",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-21T10:46:00Z",
+      "lastEventAt": "2026-10-21T10:47:30Z",
+      "lastActivityAt": null,
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 4,
+        "calls": 4,
+        "errors": 2,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 0,
+        "search": 0,
+        "edit": 1,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 3,
+        "at": "2026-10-21T10:47:30Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 2,
+        "at": "2026-10-21T10:46:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-21T10:46:00Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-21T10:46:20Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-21T10:46:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-21T10:47:30Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "context",
+        "confidence": "low",
+        "explanation": "This session has no recorded model requests with token counts.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "sessionId": "local:claude-code:sample-old2",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-20T10:46:00Z",
+      "lastEventAt": "2026-10-20T10:47:30Z",
+      "lastActivityAt": null,
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 4,
+        "calls": 4,
+        "errors": 2,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 0,
+        "search": 0,
+        "edit": 1,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 3,
+        "at": "2026-10-20T10:47:30Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 2,
+        "at": "2026-10-20T10:46:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-20T10:46:00Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-20T10:46:20Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-20T10:46:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-20T10:47:30Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "context",
+        "confidence": "low",
+        "explanation": "This session has no recorded model requests with token counts.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "unreadable": [],
+  "alerts": [
+    {
+      "rule": "repeated_failure",
+      "signature": "0f46eb43b1abb49c",
+      "patternKey": "9016650128ab6d9f",
+      "sessionId": "local:claude-code:sample-7f3a",
+      "agentTool": "claude-code",
+      "command": "pnpm test",
+      "errClass": "exit_code",
+      "agent": "main",
+      "count": 3,
+      "firstSeq": 5,
+      "triggerSeq": 10,
+      "triggerAt": "2026-10-23T10:44:50Z",
+      "resolvedSeq": null,
+      "evidence": {
+        "value": 3,
+        "kind": "recorded",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:44:50Z",
+        "window": "session",
+        "confidence": "high",
+        "explanation": "pnpm test failed 3 times in a row (exit_code) in one run, with no success of it in between.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "limits": [
+    {
+      "provider": "claude-code",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "Claude Code does not write plan usage into its local transcripts. Check /usage in Claude Code or your Claude settings.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "five_hour",
+      "windowMinutes": 300,
+      "plan": "plus",
+      "limitId": "codex",
+      "resetsAt": "2026-10-23T12:57:40Z",
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "used": {
+        "value": {
+          "usedPercent": 32.0,
+          "leftPercent": 68.0
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:45:40Z",
+        "window": "five_hour",
+        "confidence": "high",
+        "explanation": "Reported by Codex in a session file at 2026-10-23T10:45:40Z. Plan windows are shared across devices, so this is the account at that moment.",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "weekly",
+      "windowMinutes": 10080,
+      "plan": "plus",
+      "limitId": "codex",
+      "resetsAt": "2026-10-27T10:45:40Z",
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "used": {
+        "value": {
+          "usedPercent": 41.0,
+          "leftPercent": 59.0
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:45:40Z",
+        "window": "weekly",
+        "confidence": "high",
+        "explanation": "Reported by Codex in a session file at 2026-10-23T10:45:40Z. Plan windows are shared across devices, so this is the account at that moment.",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "learn": {
+    "signature": "5eec85a37319eae5",
+    "patternKey": "09eb1e93206132bc",
+    "kind": "observed",
+    "command": "pnpm test",
+    "title": "`pnpm test` failed 9 times in 4 runs.",
+    "denominator": "Across 5 recent sessions (last 14 days, newest 40 at most).",
+    "detail": "It passed later in the same run in 3 of those 4 runs. A retry that ends in a pass is often normal work, not waste.",
+    "failures": {
+      "value": 9,
+      "kind": "derived",
+      "source": "local_index",
+      "observedAt": "2026-10-23T10:46:00Z",
+      "window": "project",
+      "confidence": "high",
+      "explanation": "Counted from recorded pnpm test events whose call failed, in 5 sessions. Calls still running are not counted.",
+      "freshness": "unknown"
+    },
+    "runs": 4,
+    "sessions": 5,
+    "evidence": [
+      {
+        "sessionId": "local:claude-code:sample-7f3a",
+        "agentTool": "claude-code",
+        "seq": 5,
+        "at": "2026-10-23T10:42:48Z"
+      },
+      {
+        "sessionId": "local:claude-code:sample-old0",
+        "agentTool": "claude-code",
+        "seq": 0,
+        "at": "2026-10-22T10:46:00Z"
+      },
+      {
+        "sessionId": "local:claude-code:sample-old1",
+        "agentTool": "claude-code",
+        "seq": 0,
+        "at": "2026-10-21T10:46:00Z"
+      },
+      {
+        "sessionId": "local:claude-code:sample-old2",
+        "agentTool": "claude-code",
+        "seq": 0,
+        "at": "2026-10-20T10:46:00Z"
+      }
+    ]
+  },
+  "timing": {
+    "snapshotMs": 0
+  },
+  "sample": true
+}

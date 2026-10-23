@@ -1,0 +1,438 @@
+{
+  "schema": "agentplay.companion/v1",
+  "schemaVersion": 1,
+  "agentplayVersion": "0.2.3",
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "store": {
+    "available": true,
+    "sessionCount": 3,
+    "indexError": null
+  },
+  "sources": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "status": "error",
+      "paths": [
+        "~/.claude"
+      ],
+      "sessionCount": 2,
+      "latestAt": "2026-10-23T07:46:00Z",
+      "remedy": "Can't read ~/.claude/projects. Check its permissions, or grant AgentPlay Companion access to that folder."
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "cursor",
+      "label": "Cursor",
+      "status": "found",
+      "paths": [
+        "~/.cursor"
+      ],
+      "sessionCount": 1,
+      "latestAt": "2026-10-23T10:06:00Z",
+      "remedy": null
+    },
+    {
+      "agent": "copilot",
+      "label": "Copilot CLI",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot-vscode",
+      "label": "Copilot (VS Code)",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "kiro",
+      "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    }
+  ],
+  "runs": [
+    {
+      "sessionId": "local:cursor:sample-cur",
+      "agentTool": "cursor",
+      "agentLabel": "Cursor",
+      "repo": "mobile",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T10:06:00Z",
+      "lastEventAt": "2026-10-23T10:06:30Z",
+      "lastActivityAt": "2026-10-23T10:44:00Z",
+      "activity": {
+        "value": "recent",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:44:00Z",
+        "window": "none",
+        "confidence": "low",
+        "explanation": "The agent's shared database changed recently; it may not be this session.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "cursor-auto"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 4,
+        "calls": 2,
+        "errors": 0,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 1,
+        "search": 0,
+        "edit": 1,
+        "exec": 0,
+        "verify": 0,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 2,
+        "at": "2026-10-23T10:06:30Z",
+        "kind": "edit",
+        "cat": "file",
+        "agent": "main",
+        "label": "Edit",
+        "target": "App.tsx",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": null,
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-23T10:06:00Z",
+          "kind": "user",
+          "cat": null,
+          "agent": "main",
+          "label": "prompt",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-23T10:06:04Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "App.tsx",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-23T10:06:30Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "App.tsx",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "context",
+        "confidence": "low",
+        "explanation": "This agent does not record token counts locally.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "sessionId": "local:claude-code:sample-7f3a",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T07:46:00Z",
+      "lastEventAt": "2026-10-23T07:49:35Z",
+      "lastActivityAt": null,
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": true,
+      "counts": {
+        "events": 13,
+        "calls": 9,
+        "errors": 3,
+        "retries": 0,
+        "compactions": 0
+      },
+      "categories": {
+        "read": 3,
+        "search": 0,
+        "edit": 3,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 12,
+        "at": "2026-10-23T07:49:35Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "src/charge.test.ts",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 10,
+        "at": "2026-10-23T07:48:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 7,
+          "at": "2026-10-23T07:47:15Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 8,
+          "at": "2026-10-23T07:47:36Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 9,
+          "at": "2026-10-23T07:48:10Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.test.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 10,
+          "at": "2026-10-23T07:48:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 12,
+          "at": "2026-10-23T07:49:35Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/charge.test.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 142000,
+          "limit": null,
+          "percent": null
+        },
+        "kind": "recorded",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T07:49:20Z",
+        "window": "context",
+        "confidence": "medium",
+        "explanation": "Prompt size of the latest recorded request (input plus cache). No context limit is recorded, so there is no percentage. Claude Code's /context shows its own.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "unreadable": [
+    {
+      "sessionId": "local:claude-code:sample-broken",
+      "agentTool": "claude-code",
+      "message": "Can't read this session's map. Rebuild it from Settings (Diagnostics)."
+    }
+  ],
+  "alerts": [
+    {
+      "rule": "repeated_failure",
+      "signature": "0f46eb43b1abb49c",
+      "patternKey": "9016650128ab6d9f",
+      "sessionId": "local:claude-code:sample-7f3a",
+      "agentTool": "claude-code",
+      "command": "pnpm test",
+      "errClass": "exit_code",
+      "agent": "main",
+      "count": 3,
+      "firstSeq": 5,
+      "triggerSeq": 10,
+      "triggerAt": "2026-10-23T07:48:50Z",
+      "resolvedSeq": null,
+      "evidence": {
+        "value": 3,
+        "kind": "recorded",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T07:48:50Z",
+        "window": "session",
+        "confidence": "high",
+        "explanation": "pnpm test failed 3 times in a row (exit_code) in one run, with no success of it in between.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "limits": [
+    {
+      "provider": "claude-code",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "Claude Code does not write plan usage into its local transcripts. Check /usage in Claude Code or your Claude settings.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "No Codex session on this machine has reported plan usage. Check usage in Codex.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "learn": null,
+  "timing": {
+    "snapshotMs": 0
+  },
+  "sample": true
+}
