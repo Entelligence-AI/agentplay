@@ -2352,7 +2352,7 @@ class LocalSource:
             if agent != AgentType.WINDSURF:
                 self._record_discovery("windsurf", "different_agent")
                 return None
-            if not _windsurf_has_conversation(head) and len(head) >= size:
+            if not _windsurf_has_conversation(head) and len(head) >= session_file.stat().st_size:
                 logger.debug("windsurf: %s has no conversation steps; session skipped", session_file)
                 self._record_discovery("windsurf", "no_conversation")
                 return None

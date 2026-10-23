@@ -800,3 +800,45 @@ def test_windsurf_header_only_jsonl_skipped(tmp_path):
     assert source.discovery_stats().get("windsurf", {}).get("skipped", {}).get("no_conversation") == 1
 
 
+def test_windsurf_role_based_jsonl_detection_and_indexing(tmp_path):
+    """Verify that role-based JSONL lines without step IDs or headers are detected and indexed."""
+    from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+    # Detector level
+    user_line = b'{"role": "user", "content": "Fix the sorting algorithm"}\n'
+    assistant_line = b'{"role": "assistant", "visible": "I will inspect sort.py"}\n'
+    tool_line = b'{"toolName": "read_file", "params": {"file_path": "sort.py"}}\n'
+    assert detect_agent(user_line) == AgentType.WINDSURF
+    assert detect_agent(assistant_line) == AgentType.WINDSURF
+    assert detect_agent(tool_line) == AgentType.WINDSURF
+
+    # Indexer & parser level
+    ws_dir = tmp_path / "windsurf_home"
+    traj_dir = ws_dir / "trajectories"
+    traj_dir.mkdir(parents=True)
+
+    session_file = traj_dir / "role_based_session.jsonl"
+    session_file.write_text(
+        json.dumps({"role": "user", "content": "Fix the sorting algorithm"})
+        + "\n"
+        + json.dumps({"role": "assistant", "visible": "I will inspect sort.py"})
+        + "\n"
+    )
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        windsurf_homes=[ws_dir],
+    )
+    sessions = source.discover_sessions()
+    assert len(sessions) == 1
+    assert "role_based_session" in sessions[0].session_id
+
+    spans = source.get_spans_by_session(sessions[0].session_id)
+    assert len(spans) == 2  # Root + Turn 1
+    turn = next(s for s in spans if s.name == "Turn 1")
+    assert turn.attributes["input.value"] == "Fix the sorting algorithm"
+    assert "I will inspect sort.py" in turn.attributes["output.value"]
+
+
+

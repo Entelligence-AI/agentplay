@@ -69,17 +69,38 @@ def detect_agent(data: bytes) -> AgentType | None:
             "cascadeSession",
         ):
             return AgentType.WINDSURF
-        if ("step_id" in obj or "stepId" in obj) and (
-            "step_type" in obj
+        if "cascade_id" in obj or "cascadeId" in obj or "cascadeSession" in obj or "windsurfSession" in obj:
+            return AgentType.WINDSURF
+        if (
+            "step_id" in obj
+            or "stepId" in obj
+            or "step_type" in obj
             or "stepType" in obj
-            or "tool_calls" in obj
-            or "toolCalls" in obj
-            or "thinking" in obj
-            or "user_input" in obj
-            or "userInput" in obj
+            or "cortex_step" in obj
+            or "cortexStep" in obj
         ):
             return AgentType.WINDSURF
-        if "cascade_id" in obj or "cascadeId" in obj or "cascadeSession" in obj:
+        if (
+            "user_input" in obj
+            or "userInput" in obj
+            or "user_message" in obj
+            or "userMessage" in obj
+            or "tool_calls" in obj
+            or "toolCalls" in obj
+            or "tool_name" in obj
+            or "toolName" in obj
+            or "tool_result" in obj
+            or "toolResult" in obj
+        ):
+            return AgentType.WINDSURF
+        # Role-based Windsurf record: top-level role + content/visible (distinct from Cursor's message.content or opencode's parts)
+        if (
+            obj.get("role") in ("user", "assistant")
+            and ("content" in obj or "visible" in obj)
+            and not isinstance(obj.get("message"), dict)
+            and "parts" not in obj
+            and "sessionId" not in obj
+        ):
             return AgentType.WINDSURF
 
         # Cursor CLI/agent: synthesized header line, always first (see
