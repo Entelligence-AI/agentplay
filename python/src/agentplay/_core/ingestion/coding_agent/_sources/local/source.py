@@ -939,6 +939,74 @@ def _cwd_from_windsurf_head(head: bytes) -> str | None:
     return None
 
 
+def _windsurf_has_conversation(head: bytes) -> bool:
+    """True when the head holds at least one conversation step, message, or tool call."""
+    for raw_line in head.split(b"\n"):
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            obj = json.loads(raw_line)
+        except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        rtype = obj.get("type", "")
+        if rtype in (
+            "windsurf_session",
+            "windsurfSession",
+            "windsurf_trajectory",
+            "windsurfTrajectory",
+            "cascade_session",
+            "cascadeSession",
+        ):
+            continue
+        # Pure session metadata record
+        if (
+            ("cascade_id" in obj or "cascadeId" in obj)
+            and "step_id" not in obj
+            and "stepId" not in obj
+            and "step_type" not in obj
+            and "stepType" not in obj
+            and "tool_calls" not in obj
+            and "toolCalls" not in obj
+            and "tool_name" not in obj
+            and "toolName" not in obj
+            and "tool" not in obj
+            and "tool_result" not in obj
+            and "toolResult" not in obj
+            and "user_input" not in obj
+            and "userInput" not in obj
+            and "user_message" not in obj
+            and "userMessage" not in obj
+            and "content" not in obj
+            and "visible" not in obj
+        ):
+            continue
+        if (
+            "step_id" in obj
+            or "stepId" in obj
+            or "step_type" in obj
+            or "stepType" in obj
+            or "user_input" in obj
+            or "userInput" in obj
+            or "user_message" in obj
+            or "userMessage" in obj
+            or "tool_calls" in obj
+            or "toolCalls" in obj
+            or "tool_name" in obj
+            or "toolName" in obj
+            or "tool" in obj
+            or "tool_result" in obj
+            or "toolResult" in obj
+            or "content" in obj
+            or "visible" in obj
+            or obj.get("role") in ("user", "assistant", "tool")
+        ):
+            return True
+    return False
+
+
 def _windsurf_json_doc_info(head: bytes) -> tuple[str | None, str | None, bool]:
     """(session_id, cwd, has_steps) from a Windsurf / Cascade single-document JSON export.
 
@@ -966,6 +1034,7 @@ def _windsurf_json_doc_info(head: bytes) -> tuple[str | None, str | None, bool]:
         or "cascadeId" in obj
         or "cascadeSession" in obj
         or "windsurfSession" in obj
+        or "trajectorySteps" in obj
     )
     if not is_windsurf:
         steps = obj.get("steps") or obj.get("trajectorySteps")
@@ -980,6 +1049,9 @@ def _windsurf_json_doc_info(head: bytes) -> tuple[str | None, str | None, bool]:
                     or "toolCalls" in s
                     or "cortex_step" in s
                     or "cortexStep" in s
+                    or ("role" in s and ("content" in s or "visible" in s))
+                    or "user_input" in s
+                    or "userInput" in s
                 ):
                     is_windsurf = True
                     break
@@ -2279,6 +2351,10 @@ class LocalSource:
                 return None
             if agent != AgentType.WINDSURF:
                 self._record_discovery("windsurf", "different_agent")
+                return None
+            if not _windsurf_has_conversation(head) and len(head) >= size:
+                logger.debug("windsurf: %s has no conversation steps; session skipped", session_file)
+                self._record_discovery("windsurf", "no_conversation")
                 return None
 
         if not raw_session_id:

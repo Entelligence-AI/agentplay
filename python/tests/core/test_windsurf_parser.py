@@ -661,6 +661,9 @@ def test_windsurf_large_json_export_over_5mb(tmp_path):
 
     spans = source.get_spans_by_session(ws_sessions[0].session_id)
     assert len(spans) >= 2
+    turn = next(s for s in spans if s.name == "Turn 1")
+    assert len(turn.attributes["output.value"]) == 2000
+    assert turn.attributes["output.value"] == "x" * 2000
 
 
 def test_windsurf_deeply_nested_json_recursion_safe(tmp_path):
@@ -727,4 +730,73 @@ def test_windsurf_empty_steps_export_skipped(tmp_path):
     sessions = source.discover_sessions()
     assert not any("cascade-empty-steps-1" in s.session_id for s in sessions)
     assert source.discovery_stats().get("windsurf", {}).get("skipped", {}).get("no_conversation") == 1
+
+
+def test_windsurf_role_based_trajectory_steps_export(tmp_path):
+    """Verify that role-based trajectorySteps exports without step IDs are recognized and parsed."""
+    from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+    ws_dir = tmp_path / "windsurf_home"
+    cascade_dir = ws_dir / "cascade"
+    cascade_dir.mkdir(parents=True)
+
+    doc = {
+        "trajectorySteps": [
+            {
+                "role": "user",
+                "content": "Please explain recursion",
+            },
+            {
+                "role": "assistant",
+                "content": "Recursion is when a function calls itself.",
+            },
+        ],
+    }
+    export_file = cascade_dir / "role_session.json"
+    export_file.write_text(json.dumps(doc))
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        windsurf_homes=[ws_dir],
+    )
+    sessions = source.discover_sessions()
+    assert len(sessions) == 1
+    assert "role_session" in sessions[0].session_id
+
+    spans = source.get_spans_by_session(sessions[0].session_id)
+    assert len(spans) == 2  # Root + Turn 1
+    turn = next(s for s in spans if s.name == "Turn 1")
+    assert turn.attributes["input.value"] == "Please explain recursion"
+    assert "Recursion is when a function calls itself." in turn.attributes["output.value"]
+
+
+def test_windsurf_header_only_jsonl_skipped(tmp_path):
+    """Verify that a Windsurf JSONL file with only a session header (no conversation steps) is skipped."""
+    from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+    ws_dir = tmp_path / "windsurf_home"
+    traj_dir = ws_dir / "trajectories"
+    traj_dir.mkdir(parents=True)
+
+    header_only_file = traj_dir / "empty_header_session.jsonl"
+    header_only_file.write_text(
+        json.dumps({
+            "type": "windsurf_session",
+            "agentId": "empty-header-session",
+            "createdAt": "2026-03-12T14:00:00Z",
+            "cwd": "/path/to/project",
+        })
+        + "\n"
+    )
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        windsurf_homes=[ws_dir],
+    )
+    sessions = source.discover_sessions()
+    assert not any("empty-header-session" in s.session_id for s in sessions)
+    assert source.discovery_stats().get("windsurf", {}).get("skipped", {}).get("no_conversation") == 1
+
 

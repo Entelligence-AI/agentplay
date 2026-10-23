@@ -187,7 +187,13 @@ def detect_agent(data: bytes) -> AgentType | None:
                     "cascadeSession",
                 ):
                     return AgentType.WINDSURF
-                if "cascade_id" in obj or "cascadeId" in obj or "cascadeSession" in obj:
+                if (
+                    "cascade_id" in obj
+                    or "cascadeId" in obj
+                    or "cascadeSession" in obj
+                    or "windsurfSession" in obj
+                    or "trajectorySteps" in obj
+                ):
                     return AgentType.WINDSURF
                 if ("step_id" in obj or "stepId" in obj) and (
                     "step_type" in obj
@@ -211,6 +217,9 @@ def detect_agent(data: bytes) -> AgentType | None:
                             or "toolCalls" in s
                             or "cortex_step" in s
                             or "cortexStep" in s
+                            or ("role" in s and ("content" in s or "visible" in s))
+                            or "user_input" in s
+                            or "userInput" in s
                         ):
                             return AgentType.WINDSURF
     except (json.JSONDecodeError, RecursionError):
