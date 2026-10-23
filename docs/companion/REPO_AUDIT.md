@@ -102,3 +102,13 @@ Dependency decision: the companion ships against main. When PR #19 lands, the Le
 - Modified: `cli.py` (a handful of lines to register `companion snapshot`), chosen to stay small because PR #19 and #32 also touch `cli.py`.
 - New: `apps/macos/AgentPlayCompanion/` (SwiftPM), `scripts/companion-*.sh`, `docs/companion/*`.
 - Windows/Linux: the Python change is pure stdlib (`lsof` is optional and only attempted on macOS/Linux when present); CLI and viewer behavior unchanged.
+
+## 8. Found while implementing (after the audit)
+
+- **Newsletter in the companion's viewer.** `account.py` disables the signup card when `AGENTPLAY_NO_NETWORK` or `DO_NOT_TRACK` is set. The companion sets both for every child, so the viewer it opens never offers the newsletter. Kept that way: the app promises no network.
+- **Files and Folders gate.** A scan from the app can block in `open()` until the user answers a macOS prompt, because the builder looks inside repos (for `.git` and remotes) and repos often live under `~/Documents`. Terminal-run `agentplay` inherits Terminal's grant, so this is new to the app. Handled in the UI (onboarding copy, stalled-scan hint); a core option to skip repo resolution would avoid the prompt entirely.
+- **Live calls are recorded as `no_result` errors.** The builder flags a call with no result as `err: true, errClass: no_result`. In a finished session that is right; in a running one it is the call in flight. The companion treats it as running on a live, current map and never counts it as a failure.
+- **Refresh cost is in discovery and full re-parse.** Discovery reads every transcript head on each build (3.5 to 9.6 s here) and a changed session is re-parsed from the start (10.4 s for a 34 MB transcript). Measurements in EXPERIMENTS.md §3. Follow-ups for the core: a persisted discovery index keyed by directory mtime; append-incremental Claude parsing.
+- **Codex records plan and context data locally** (`token_count` → `rate_limits`, `model_context_window`). No AgentPlay parser read it before; `companion.py` reads only those numbers.
+- **Toolchain.** With Command Line Tools only, SwiftUI's `@State` macro plugin is missing for the macOS 27 SDK; the 26.5 SDK builds. XCTest is unavailable; Swift Testing works. A universal (x86_64) build fails under CLT.
+- **Concurrent writers.** The companion's refresh and a user's own `agentplay view` background scan can both write `index.json`. Each write is atomic, but the last writer wins, so a row built by one can be dropped by the other until the next build. Pre-existing behaviour of the store, made more likely by a second writer; a file lock in `Store.save_index` would fix it.

@@ -1,0 +1,55 @@
+# Privacy
+
+AgentPlay Companion is local only. It has no account, sends nothing anywhere, and keeps no analytics. This page says exactly what it reads, shows, stores and runs, and which test holds each line.
+
+## Network
+
+None. The app makes no requests of its own: no update check, no telemetry SDK, no remote fonts, icons or scripts (all assets are drawn in code or bundled). Every child process gets `AGENTPLAY_NO_NETWORK=1` and `DO_NOT_TRACK=1`, whatever the parent environment says (`Redaction.childEnvironmentIsMinimal`), so the viewer it opens hides the newsletter card and can't send an email. The only things that open a web page are links the user clicks (provider usage pages, "See supported agents"), and they open in the browser.
+
+`test_snapshot_makes_no_network_calls` builds a snapshot with `socket.connect` raising.
+
+## What it reads
+
+| Read | Why |
+|---|---|
+| `~/.agentplay/index.json` and `maps/` | Everything on Now and Learn |
+| The agents' transcript folders (`~/.claude`, `~/.codex`, `~/.cursor`, `~/.copilot`, VS Code's user storage, OpenCode's data folder, `~/.kiro`, and folders the user adds) | The same incremental build `agentplay build` runs |
+| Repo folders those sessions worked in | The builder checks paths and git settings to tell which repo a file belongs to. For repos under Documents, Desktop or Downloads, macOS asks once |
+| The tail of Codex transcripts | Only the numeric `token_count` record: context window and plan windows |
+| `lsof` output for recent transcripts | Which agent processes are live |
+
+Not requested: Full Disk Access, Accessibility, Screen Recording, Contacts, Keychain, browser data. The app is not sandboxed, so it can read the agent folders the user already owns; it uses no entitlement beyond the hardened runtime.
+
+## What it never shows, stores or sends
+
+Prompt text, session titles and task labels (both are prompt text in the index), assistant or reasoning text, file contents, command arguments, tool inputs and outputs, repo remotes, PR URLs, transcript paths.
+
+These are never read into the snapshot in the first place: the Python core does not pass them through (`companion.py`), and the Swift side has nothing to leak. Tests:
+
+- `test_snapshot_never_leaks_prompt_args_paths_or_remotes`: a real-shaped Claude Code transcript seeded with secret prompt text, secret arguments, a secret environment value, secret tool output and a secret remote is built, then snapshotted; none of it appears, and the title that does sit in the index stays out.
+- `test_synthetic_index_fields_never_reach_snapshot`: titles, task labels, remotes, PR URLs and transcript paths in index rows.
+- `Redaction.summaryHasNoPathsOrIds`, `notificationsOmitRepoByDefault`: the copied summary and notifications.
+- `test_codex_limits_fresh` asserts nothing from a Codex transcript's text reaches the snapshot.
+- The existing map contract (`test_builder_never_leaks_free_text`) still passes unchanged.
+
+What the popover does show is what the viewer shows from the same maps: agent, repo name, shell verbs (`pnpm test`, never its flags), tool names, repo-relative file paths in the map's path mode, model names, counts and times.
+
+## Notifications
+
+Off by default. macOS is asked for permission only when the user switches on an alert. A notification carries the agent, the command family and a count, for example "pnpm test failed 3 times in a row." Repo names only if the user turns that on. The payload holds the session id and event `seq` so a click can open the moment; nothing else. History records alert ids and times only; Settings → Notifications → Forget alert history clears it, and the watermark moves forward so nothing old fires afterwards.
+
+## What it writes
+
+- Its preferences, in the `ai.entelligence.agentplay.companion` domain: settings, mutes, pins, dismissed Learn cards, alert ids and times, custom folders.
+- `~/Library/Caches/ai.entelligence.agentplay.companion/viewer.pid` while its viewer runs.
+- The same maps and index in `~/.agentplay` that `agentplay build` writes.
+
+Nothing is written inside the app bundle (Python bytecode is precompiled at build time and `PYTHONDONTWRITEBYTECODE=1` is set). Uninstalling leaves `~/.agentplay` alone unless asked (`scripts/companion-uninstall.sh --remove-maps`).
+
+## The local viewer
+
+The viewer the companion opens is the stock `agentplay view`, on 127.0.0.1 and a free port, with its existing guards: loopback peer, local `Host`, own `Origin`, `Sec-Fetch-Site`. The self-test checks two of them against the running bundle: a foreign `Host` (DNS rebinding) and a foreign `Origin` both get 403. The companion adds no HTTP endpoint, socket or IPC listener; it talks to the core only through a child process's stdout. A copied replay link is a 127.0.0.1 link and the app says it only works on this Mac.
+
+## Process hygiene
+
+The core runs as `python -I` (no `PYTHON*` variables, no user site-packages) with a minimal environment: only `HOME`, a fixed `PATH`, locale, and the user's `AGENTPLAY_*` settings; nothing else from the parent, such as cloud credentials, is passed. On quit or SIGTERM the app stops its snapshot child and its viewer. A viewer left by a crash is stopped on next launch only if its command is this app's own Python, so a viewer the user started with `uvx agentplay` is never touched (`ViewerOwnership` tests, self-test `leftoverReaped`).

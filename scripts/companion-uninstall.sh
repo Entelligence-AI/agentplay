@@ -16,8 +16,8 @@ pkill -f "AgentPlay Companion.app/Contents/Resources/python/bin/python3 -I -m ag
 defaults delete "$DOMAIN" 2>/dev/null || true
 rm -rf "$HOME/Library/Preferences/$DOMAIN.plist" "$HOME/Library/Caches/$DOMAIN" \
        "$HOME/Library/Saved Application State/$DOMAIN.savedState" "$HOME/Library/HTTPStorages/$DOMAIN"
-[ -d "$APP" ] && rm -rf "$APP"
-echo "Removed the app, its preferences, caches and login item."
+if [ -d "$APP" ]; then rm -rf "$APP"; echo "Removed $APP and its login item."; else echo "No app in /Applications."; fi
+echo "Removed its preferences and caches."
 echo "Delivered notifications disappear with the app. Notification permission: System Settings → Notifications."
 if [ "$REMOVE_MAPS" = 1 ]; then
   rm -rf "${AGENTPLAY_HOME:-$HOME/.agentplay}"
