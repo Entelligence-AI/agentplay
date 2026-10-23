@@ -55,6 +55,8 @@ final class CompanionModel: ObservableObject {
     @Published var expandedRun: String?
     @Published var showAll = false
     @Published var showConstellation = false
+    /// Render-only: the micro-timeline tick a clip frame shows as scrubbed.
+    @Published var renderFocus: Int?
     @Published var popoverOpen = false { didSet { if popoverOpen { scheduleRefresh(reason: .popoverOpened) } } }
     /// True briefly after new recorded events arrive for an active run: drives the two-frame menu-bar pulse.
     @Published private(set) var heartbeat = false

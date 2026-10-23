@@ -377,6 +377,7 @@
       "agent": "main",
       "count": 3,
       "firstSeq": 5,
+      "firstAt": "2026-10-23T07:46:48Z",
       "triggerSeq": 10,
       "triggerAt": "2026-10-23T07:48:50Z",
       "resolvedSeq": null,

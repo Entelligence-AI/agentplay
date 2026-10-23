@@ -234,6 +234,7 @@ def test_three_consecutive_failures_alert_once(store, empty_homes):
     a = _alerts(store, empty_homes, [_exec(i * 1000, "pnpm test", err=True) for i in range(5)])
     assert len(a) == 1
     assert a[0]["count"] == 5 and a[0]["triggerSeq"] == 2 and a[0]["firstSeq"] == 0 and a[0]["resolvedSeq"] is None
+    assert a[0]["firstAt"] < a[0]["triggerAt"]
 
 
 def test_edits_between_failures_do_not_reset_the_streak(store, empty_homes):

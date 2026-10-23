@@ -127,6 +127,12 @@ def build(name: str, fn) -> None:
         snap["timing"] = {"snapshotMs": 0}
         raw = json.dumps(snap, indent=2).replace(tmp, "/tmp/sample")
         (OUT / f"{name}.json").write_text(raw + "\n")
+        keep = os.environ.get("COMPANION_FIXTURE_STORE")
+        if keep and name == "two-active":
+            # The synthetic maps behind the main sample, for demo captures of the real viewer.
+            import shutil
+            shutil.rmtree(keep, ignore_errors=True)
+            shutil.copytree(base / "ap", keep)
         print(f"wrote {name}.json: {len(snap['runs'])} runs, {len(snap['alerts'])} alerts, "
               f"learn={'yes' if snap['learn'] else 'no'}")
 

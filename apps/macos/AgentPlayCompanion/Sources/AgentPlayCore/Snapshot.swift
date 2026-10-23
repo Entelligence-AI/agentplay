@@ -254,6 +254,7 @@ public struct AlertCandidate: Codable, Sendable, Equatable, Identifiable {
     public var agent: String?
     public var count: Int?
     public var firstSeq: Int?
+    public var firstAt: Date?
     public var triggerSeq: Int?
     public var triggerAt: Date?
     public var resolvedSeq: Int?
@@ -477,7 +478,9 @@ public enum SnapshotDecoder {
             if var p = r.pendingTool { p.event = me(p.event)!; p.elapsed = mp(p.elapsed); r.pendingTool = p }
             return r
         }
-        s.alerts = s.alerts.map { a in var a = a; a.triggerAt = m(a.triggerAt); a.evidence = mp(a.evidence); return a }
+        s.alerts = s.alerts.map { a in
+            var a = a; a.firstAt = m(a.firstAt); a.triggerAt = m(a.triggerAt); a.evidence = mp(a.evidence); return a
+        }
         s.limits = s.limits.map { l in var l = l; l.resetsAt = m(l.resetsAt); l.used = mp(l.used); return l }
         if var l = s.learn {
             l.failures = mp(l.failures)

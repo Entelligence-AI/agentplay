@@ -152,6 +152,69 @@ enum Renderer {
     }
 }
 
+extension Renderer {
+    /// `--render-clips <dir>`: keyframes for the three prototype clips and the proof clip, one PNG per beat,
+    /// rendered from the real views over the synthetic fixtures. scripts/companion-clips.sh turns them into MP4s.
+    static func renderClips(to path: String) {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        guard let fixtures = ProcessInfo.processInfo.environment["AGENTPLAY_COMPANION_FIXTURES"] else { return }
+        let dir = URL(fileURLWithPath: path)
+        func model(_ name: String) -> CompanionModel {
+            let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "clip.\(UUID().uuidString)")!),
+                                   isDevBuild: true)
+            if let d = try? Data(contentsOf: URL(fileURLWithPath: fixtures).appendingPathComponent("\(name).json")),
+               let s = try? SnapshotDecoder.decode(d) { m.loadForRender(s) }
+            return m
+        }
+        typealias Beat = (CompanionModel) -> Void
+        let clips: [(String, String, Direction, [Beat])] = [
+            ("A-pulse", "two-active", .pulse, [
+                { _ in },
+                { $0.expandedRun = $0.orderedRuns.first?.sessionId },
+                { $0.renderFocus = 0 }, { $0.renderFocus = 1 }, { $0.renderFocus = 2 }, { $0.renderFocus = 3 },
+                { $0.renderFocus = 4 },
+                { $0.renderFocus = nil },
+            ]),
+            ("B-breakpoint", "detected-idle", .breakpoint, [
+                { _ in },
+                { m in m.loadForRender(try! SnapshotDecoder.decode(Data(contentsOf: URL(fileURLWithPath: fixtures)
+                    .appendingPathComponent("two-active.json")))) },
+                { m in m.mutePattern(m.worthALook?.patternKey ?? "") },
+            ]),
+            ("C-lab", "two-active", .lab, [
+                { _ in },
+                { m in m.dismissLearn(m.learnCard?.patternKey ?? "") },
+            ]),
+            ("proof", "two-active", .v1, [
+                { _ in },
+                { m in m.showAll = false },
+            ]),
+            ("v1-tour", "two-active", .v1, [
+                { _ in },
+                { $0.expandedRun = $0.orderedRuns.first?.sessionId },
+                { $0.expandedRun = nil; $0.tab = .limits },
+                { $0.tab = .learn },
+                { $0.tab = .now; $0.showConstellation = true },
+            ]),
+        ]
+        for (name, fixture, direction, beats) in clips {
+            let m = model(fixture)
+            m.direction = direction
+            let sub = dir.appendingPathComponent(name)
+            try? FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+            for (i, beat) in beats.enumerated() {
+                beat(m)
+                for dark in [false, true] {
+                    write(AnyView(PopoverView(now: fixedNow).environmentObject(m)),
+                          to: sub.appendingPathComponent(String(format: "%02d-%@.png", i, dark ? "dark" : "light")), dark: dark)
+                }
+            }
+        }
+        print("rendered clip keyframes to \(dir.path)")
+    }
+}
+
 extension CompanionModel {
     /// Render and test hook: show a fixture as-is (times rebased to the renderer's clock), labelled Sample.
     func loadForRender(_ s: Snapshot) {

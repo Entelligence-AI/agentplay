@@ -110,6 +110,10 @@ struct CompanionApp: App {
             while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
             exit(0)
         }
+        if let dir = LaunchOptions.isDev ? LaunchOptions.value("--render-clips") : nil {
+            MainActor.assumeIsolated { Renderer.renderClips(to: dir) }
+            exit(0)
+        }
         if let dir = LaunchOptions.renderDir {
             // Dev only: draw every state to PNG and exit (docs/companion/screens).
             MainActor.assumeIsolated { Renderer.renderAll(to: dir) }

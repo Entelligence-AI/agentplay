@@ -49,7 +49,10 @@ public final class PrefsStore: @unchecked Sendable {
     private let lock = NSLock()
 
     public init(defaults: UserDefaults? = nil) {
-        self.defaults = defaults ?? UserDefaults(suiteName: Self.domain) ?? .standard
+        // Inside the app bundle the domain is the app's own, which is `.standard`; macOS refuses it as a suite.
+        // Outside it (tests, `swift run`) a named suite keeps the same domain.
+        self.defaults = defaults ?? (Bundle.main.bundleIdentifier == Self.domain ? .standard
+            : UserDefaults(suiteName: Self.domain) ?? .standard)
     }
 
     public func load(now: Date = Date()) -> CompanionPrefs {

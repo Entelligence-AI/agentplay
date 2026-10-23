@@ -263,7 +263,7 @@ struct WorthALook: View {
 
     var subtitle: String {
         let repo = model.run(alert.sessionId)?.repo.map { " · \(Format.truncate($0))" } ?? ""
-        let when = alert.triggerAt.map { "Since \(Format.clock($0))" } ?? "Time unknown"
+        let when = (alert.firstAt ?? alert.triggerAt).map { "Since \(Format.clock($0))" } ?? "Time unknown"
         let resolved = alert.isResolved ? " · passed later in the run" : ""
         return "\(when)\(repo) · \(Format.errClass(alert.errClass))\(resolved)"
     }

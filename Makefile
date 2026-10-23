@@ -8,7 +8,7 @@ PY ?= python3
 VPY := $(VENV)/bin/python
 endif
 
-.PHONY: setup test test-python test-viewer check lint viewer run clean
+.PHONY: setup test test-python test-viewer check lint viewer run clean companion-dev companion-app companion-dmg companion-test companion-clips
 
 setup:
 	$(PY) -m venv $(VENV)
@@ -44,3 +44,19 @@ run:
 clean:
 	rm -rf python/.venv python/dist viewer/dist viewer/node_modules python/src/agentplay/viewer
 	find . -name __pycache__ -prune -exec rm -rf {} +
+
+# macOS companion (apps/macos/AgentPlayCompanion). macOS only; the CLI and viewer above are unaffected.
+companion-dev:
+	sh scripts/companion-dev.sh --fixture two-active
+
+companion-app:
+	sh scripts/companion-build.sh release
+
+companion-dmg:
+	sh scripts/companion-dmg.sh
+
+companion-test:
+	sh scripts/companion-test.sh
+
+companion-clips:
+	sh scripts/companion-build.sh dev && sh scripts/companion-clips.sh

@@ -41,7 +41,7 @@ struct RunCard: View {
             .accessibilityHint(expanded ? "Collapses the run" : "Shows the latest recorded event and replay actions")
 
             if expanded {
-                MicroTimeline(run: run) { seq in model.openViewer(sessionId: run.sessionId, seq: seq) }
+                MicroTimeline(run: run, scrubbed: model.renderFocus) { seq in model.openViewer(sessionId: run.sessionId, seq: seq) }
                     .transition(.opacity)
                 HStack(spacing: Theme.s2) {
                     Button("Open replay") { model.openViewer(sessionId: run.sessionId, seq: run.lastEvent?.seq) }
@@ -144,8 +144,10 @@ struct RunMenu: View {
 /// Five ticks from the real recorded sequence. Drag across to read the ordinal steps; click a tick to open that moment.
 struct MicroTimeline: View {
     var run: RunActivity
+    var scrubbed: Int? = nil
     var open: (Int) -> Void
-    @State private var focus: Int?
+    @State private var dragFocus: Int?
+    private var focus: Int? { dragFocus ?? scrubbed }
     @State private var aligned = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -183,14 +185,14 @@ struct MicroTimeline: View {
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0).onChanged { v in
                     guard events.count > 1 else { return }
-                    focus = min(events.count - 1, max(0, Int((v.location.x / step).rounded())))
+                    dragFocus = min(events.count - 1, max(0, Int((v.location.x / step).rounded())))
                 }.onEnded { _ in })
             }
             .frame(height: 18)
             Text(caption).font(Theme.mono).foregroundStyle(Theme.muted(scheme)).lineLimit(1).truncationMode(.middle)
         }
         .onAppear { withAnimation(Theme.motion(reduceMotion)) { aligned = true } }
-        .onHover { if !$0 { focus = nil } }
+        .onHover { if !$0 { dragFocus = nil } }
     }
 
     private var caption: String {

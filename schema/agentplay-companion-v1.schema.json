@@ -133,6 +133,7 @@
         "errClass": {"type": ["string", "null"]},
         "count": {"type": "integer"},
         "firstSeq": {"type": ["integer", "null"]},
+        "firstAt": {"$ref": "#/$defs/timeOrNull"},
         "triggerSeq": {"type": ["integer", "null"]},
         "triggerAt": {"$ref": "#/$defs/timeOrNull"},
         "resolvedSeq": {"type": ["integer", "null"]},

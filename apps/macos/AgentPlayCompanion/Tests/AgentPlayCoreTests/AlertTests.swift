@@ -12,7 +12,7 @@ func liveSnapshot(now: Date) throws -> Snapshot {
 func failure(_ sig: String, pattern: String = "aaaaaaaaaaaaaaaa", session: String = "local:claude-code:sample-7f3a",
              at: Date, resolved: Int? = nil, rule: AlertRuleKind = .repeatedFailure) -> AlertCandidate {
     AlertCandidate(rule: rule, signature: sig, patternKey: pattern, sessionId: session, agentTool: "claude-code",
-                   command: "pnpm test", errClass: "exit_code", agent: "main", count: 3, firstSeq: 1, triggerSeq: 5,
+                   command: "pnpm test", errClass: "exit_code", agent: "main", count: 3, firstSeq: 1, firstAt: at, triggerSeq: 5,
                    triggerAt: at, resolvedSeq: resolved,
                    evidence: DataPoint(value: .int(3), kind: .recorded, source: .agentplayMap, explanation: "x"))
 }
