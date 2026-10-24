@@ -244,7 +244,7 @@ final class CompanionModel: ObservableObject {
     }
 
     /// Claude Code's version, from its own live records, for the request's User-Agent.
-    static func claudeVersion() -> String? {
+    nonisolated static func claudeVersion() -> String? {
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/sessions")
         guard let f = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil).first(where: { $0.pathExtension == "json" }),
               let d = try? Data(contentsOf: f), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
