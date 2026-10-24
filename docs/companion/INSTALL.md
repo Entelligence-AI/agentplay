@@ -39,6 +39,7 @@ Dev-build flags (`--args` after `open`, ignored by release builds):
 | `--selftest` | end-to-end check of the bundle, prints JSON, exits |
 | `--render <dir>` | draw every state, light and dark, from the bundled fixtures (or `AGENTPLAY_COMPANION_FIXTURES`) |
 | `--render-live <dir>` | the popover over your real snapshot; contains your repo and file names, never commit |
+| `--film <take>\|all --film-out <dir>` | records scripted takes for a launch video: the real menu bar item, menu, sheets and windows over `Fixtures/film.json` on a clean backdrop, the pointer driven by synthesized events, each take saved by `screencapture`. Every read of this Mac is off while filming. Needs a visible menu bar (no full-screen app on the filming display) and the pointer for about three minutes. `--film-slot N` pins the item N pt from the bar's right end, `--film-screen N` picks a display, `--no-record` rehearses |
 
 Point it at another store with `AGENTPLAY_HOME`, for example `open -n --env AGENTPLAY_HOME=/tmp/ap "dist/companion/AgentPlay Companion.app"`.
 
