@@ -11,6 +11,18 @@ import Testing
         #expect(ClaudeAccount.parseCredentials(Data("{}".utf8)) == nil)
     }
 
+    @Test func picksTheUsersLiveLoginOverAStaleOne() {
+        let old = Date(timeIntervalSince1970: 1_789_000_000), new = Date(timeIntervalSince1970: 1_792_800_000)
+        let items = [
+            ClaudeAccount.KeychainItem(service: "Claude Code-credentials", account: "unknown", modified: old),
+            ClaudeAccount.KeychainItem(service: "Claude Safe Storage", account: "me", modified: new),
+            ClaudeAccount.KeychainItem(service: "Claude Code-credentials-1a2b", account: "other", modified: new),
+            ClaudeAccount.KeychainItem(service: "Claude Code-credentials", account: "me", modified: old),
+        ]
+        let ordered = ClaudeAccount.order(items, user: "me")
+        #expect(ordered.map(\.account) == ["me", "other", "unknown"])
+    }
+
     @Test func parsesUsageWindows() throws {
         let json = #"{"five_hour":{"utilization":67.0,"resets_at":"2026-10-24T15:00:00.123456+00:00"},"seven_day":{"utilization":23,"resets_at":"2026-10-28T09:00:00Z"},"seven_day_opus":null}"#
         let now = Date(timeIntervalSince1970: 1_792_800_000)

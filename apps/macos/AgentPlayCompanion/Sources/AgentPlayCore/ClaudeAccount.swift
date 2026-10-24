@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Opt-in: Claude's 5-hour and weekly usage from the user's Claude account, the way CodexBar and the other
 /// usage menus read it. The statusline bridge only works for terminal Claude Code; editor agent panels (Zed's
@@ -46,23 +47,68 @@ public enum ClaudeAccount {
         return Credentials(accessToken: token, expiresAt: exp, plan: o["subscriptionType"] as? String)
     }
 
-    /// The Keychain item through `/usr/bin/security`, else `~/.claude/.credentials.json`.
-    public static func readCredentials() -> Result<Credentials, Failure> {
+    public struct KeychainItem: Equatable, Sendable {
+        public var service: String
+        public var account: String
+        public var modified: Date?
+        public init(service: String, account: String, modified: Date?) {
+            self.service = service; self.account = account; self.modified = modified
+        }
+    }
+
+    /// Claude Code's login items, best first. There can be several: a stale one under "unknown" next to the
+    /// live one under the user's name, and `Claude Code-credentials-<hash>` for other config folders.
+    /// The user's own account first, then the most recently written.
+    public static func order(_ items: [KeychainItem], user: String) -> [KeychainItem] {
+        items.filter { $0.service == keychainService || $0.service.hasPrefix(keychainService + "-") }
+            .sorted { a, b in
+                if (a.account == user) != (b.account == user) { return a.account == user }
+                return (a.modified ?? .distantPast) > (b.modified ?? .distantPast)
+            }
+    }
+
+    /// Attributes only (service, account, date): macOS doesn't ask for these.
+    static func keychainItems() -> [KeychainItem] {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecMatchLimit as String: kSecMatchLimitAll,
+                                kSecReturnAttributes as String: true]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let rows = out as? [[String: Any]] else { return [] }
+        return rows.compactMap { r in
+            guard let s = r[kSecAttrService as String] as? String, s.hasPrefix(keychainService) else { return nil }
+            return KeychainItem(service: s, account: r[kSecAttrAccount as String] as? String ?? "",
+                                modified: r[kSecAttrModificationDate as String] as? Date)
+        }
+    }
+
+    /// The secret through `/usr/bin/security`, so "Always Allow" sticks to Apple's tool. Exit 128 is Deny.
+    static func readSecret(_ item: KeychainItem) -> (Data?, Int32) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        p.arguments = ["find-generic-password", "-s", keychainService, "-w"]
+        p.arguments = ["find-generic-password", "-s", item.service, "-a", item.account, "-w"]
         let out = Pipe()
         p.standardOutput = out
         p.standardError = Pipe()
-        if (try? p.run()) != nil {
-            let data = out.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
-            if p.terminationStatus == 0, let c = parseCredentials(data) { return .success(c) }
-            // 128: the user clicked Deny; 44: no such item.
-            if p.terminationStatus == 128 { return .failure(.keychainDenied) }
+        guard (try? p.run()) != nil else { return (nil, -1) }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return (data, p.terminationStatus)
+    }
+
+    /// The first usable login: a current one if any, else the newest expired one (to say it expired).
+    public static func readCredentials(now: Date = Date()) -> Result<Credentials, Failure> {
+        var expired: Credentials?
+        var denied = false
+        for item in order(keychainItems(), user: NSUserName()) {
+            let (data, status) = readSecret(item)
+            if status == 128 { denied = true; break }
+            guard status == 0, let data, let c = parseCredentials(data) else { continue }
+            if let exp = c.expiresAt, exp <= now { expired = expired ?? c; continue }
+            return .success(c)
         }
         let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/.credentials.json")
         if let data = try? Data(contentsOf: file), let c = parseCredentials(data) { return .success(c) }
+        if denied { return .failure(.keychainDenied) }
+        if let expired { return .success(expired) }  // fetch() reports it as expired
         return .failure(.noLogin)
     }
 
