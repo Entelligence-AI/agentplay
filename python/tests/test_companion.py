@@ -575,6 +575,7 @@ def test_live_claude_sessions_alive_only_and_minimal(tmp_path):
     assert [r["sessionId"] for r in live] == ["local:claude-code:abc"]
     assert live[0]["status"] == "waiting" and live[0]["project"] == "payments-api"
     assert live[0]["pid"] == me
+    assert live[0]["entrypoint"] is None  # absent in this record; "cli" or "sdk-ts" when Claude Code writes it
     raw = json.dumps(live)
     for secret in ("SECRET-USER-DIR", "SECRET-SESSION-NAME", "SECRET-SOCK"):
         assert secret not in raw
@@ -698,3 +699,27 @@ def test_usage_map_repeats_of_raw_requests_are_dropped(store, tmp_path):
     r = usage.report(store, NOW, claude_homes=[home])
     assert r["today"]["requests"] == 2
     assert {a["key"] for a in r["today"]["byAgent"]} == {"claude-code", "codex"}
+
+
+def test_claude_limit_hits_from_refusals(tmp_path):
+    home = tmp_path / ".claude"
+    proj = home / "projects" / "-Users-me-x"
+    proj.mkdir(parents=True)
+
+    def refusal(at, kind, resets):
+        return json.dumps({"type": "assistant", "timestamp": at.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                           "message": {"content": [{"type": "text", "text": "SECRET-ERROR-TEXT"}]},
+                           "apiErrorParams": {"rate_limit_info": {"status": "rejected", "rateLimitType": kind,
+                                                                  "resetsAt": int(resets.timestamp())}}}) + "\n"
+
+    (proj / "a.jsonl").write_text(
+        refusal(NOW - timedelta(hours=3), "five_hour", NOW - timedelta(hours=1))  # already reset
+        + refusal(NOW - timedelta(minutes=20), "five_hour", NOW + timedelta(hours=2))
+        + refusal(NOW - timedelta(minutes=5), "seven_day", NOW + timedelta(days=2)))
+    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(7)))
+    rows = companion.claude_limit_hits(homes, NOW)
+    assert [r["window"] for r in rows] == ["five_hour", "weekly"]
+    assert rows[0]["used"]["value"]["usedPercent"] == 100.0 and rows[0]["used"]["kind"] == "provider_reported"
+    assert rows[0]["resetsAt"] == companion.iso(NOW + timedelta(hours=2))
+    assert "SECRET-ERROR-TEXT" not in json.dumps(rows)
+    assert companion.claude_limit_hits(homes, NOW + timedelta(days=3)) == []  # both reopened

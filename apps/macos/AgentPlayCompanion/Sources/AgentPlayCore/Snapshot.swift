@@ -253,6 +253,10 @@ public struct LiveSession: Codable, Sendable, Equatable, Identifiable {
     public var status: LiveStatus
     /// The agent's process, to find the terminal it runs in.
     public var pid: Int32?
+    /// How Claude Code was started: "cli" in a terminal, "sdk-ts" and the like from an editor's agent panel.
+    public var entrypoint: String? = nil
+    /// Started from an editor's agent panel (the Agent SDK): no statusline, so no plan usage report.
+    public var isSDK: Bool { entrypoint?.hasPrefix("sdk") == true }
     public var project: String?
     public var startedAt: Date?
     public var statusSince: Date?

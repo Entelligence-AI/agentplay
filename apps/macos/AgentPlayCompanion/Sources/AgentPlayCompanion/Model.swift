@@ -72,6 +72,7 @@ final class CompanionModel: ObservableObject {
         guard !started else { return }
         started = true
         refreshBridgeState()
+        refreshBridgeScript()
         refreshLoginItem()
         Task { await refreshNotificationStatus() }
         if let fixture {
@@ -509,6 +510,13 @@ final class CompanionModel: ObservableObject {
         claudeBridgeOn = claudeBridge.state() == .on
     }
 
+    /// An installed bridge gets this build's script (fixes in it reach people who turned it on earlier).
+    private func refreshBridgeScript() {
+        guard let url = Bundle.main.url(forResource: "claude-statusline-bridge", withExtension: "sh"),
+              let script = try? String(contentsOf: url, encoding: .utf8) else { return }
+        claudeBridge.refreshScript(script)
+    }
+
     func enableClaudeBridge() {
         guard let url = Bundle.main.url(forResource: "claude-statusline-bridge", withExtension: "sh"),
               let script = try? String(contentsOf: url, encoding: .utf8) else {
@@ -546,6 +554,13 @@ final class CompanionModel: ObservableObject {
     }
 
     var hasWaiting: Bool { snapshot?.live?.contains { $0.status == .waiting } == true }
+
+    /// When every live Claude session was started from an editor's agent panel: that editor's name.
+    var claudeEditorOnly: String? {
+        let claude = (snapshot?.live ?? []).filter { $0.agentTool == "claude-code" }
+        guard !claude.isEmpty, claude.allSatisfy(\.isSDK) else { return nil }
+        return claude.lazy.compactMap { $0.pid.flatMap { TerminalFocus.app(for: $0)?.localizedName } }.first ?? "an editor"
+    }
 
     func run(_ id: String) -> RunActivity? { snapshot?.runs.first { $0.sessionId == id } }
 }

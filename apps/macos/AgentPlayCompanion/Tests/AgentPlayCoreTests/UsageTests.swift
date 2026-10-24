@@ -87,8 +87,11 @@ import Testing
                                        "statusLine": ["type": "command", "command": "my-line --fancy"]]
         try JSONSerialization.data(withJSONObject: original).write(to: b.claudeSettings)
         #expect(b.state() == .otherStatusLine("my-line --fancy"))
-        try b.install(script: "#!/bin/sh\n")
+        try b.install(script: "#!/bin/sh\ndir=\"${AGENTPLAY_HOME:-$HOME/.agentplay}/live/claude\"\n")
         #expect(b.state() == .on)
+        // Claude Code runs it without AGENTPLAY_HOME: the folder is fixed at install.
+        let installed = try String(contentsOf: b.scriptURL, encoding: .utf8)
+        #expect(installed.contains("dir='\(b.agentplayHome.path)/live/claude'") && !installed.contains("AGENTPLAY_HOME"))
         var s = try settings(b)
         #expect(s["model"] as? String == "opus")
         #expect((s["statusLine"] as? [String: Any])?["command"] as? String == "/bin/sh '\(b.scriptURL.path)'")

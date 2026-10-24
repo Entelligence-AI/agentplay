@@ -67,11 +67,26 @@ public struct ClaudeBridge: Sendable {
 
     var ourStatusLine: [String: Any] { ["type": "command", "command": "/bin/sh '\(scriptURL.path)'", "padding": 0] }
 
+    /// Claude Code runs the script without our environment, so the folder it writes to is fixed at install.
+    public func pinned(_ script: String) -> String {
+        let dir = agentplayHome.appendingPathComponent("live/claude").path.replacingOccurrences(of: "'", with: "'\\''")
+        return script.replacingOccurrences(of: "\"${AGENTPLAY_HOME:-$HOME/.agentplay}/live/claude\"", with: "'\(dir)'")
+    }
+
+    /// Rewrites an installed script with this build's version; settings are left alone.
+    public func refreshScript(_ script: String) {
+        guard case .on = state() else { return }
+        let want = pinned(script)
+        if (try? String(contentsOf: scriptURL, encoding: .utf8)) != want {
+            try? want.write(to: scriptURL, atomically: true, encoding: .utf8)
+        }
+    }
+
     public func install(script: String) throws {
         var s = try readSettings()
         let fm = FileManager.default
         try fm.createDirectory(at: scriptURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try pinned(script).write(to: scriptURL, atomically: true, encoding: .utf8)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
         // Remember what was there, so it keeps running through the bridge and comes back on removal.
         if case .on = state() {} else {

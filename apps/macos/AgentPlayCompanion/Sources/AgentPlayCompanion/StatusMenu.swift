@@ -102,6 +102,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(hosted(ProviderCard(provider: p.provider, fallback: p, model: model, now: now)))
 
         case .enableLimits:
+            guard model.claudeEditorOnly == nil else { return }  // the card already says why it can't help
             let i = item("Turn On Live Limits…") { [model] in
                 model.settingsPane = .claude
                 Windows.show(.settings)
@@ -291,7 +292,7 @@ struct ProviderCard: View {
                     Spacer()
                     if let plan = p.plan { Text(plan.capitalized).font(.subheadline).foregroundStyle(Ink.secondary) }
                 }
-                Text(status(p)).font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(2)
+                Text(status(p)).font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
             }
             ForEach(p.windows) { w in MeterRow(window: w, now: now) }
             if let warning = paceWarning(p) {
@@ -311,7 +312,13 @@ struct ProviderCard: View {
 
     func status(_ p: ProviderSummary) -> String {
         if p.windows.isEmpty {
+            if p.provider == "claude-code", let editor = model.claudeEditorOnly {
+                // The statusline is the only local report of plan usage, and editor panels don't have one.
+                return "Your sessions run in \(editor)'s agent panel, which doesn't report plan usage. "
+                    + "Terminal Claude Code does."
+            }
             if p.provider == "claude-code" && !model.claudeBridgeOn { return "Live limits are off" }
+            if p.provider == "claude-code" { return "Appears after Claude Code's next reply in a terminal" }
             return MenuBuilder.shortReason(p)
         }
         if model.isSample { return "Sample data" }

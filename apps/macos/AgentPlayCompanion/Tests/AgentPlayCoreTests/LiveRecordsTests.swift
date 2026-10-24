@@ -16,6 +16,8 @@ import Testing
         let s = try #require(LiveRecords.parse(record([:])))
         #expect(s.sessionId == "local:claude-code:abc" && s.status == .waiting && s.pid == 4242)
         #expect(s.project == "payments-api")
+        #expect(!s.isSDK)
+        #expect(try #require(LiveRecords.parse(record(["entrypoint": "sdk-ts"]))).isSDK)
         #expect(s.statusSince == Date(timeIntervalSince1970: 1_792_000_100))
         let raw = String(decoding: try JSONEncoder().encode(s), as: UTF8.self)
         for secret in ["SECRET-DIR", "SECRET-NAME", "SECRET-SOCK"] { #expect(!raw.contains(secret)) }

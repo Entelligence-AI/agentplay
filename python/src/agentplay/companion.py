@@ -289,6 +289,8 @@ def live_claude_sessions(homes: discover.Homes, now: datetime) -> list[dict[str,
                 "sessionId": f"local:claude-code:{sid}",
                 "status": status,
                 "pid": pid,  # lets the app bring the session's terminal forward
+                # "cli" in a terminal; "sdk-ts" and the like from an editor's agent panel, which has no statusline.
+                "entrypoint": rec.get("entrypoint") if isinstance(rec.get("entrypoint"), str) else None,
                 "project": Path(cwd).name if isinstance(cwd, str) and cwd else None,
                 "startedAt": ms(rec.get("startedAt")),
                 "statusSince": ms(rec.get("statusUpdatedAt")) or ms(rec.get("updatedAt")),
@@ -445,6 +447,76 @@ def codex_limits(paths: list[tuple[str, str]], now: datetime) -> list[dict[str, 
                 "Check usage in Codex.")),
         })
     return out
+
+
+_RL_WINDOWS = {"five_hour": ("five_hour", 300), "seven_day": ("weekly", 10080), "seven_day_opus": ("weekly", 10080)}
+
+
+def claude_limit_hits(homes: discover.Homes, now: datetime) -> list[dict[str, Any]]:
+    """Plan windows Claude Code was refused on, still before their reset, from its own transcripts.
+
+    When a request is refused for a plan limit, Claude Code records ``rate_limit_info`` (``rateLimitType``,
+    ``resetsAt``) with the error, whichever way it was started, the Agent SDK and editor panels included.
+    That says a window is full and when it reopens; below the limit nothing is recorded. Only those fields
+    and the line's time are read, from the last 256 KB of transcripts changed in the last eight days.
+    """
+    latest: dict[str, tuple[datetime, datetime]] = {}  # window -> (refused at, resets at)
+    since = now.timestamp() - 8 * 86400
+    for home in homes.claude_code:
+        root = Path(home) / "projects"
+        try:
+            files = [f for f in root.rglob("*.jsonl") if f.stat().st_mtime >= since]
+        except OSError:
+            continue
+        for f in files:
+            try:
+                with open(f, "rb") as fh:
+                    fh.seek(max(0, f.stat().st_size - 256 * 1024))
+                    tail = fh.read()
+            except OSError:
+                continue
+            if b"rate_limit_info" not in tail:
+                continue
+            for line in tail.split(b"\n"):
+                if b"rate_limit_info" not in line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                info = (d.get("apiErrorParams") or {}).get("rate_limit_info") if isinstance(d, dict) else None
+                at = _parse_time(d.get("timestamp")) if isinstance(d, dict) else None
+                if not isinstance(info, dict) or at is None or info.get("status") != "rejected":
+                    continue
+                kind, resets = info.get("rateLimitType"), _num(info.get("resetsAt"))
+                if kind not in _RL_WINDOWS or not resets:
+                    continue
+                reset_dt = datetime.fromtimestamp(resets, tz=UTC)
+                name = _RL_WINDOWS[kind][0]
+                if reset_dt > now and (name not in latest or at > latest[name][0]):
+                    latest[name] = (at, reset_dt)
+    rows = []
+    for name, (at, reset_dt) in latest.items():
+        minutes = 300 if name == "five_hour" else 10080
+        rows.append({
+            "provider": "claude-code", "window": name, "windowMinutes": minutes, "plan": None, "limitId": name,
+            "resetsAt": iso(reset_dt), "usageUrl": PROVIDER_USAGE_URLS["claude-code"],
+            "used": point({"usedPercent": 100.0, "leftPercent": 0.0}, "provider_reported", "agentplay_map",
+                          observed_at=iso(at), window=name, freshness="fresh",
+                          explanation="Claude Code was refused for this limit and recorded when it resets. "
+                                      "Below the limit, it records nothing about how much is used."),
+        })
+    return sorted(rows, key=lambda r: r["windowMinutes"])
+
+
+def _parse_time(v: Any) -> datetime | None:
+    if not isinstance(v, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def claude_statusline(base: Path, now: datetime) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
@@ -830,6 +902,8 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         limits.append(unavailable_limit("codex", "No indexed Codex session has reported plan usage. "
                                                  "Check usage in Codex."))
     claude_limits, claude_contexts = claude_statusline(store.base, now)
+    if not claude_limits:
+        claude_limits = claude_limit_hits(homes, now)
     if claude_limits:
         limits[:0] = claude_limits
     else:

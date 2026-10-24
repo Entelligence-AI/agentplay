@@ -18,9 +18,11 @@ public enum LiveRecords {
             return Date(timeIntervalSince1970: n / 1000)
         }
         let project = (rec["cwd"] as? String).flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0).lastPathComponent }
-        return LiveSession(agentTool: "claude-code", sessionId: "local:claude-code:\(sid)", status: status,
-                           pid: Int32(pid), project: project, startedAt: ms(rec["startedAt"]),
-                           statusSince: ms(rec["statusUpdatedAt"]) ?? ms(rec["updatedAt"]), inStore: false)
+        var s = LiveSession(agentTool: "claude-code", sessionId: "local:claude-code:\(sid)", status: status,
+                            pid: Int32(pid), project: project, startedAt: ms(rec["startedAt"]),
+                            statusSince: ms(rec["statusUpdatedAt"]) ?? ms(rec["updatedAt"]), inStore: false)
+        s.entrypoint = rec["entrypoint"] as? String
+        return s
     }
 
     /// Every record in `dir` whose process is still alive, waiting first.
