@@ -390,6 +390,8 @@ def parser() -> argparse.ArgumentParser:
     snap.add_argument("--pretty", action="store_true")
     snap.add_argument("--refresh", action="store_true", help="build recently changed sessions first")
     snap.add_argument("--agents", help="with --refresh: only these agents (comma-separated)")
+    snap.add_argument("--refresh-days", type=int, default=2,
+                      help="with --refresh: sessions changed in the last N days (0: every session)")
     snap.add_argument("--max-runs", type=int)
     snap.set_defaults(fn=cmd_companion)
     return ap

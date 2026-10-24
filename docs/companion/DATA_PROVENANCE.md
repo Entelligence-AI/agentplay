@@ -33,7 +33,7 @@ Readers degrade, never upgrade: an unknown `kind` decodes as `unavailable`, an u
 | Plan (Codex) | same record: `rate_limits.primary` / `secondary` (`used_percent`, `window_minutes` 300 → five_hour, 10080 → weekly, `resets_at`), `plan_type`, `limit_id` | provider_reported | Stale once `resets_at` has passed; low confidence when the two newest reports name different plans |
 | Plan (Claude Code) | none | unavailable | See below |
 | Plan (Cursor, Copilot, OpenCode, Kiro) | none | not shown | No documented local source |
-| Cost | not shown in v1 | | `totals.costUsd` is an estimate at list prices, and several models are unpriced (#29); showing it next to plan usage invites the wrong reading |
+| Usage (tokens, cost) | Claude Code: its raw transcripts, main and subagent files, one request per message id and request id, the finished line's token counts and the first line's time. Other agents: `llm` events in maps. A map request that repeats a counted one (same model and tokens within 5 s) is dropped | estimated | Costs at list prices; unpriced models are counted as unpriced, never $0. Raw transcripts, not maps, for Claude: a map can lag a live transcript, and the build skips sessions over 512 MB, which froze the biggest session's totals. Checked against an independent count of the transcripts: within 0.6% for today, 7 and 30 days (`python/src/agentplay/usage.py`) |
 
 ## Provider adapters
 

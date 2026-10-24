@@ -643,3 +643,58 @@ def test_statusline_window_past_reset_is_stale(store, empty_homes):
     os.utime(f, (NOW.timestamp() - 7200, NOW.timestamp() - 7200))
     five = next(r for r in _snap(store, empty_homes)["limits"] if r["provider"] == "claude-code")
     assert five["used"]["freshness"] == "stale" and five["used"]["confidence"] == "low"
+
+
+def _claude_line(ts, msg_id, req_id, out, model="claude-opus-5-5", cw=100, cr=1000, cwd="/Users/me/SECRET-DIR/payments-api"):
+    return json.dumps({"type": "assistant", "timestamp": ts, "requestId": req_id, "cwd": cwd,
+                       "message": {"id": msg_id, "model": model, "role": "assistant",
+                                   "content": [{"type": "text", "text": "SECRET-REPLY"}],
+                                   "usage": {"input_tokens": 10, "cache_creation_input_tokens": cw,
+                                             "cache_read_input_tokens": cr, "output_tokens": out}}}) + "\n"
+
+
+def test_usage_reads_claude_transcripts_once_per_request(store, tmp_path):
+    from agentplay import usage
+
+    home = tmp_path / ".claude"
+    proj = home / "projects" / "-Users-me-payments-api"
+    (proj / "s1" / "subagents").mkdir(parents=True)
+    ts = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    later = (NOW - timedelta(hours=1) + timedelta(seconds=3)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    main = proj / "s1.jsonl"
+    # One response streamed as three lines (output grows), one more request, a placeholder reply.
+    main.write_text(_claude_line(ts, "m1", "r1", 5) + _claude_line(later, "m1", "r1", 40) + _claude_line(later, "m1", "r1", 80)
+                    + _claude_line(ts, "m2", "r2", 7) + _claude_line(ts, "m3", "r3", 0, model="<synthetic>"))
+    # A resumed session copies m1 into its own transcript; a subagent makes its own request.
+    (proj / "s2.jsonl").write_text(_claude_line(ts, "m1", "r1", 80))
+    (proj / "s1" / "subagents" / "agent-a1.jsonl").write_text(_claude_line(ts, "m4", "r4", 9))
+    r = usage.report(store, NOW, claude_homes=[home])
+    assert r["today"]["requests"] == 3
+    assert r["today"]["tokens"]["output"] == 80 + 7 + 9  # the finished line, not the first
+    assert {m["key"] for m in r["today"]["byModel"]} == {"claude-opus-5-5"}
+    assert {m["key"] for m in r["today"]["byRepo"]} == {"payments-api"}  # folder name only
+    raw = json.dumps(r) + (store.base / "cache" / "companion-claude-usage.json").read_text()
+    assert "SECRET-DIR" not in raw and "SECRET-REPLY" not in raw
+
+    # Appended lines are read from where the last look stopped.
+    with open(main, "a") as f:
+        f.write(_claude_line(ts, "m5", "r5", 11))
+    assert usage.report(Store(store.base), NOW, claude_homes=[home])["today"]["requests"] == 4
+
+
+def test_usage_map_repeats_of_raw_requests_are_dropped(store, tmp_path):
+    from agentplay import usage
+
+    home = tmp_path / ".claude"
+    proj = home / "projects" / "-Users-me-x"
+    proj.mkdir(parents=True)
+    at = NOW - timedelta(minutes=30)
+    (proj / "a.jsonl").write_text(_claude_line(at.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "m1", "r1", 50,
+                                               model="claude-sonnet-5"))
+    # The same request in a map, timed two seconds earlier (maps time a request by when it started).
+    _put(store, _doc("local:claude-code:a", [LS, _llm(0, out=50)], started=at - timedelta(seconds=2)))
+    # A Codex request only maps know about.
+    _put(store, _doc("local:codex:b", [LS, _llm(0, model="gpt-5.5", cost=0.5)], agent="codex", started=at))
+    r = usage.report(store, NOW, claude_homes=[home])
+    assert r["today"]["requests"] == 2
+    assert {a["key"] for a in r["today"]["byAgent"]} == {"claude-code", "codex"}

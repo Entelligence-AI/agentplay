@@ -18,10 +18,11 @@ enum MenuEntry: Equatable {
 }
 
 enum MenuAction: String, CaseIterable {
-    case showAllSessions, refresh, openViewer, settings, quit
+    case leaveSample, showAllSessions, refresh, openViewer, settings, quit
 
     var title: String {
         switch self {
+        case .leaveSample: "Show My Data"
         case .showAllSessions: "Show All Sessions…"
         case .refresh: "Refresh"
         case .openViewer: "Open AgentPlay"
@@ -36,7 +37,7 @@ enum MenuAction: String, CaseIterable {
         case .openViewer: "o"
         case .settings: ","
         case .quit: "q"
-        case .showAllSessions: ""
+        case .showAllSessions, .leaveSample: ""
         }
     }
 }
@@ -69,7 +70,12 @@ enum MenuBuilder {
     static func entries(snapshot s: Snapshot?, phase: Phase, prefs: CompanionPrefs, lastError: SnapshotError?,
                         isSample: Bool, now: Date, bridgeOn: Bool) -> [MenuEntry] {
         var out: [MenuEntry] = []
-        if isSample { out.append(.header("Sample Data")) }
+        if isSample {
+            // Unmissable and one click to leave: sample numbers must never pass for yours.
+            out.append(.header("Sample Data, Not Yours"))
+            out.append(.action(.leaveSample))
+            out.append(.separator)
+        }
         guard let s else {
             switch phase {
             case .failed(let e):
@@ -140,7 +146,8 @@ enum MenuBuilder {
 
     static func shortReason(_ p: ProviderSummary) -> String {
         switch p.provider {
-        case "codex": "Codex hasn't reported limits on this Mac yet"
+        case "codex": p.plan.map { "Codex reports no usage windows for the \($0.capitalized) plan" }
+            ?? "Codex hasn't reported limits on this Mac yet"
         case "claude-code": "Waiting for Claude Code to report"
         default: "\(p.label) doesn't report limits locally"
         }

@@ -94,6 +94,15 @@ func fixture(_ name: String) throws -> Snapshot {
         #expect(s.runs.isEmpty)
     }
 
+    @Test func rebaseMovesLiveSessionsToo() throws {
+        let s = try fixture("two-active")
+        let now = s.generatedAt.addingTimeInterval(86400)
+        let r = SnapshotDecoder.rebased(s, to: now)
+        let before = try #require(s.live?.first { $0.status == .waiting }?.statusSince)
+        let after = try #require(r.live?.first { $0.status == .waiting }?.statusSince)
+        #expect(abs(now.timeIntervalSince(after) - s.generatedAt.timeIntervalSince(before)) < 1)
+    }
+
     @Test func rebaseKeepsRelativeTimes() throws {
         let s = try fixture("two-active")
         let now = Date(timeIntervalSince1970: 2_000_000_000)

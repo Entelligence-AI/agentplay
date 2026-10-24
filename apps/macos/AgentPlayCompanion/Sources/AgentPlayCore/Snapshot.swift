@@ -587,6 +587,13 @@ public enum SnapshotDecoder {
             var a = a; a.firstAt = m(a.firstAt); a.triggerAt = m(a.triggerAt); a.evidence = mp(a.evidence); return a
         }
         s.limits = s.limits.map { l in var l = l; l.resetsAt = m(l.resetsAt); l.used = mp(l.used); return l }
+        s.live = s.live?.map { l in var l = l; l.startedAt = m(l.startedAt); l.statusSince = m(l.statusSince); return l }
+        if var u = s.usage, var b = u.claudeBlock {
+            b.start = b.start.addingTimeInterval(shift)
+            b.end = b.end.addingTimeInterval(shift)
+            u.claudeBlock = b
+            s.usage = u
+        }
         if var l = s.learn {
             l.failures = mp(l.failures)
             l.evidence = l.evidence.map { e in var e = e; e.at = m(e.at); return e }

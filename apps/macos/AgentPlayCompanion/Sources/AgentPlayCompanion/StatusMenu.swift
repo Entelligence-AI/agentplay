@@ -154,7 +154,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         case .action(let a):
             let i = item(a.title, key: a.key) { [weak self] in self?.perform(a) }
-            if a == .refresh, let u = model.lastUpdated { setSubtitle("Updated \(Format.relative(u, now: now))", on: i) }
+            if a == .refresh, let u = model.lastUpdated, !model.isSample { setSubtitle("Updated \(Format.relative(u, now: now))", on: i) }
+            if a == .leaveSample { setSubtitle("Everything below is made-up example data", on: i) }
             menu.addItem(i)
 
         case .separator:
@@ -180,6 +181,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func perform(_ a: MenuAction) {
         switch a {
+        case .leaveSample: model.leaveSample()
         case .refresh: model.scheduleRefresh(reason: .manual)
         case .openViewer, .showAllSessions: model.openViewer()
         case .settings: Windows.show(.settings)
@@ -312,6 +314,7 @@ struct ProviderCard: View {
             if p.provider == "claude-code" && !model.claudeBridgeOn { return "Live limits are off" }
             return MenuBuilder.shortReason(p)
         }
+        if model.isSample { return "Sample data" }
         let seen = p.windows.compactMap(\.used.observedAt).max()
         if p.windows.allSatisfy({ MeterRow.isStale($0, now: now) }) {
             return "Stale · last report \(Format.relative(seen, now: now))"

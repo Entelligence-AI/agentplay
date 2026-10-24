@@ -264,7 +264,10 @@ final class CompanionModel: ObservableObject {
         sampleMode = false
         snapshot = nil
         phase = .starting
-        Task { await refresh(.read) }
+        Task {
+            await refresh(.read)
+            if prefs.onboardingDone { scheduleRefresh(reason: .manual) }
+        }
     }
 
     private func devFixtureURL(_ name: String) -> URL? {

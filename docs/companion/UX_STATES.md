@@ -50,7 +50,7 @@ Two template bars: the 5-hour window on top and the weekly window below. A dot s
 | Many sessions | Five rows, then "Show All Sessions…" | [many](screens/state-many-light.png) |
 | Core too old / runtime missing | "Can't Read Your Sessions" and the reason | [error](screens/state-error-light.png) |
 | Last refresh failed | The last good data stays, with "Last Refresh Failed" and the reason on top | (inline) |
-| First-run sample | "Sample Data" header; sample data never notifies | [onboarding 3](screens/onboarding-3-light.png) |
+| Sample data | "Sample Data, Not Yours" header, then "Show My Data" at the top of the menu; cards say "Sample data", not an update time; sample data never notifies and never draws the icon's bars | [menu](screens/menu-light.png) |
 | Notifications denied | Settings → Notifications: "macOS has notifications off for AgentPlay." + Open System Settings | [notifications](screens/settings-notifications-light.png) |
 
 ## Settings

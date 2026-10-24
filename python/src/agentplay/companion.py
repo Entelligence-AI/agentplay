@@ -763,11 +763,11 @@ def _sources(homes: discover.Homes, rows: list[dict[str, Any]], index_error: str
     return out
 
 
-def _usage(store: Store, now: datetime) -> dict[str, Any] | None:
+def _usage(store: Store, now: datetime, homes: discover.Homes) -> dict[str, Any] | None:
     from . import usage
 
     try:
-        return usage.report(store, now)
+        return usage.report(store, now, claude_homes=list(homes.claude_code))
     except Exception:  # noqa: BLE001 - usage is extra; a bad map must not cost the whole snapshot
         return None
 
@@ -853,7 +853,7 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         "limits": limits,
         "live": [{**r, "inStore": r["sessionId"] in store.index} for r in live_sessions],
         "learn": learn_card(store, by_activity, now),
-        "usage": _usage(store, now),
+        "usage": _usage(store, now, homes),
         "timing": {"snapshotMs": round(1000 * (time.monotonic() - t_start))},
     }
 
@@ -862,7 +862,10 @@ def main(args: Any) -> int:
     if getattr(args, "refresh", False):
         from . import pipeline
 
-        since = datetime.now(UTC) - timedelta(days=max(1, int(getattr(args, "refresh_days", 2) or 2)))
+        days = getattr(args, "refresh_days", 2)
+        days = 2 if days is None else int(days)
+        # 0 is a full scan: usage totals cover 30 days and Show All Sessions covers everything.
+        since = None if days <= 0 else datetime.now(UTC) - timedelta(days=days)
         raw = getattr(args, "agents", None)
         agents = {a.strip() for a in raw.split(",") if a.strip() in discover.AGENTS} if raw else None
         pipeline.build_all(agents=agents or None, since=since)

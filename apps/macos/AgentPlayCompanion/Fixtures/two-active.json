@@ -1020,7 +1020,7 @@
   "usage": {
     "generatedAt": "2026-10-23T10:46:00Z",
     "kind": "estimated",
-    "explanation": "Counted from the model requests in your local AgentPlay maps. Costs are estimates at list prices; requests on unpriced models are counted separately, not as $0. Usage on other devices, the web or the API isn't here.",
+    "explanation": "Counted from your local AgentPlay maps, subagents included and each request once. Costs are estimates at list prices; requests on unpriced models are counted separately, not as $0. Usage on other devices, the web or the API isn't here.",
     "today": {
       "tokens": {
         "input": 36,

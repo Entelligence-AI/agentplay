@@ -145,7 +145,7 @@ public actor SnapshotService {
         switch mode {
         case .read: return base + ["companion", "snapshot", "--json"]
         case .refresh: return base + ["companion", "snapshot", "--json", "--refresh", "--agents", "claude-code,codex"]
-        case .fullScan: return base + ["companion", "snapshot", "--json", "--refresh"]
+        case .fullScan: return base + ["companion", "snapshot", "--json", "--refresh", "--refresh-days", "0"]
         }
     }
 
