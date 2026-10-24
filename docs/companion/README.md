@@ -1,8 +1,6 @@
 # AgentPlay Companion
 
-A native macOS menu-bar companion for AgentPlay: follow coding-agent runs without staring at logs, and jump from a small alert to the exact recorded moment in the replay. Local only, no account.
-
-![The menu, light](screens/menu-light.png)
+A native macOS menu-bar companion for AgentPlay: follow coding-agent runs without staring at logs, and jump from a small alert to the exact recorded moment in the replay. Local only, no account. Screens aren't committed; `AgentPlayCompanion --render <dir>` draws them all (see INSTALL.md).
 
 | Doc | What's in it |
 |---|---|

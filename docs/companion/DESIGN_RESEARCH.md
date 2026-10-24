@@ -140,4 +140,4 @@ One action per row. Secondary actions go in `.contextMenu`, never in inline butt
 - Ice: https://github.com/jordanbaird/Ice
 - MenuBarExtraAccess: https://github.com/orchetect/MenuBarExtraAccess
 - HIG: https://developer.apple.com/design/human-interface-guidelines/the-menu-bar ("Display a menu, not a popover", template symbols, 24pt bar height), /popovers, /materials, /typography (macOS: Body 13, Callout 12, Subheadline 11, Footnote/Caption 10), /color
-- Build at research time: docs/companion/screens/v1-now-light.png, apps/macos/AgentPlayCompanion/Sources/AgentPlayCompanion/{Popover,Theme,Components}.swift (since replaced by MenuView.swift and MenuItems.swift)
+- Build at research time: apps/macos/AgentPlayCompanion/Sources/AgentPlayCompanion/{Popover,Theme,Components}.swift (since replaced by MenuView.swift and MenuItems.swift)

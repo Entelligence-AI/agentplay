@@ -6,12 +6,7 @@ Date: 2026-10-23. Machine: Apple silicon MacBook (arm64), macOS 27, Swift 6.4 Co
 
 All three directions run in the same app against the same `agentplay.companion/v1` snapshot. A dev build switches between them (`scripts/companion-dev.sh --fixture two-active --direction A|B|C`, or Settings → General → Prototype direction).
 
-| Direction | Screens (light / dark) | Clip |
-|---|---|---|
-| A · Pulse | [light](screens/proto-A-pulse-light.png) · [dark](screens/proto-A-pulse-dark.png) | [A-pulse-light.mp4](media/A-pulse-light.mp4) · [dark](media/A-pulse-dark.mp4) |
-| B · Breakpoint | [card](screens/proto-B-breakpoint-light.png) · [quiet](screens/proto-B-breakpoint-quiet-dark.png) | [B-breakpoint-light.mp4](media/B-breakpoint-light.mp4) · [dark](media/B-breakpoint-dark.mp4) |
-| C · Harness Lab | [light](screens/proto-C-lab-light.png) · [dark](screens/proto-C-lab-dark.png) | [C-lab-light.mp4](media/C-lab-light.mp4) · [dark](media/C-lab-dark.mp4) |
-| v1 (chosen) | [Now](screens/v1-now-light.png) · [Limits](screens/v1-limits-dark.png) · [Learn](screens/v1-learn-dark.png) | [v1-tour-light.mp4](media/v1-tour-light.mp4) · [proof](media/proof-light.mp4) |
+Each direction was rendered light and dark with keyframe clips. They are not committed; the prototypes were removed when v1 was chosen.
 
 How the clips were made: `scripts/companion-clips.sh` (removed with the tabbed popover) rendered each beat from the real SwiftUI views offscreen (synthetic fixtures, "Sample data" badge visible), held it, and cross-faded with ffmpeg. They are keyframe clips, not recordings of someone using the app. A live screen recording was not made: the display was in use for a video call during this work, and recording it would have captured that. `scripts/companion-capture.sh` records one when the screen is clear.
 
@@ -30,7 +25,7 @@ Scored 1 to 5 by the implementer, from the renders, from the popover drawn over 
 | Keyboard | 4: ⌘1-3, ⌘K, ⌘O, Return opens replay | 3: two buttons | 3: two buttons |
 | Feasible on real transcripts | 3: Context/Plan block made it 800 pt tall (two screens on a 13" Mac); Claude plan usage is always unavailable, so half the block is "unavailable" | 4: found 1 repeated-failure run in 12 real runs; needed the pending-call fix below | 4: real card: "`python3` failed 12 times in 4 runs", and "passed later in 4 of those 4" |
 
-Decision: **A's shell for Now, B as alert behaviour and the "Worth a look" card, C as the Learn tab.** Data-backed change from the brief's sketch: Context and Plan moved out of Now into a Limits tab, because A rendered at 800 pt with them inline ([frame](screens/proto-A-pulse-light.png)) and Now has to fit one screen. v1 Now renders at about 450 pt.
+Decision: **A's shell for Now, B as alert behaviour and the "Worth a look" card, C as the Learn tab.** Data-backed change from the brief's sketch: Context and Plan moved out of Now into a Limits tab, because A rendered at 800 pt with them inline (frame) and Now has to fit one screen. v1 Now renders at about 450 pt.
 
 ### What real data changed
 

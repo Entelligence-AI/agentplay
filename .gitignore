@@ -13,3 +13,7 @@ python/src/agentplay/viewer/
 
 # SwiftPM build output (macOS companion)
 .build/
+
+# Companion screens and clips: drawn from fixtures with --render, never committed
+docs/companion/screens/
+docs/companion/media/
