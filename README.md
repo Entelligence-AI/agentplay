@@ -194,8 +194,8 @@ agentplay agents      show which agents were found on this machine
 
 | Flag | On | Meaning |
 |---|---|---|
-| `--since 30d` | build, view | only sessions changed in the window (`12h`, `2w`, `2026-09-01`) |
-| `--agents claude-code,codex` | build, view | limit to these agents |
+| `--since 30d` | build, view, list | only sessions changed in the window (`12h`, `2w`, `2026-09-01`); list uses the stored transcript modification time, or the start time when that time is unavailable |
+| `--agents claude-code,codex` | build, view, list | limit to these agents |
 | `--rebuild` | build, view | rebuild even unchanged sessions |
 | `--path-mode dirs_only` | build, view | see [Privacy](#privacy) |
 | `--limit N` | build, view, list | newest N sessions |

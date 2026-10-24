@@ -241,12 +241,35 @@ def cmd_view(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- list
 def cmd_list(args: argparse.Namespace) -> int:
     st = Store()
-    rows = [r for r in st.rows() if r.get("role") not in ("subagent", "helper")][: args.limit or 30]
+    agents = _agents(args.agents)
+    since = _since(args.since)
+    rows = []
+    for row in st.rows():
+        if row.get("role") in ("subagent", "helper"):
+            continue
+        if agents is not None and row.get("agentTool") not in agents:
+            continue
+        if since is not None:
+            # Imported maps and discovery's zero sentinel have no transcript mtime.
+            changed = row.get("sourceMtime")
+            if changed is None or changed == 0:
+                try:
+                    started = datetime.fromisoformat(row.get("startedAt") or "")
+                    changed = (started if started.tzinfo else started.replace(tzinfo=UTC)).timestamp()
+                except ValueError:
+                    continue
+            if changed < since.timestamp():
+                continue
+        rows.append(row)
+    rows = rows[: args.limit or 30]
     if args.json:
         print(json.dumps(rows, indent=2))
         return 0
     if not rows:
-        print("No maps yet. Run `agentplay build`.")
+        if agents is not None or since is not None:
+            print("No sessions match these filters.")
+        else:
+            print("No maps yet. Run `agentplay build`.")
         return 0
     for r in rows:
         cost = f"${r.get('costUsd') or 0:.2f}"
@@ -519,6 +542,8 @@ def parser() -> argparse.ArgumentParser:
     b.set_defaults(fn=cmd_build)
 
     ls = sub.add_parser("list", parents=[common], help="list built sessions")
+    ls.add_argument("--agents", help=f"comma-separated subset of: {', '.join(discover.AGENTS)}")
+    ls.add_argument("--since", help="only sessions changed since (30d, 12h, 2w, YYYY-MM-DD); missing modification times use start time")
     ls.add_argument("--limit", type=int)
     ls.add_argument("--json", action="store_true")
     ls.set_defaults(fn=cmd_list)
