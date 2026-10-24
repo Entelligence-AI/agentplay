@@ -10,6 +10,7 @@ them "Sample data".
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import sys
@@ -138,7 +139,7 @@ def build(name: str, fn) -> None:
         homes_present = fn(store, base, live) or {}
         store.save_index()
         companion.process_evidence = lambda paths: {k: v for k, v in live.items() if k in paths}
-        homes = discover.Homes(*([base / ".claude"] if i == 0 else [base / "nowhere"] for i in range(7)))
+        homes = discover.Homes(*([base / ".claude"] if i == 0 else [base / "nowhere"] for i in range(len(dataclasses.fields(discover.Homes)))))
         snap = companion.snapshot(Store(base / "ap"), now=NOW, homes=homes)
         for s in snap["sources"]:
             info = homes_present.get(s["agent"])

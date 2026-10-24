@@ -1,7 +1,7 @@
 {
   "schema": "agentplay.companion/v1",
   "schemaVersion": 1,
-  "agentplayVersion": "0.2.3",
+  "agentplayVersion": "0.2.4",
   "generatedAt": "2026-10-23T10:46:00Z",
   "store": {
     "available": false,
@@ -66,6 +66,24 @@
     {
       "agent": "kiro",
       "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "gemini-cli",
+      "label": "gemini-cli",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "antigravity-cli",
+      "label": "antigravity-cli",
       "status": "not_found",
       "paths": [],
       "sessionCount": 0,

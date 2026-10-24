@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import os
@@ -76,7 +77,7 @@ def store(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def empty_homes(tmp_path):
-    return discover.Homes(*([tmp_path / "none"] for _ in range(7)))
+    return discover.Homes(*([tmp_path / "none"] for _ in range(len(dataclasses.fields(discover.Homes)))))
 
 
 def _snap(store, homes, **kw):
@@ -570,7 +571,7 @@ def test_live_claude_sessions_alive_only_and_minimal(tmp_path):
     (home / "sessions" / "999999.json").write_text(json.dumps({**rec, "pid": 999999, "sessionId": "dead"}))
     (home / "sessions" / "bad.json").write_text("{nope")
     (home / "sessions" / "weird.json").write_text(json.dumps({**rec, "status": "dancing", "sessionId": "w"}))
-    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(7)))
+    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(len(dataclasses.fields(discover.Homes)))))
     live = companion.live_claude_sessions(homes, NOW)
     assert [r["sessionId"] for r in live] == ["local:claude-code:abc"]
     assert live[0]["status"] == "waiting" and live[0]["project"] == "payments-api"
@@ -586,7 +587,7 @@ def test_live_status_marks_runs_and_sorts_first(store, tmp_path, monkeypatch):
     (home / "sessions").mkdir(parents=True)
     me = os.getpid()
     (home / "sessions" / f"{me}.json").write_text(json.dumps({"pid": me, "sessionId": "old", "status": "busy", "cwd": "/x/api"}))
-    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(7)))
+    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(len(dataclasses.fields(discover.Homes)))))
     _put(store, _doc("local:claude-code:old", [_exec(0, "ls", kind="exec")], started=NOW - timedelta(days=2)))
     _put(store, _doc("local:claude-code:new", [_exec(0, "ls", kind="exec")], started=NOW - timedelta(hours=1)))
     snap = companion.snapshot(store, now=NOW, homes=homes)
@@ -716,7 +717,7 @@ def test_claude_limit_hits_from_refusals(tmp_path):
         refusal(NOW - timedelta(hours=3), "five_hour", NOW - timedelta(hours=1))  # already reset
         + refusal(NOW - timedelta(minutes=20), "five_hour", NOW + timedelta(hours=2))
         + refusal(NOW - timedelta(minutes=5), "seven_day", NOW + timedelta(days=2)))
-    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(7)))
+    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(len(dataclasses.fields(discover.Homes)))))
     rows = companion.claude_limit_hits(homes, NOW)
     assert [r["window"] for r in rows] == ["five_hour", "weekly"]
     assert rows[0]["used"]["value"]["usedPercent"] == 100.0 and rows[0]["used"]["kind"] == "provider_reported"
