@@ -314,6 +314,8 @@ struct AccountPane: View {
                     Button("Forget") { model.forgetAccount(a) }
                 }
             }
+            Button(model.addingAccount ? "Waiting for Sign-In…" : "Add Account…") { model.addClaudeAccount() }
+                .disabled(model.addingAccount)
             Toggle(isOn: Binding(get: { model.prefs.rememberClaudeAccounts == true }, set: { model.prefs.rememberClaudeAccounts = $0 })) {
                 Text("Remember accounts I sign in to")
                 Text("Each new Claude Code login is saved for switching, and you're told when.")

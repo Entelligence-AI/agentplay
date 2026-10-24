@@ -333,6 +333,70 @@ final class CompanionModel: ObservableObject {
         }
     }
 
+    @Published private(set) var addingAccount = false
+    private var addTimer: Timer?
+
+    /// One click: keep the account you're on, open Claude's sign-in, and save the new account when it appears.
+    func addClaudeAccount() {
+        guard !addingAccount else { toast = "Waiting for you to finish signing in."; return }
+        let before = claudeIdentity?.accountUuid
+        addingAccount = true
+        Task {
+            let saved = await Task.detached { ClaudeSwitch.saveCurrent() }.value
+            switch saved {
+            case .success(let s): upsert(s)
+            case .failure(.notSignedIn): break  // nothing to keep yet
+            case .failure(let f): addingAccount = false; toast = f.message; return
+            }
+            guard let claude = await Task.detached(operation: { ClaudeSwitch.claudeExecutable() }).value else {
+                addingAccount = false
+                toast = "Couldn't find the claude command. Run claude auth login in a terminal, and AgentPlay saves the account."
+                watchForNewAccount(after: before)
+                return
+            }
+            let home = ProcessInfo.processInfo.environment["AGENTPLAY_HOME"].map { URL(fileURLWithPath: $0) }
+                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".agentplay")
+            let script = home.appendingPathComponent("add-claude-account.command")
+            try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            try? ClaudeSwitch.loginScript(claude: claude).write(to: script, atomically: true, encoding: .utf8)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+            NSWorkspace.shared.open(script)
+            toast = "Sign in with your other account in the window that opened. AgentPlay saves it when you're done."
+            watchForNewAccount(after: before)
+        }
+    }
+
+    /// Up to ten minutes, every two seconds: the moment Claude Code is signed in as someone new, save them.
+    private func watchForNewAccount(after before: String?) {
+        addingAccount = true
+        addTimer?.invalidate()
+        let start = Date()
+        addTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] t in
+            Task { @MainActor in
+                guard let self else { t.invalidate(); return }
+                let id = ClaudeAccount.readIdentity()
+                if let uuid = id?.accountUuid, uuid != before {
+                    t.invalidate()
+                    self.addingAccount = false
+                    self.claudeIdentity = id
+                    let r = await Task.detached { ClaudeSwitch.saveCurrent() }.value
+                    switch r {
+                    case .success(let s):
+                        self.upsert(s)
+                        self.accountLimits = []
+                        self.refreshAccount(force: true)
+                        self.toast = "Added \(s.title). Switch between your accounts from the menu."
+                    case .failure(let f):
+                        self.toast = f.message
+                    }
+                } else if Date().timeIntervalSince(start) > 600 {
+                    t.invalidate()
+                    self.addingAccount = false
+                }
+            }
+        }
+    }
+
     func forgetAccount(_ s: ClaudeSwitch.Saved) {
         Task.detached { ClaudeSwitch.forget(s.accountUuid) }
         prefs.claudeAccounts = savedAccounts.filter { $0.accountUuid != s.accountUuid }

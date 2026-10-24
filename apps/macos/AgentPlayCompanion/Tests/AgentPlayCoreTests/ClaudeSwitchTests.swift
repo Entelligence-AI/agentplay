@@ -85,3 +85,11 @@ import Testing
         #expect((try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent("bk").path).count) == 1)
     }
 }
+
+@Suite struct ClaudeLoginScriptTests {
+    @Test func loginScriptSignsInWithoutLoggingOut() {
+        let s = ClaudeSwitch.loginScript(claude: "/Users/me/it's here/claude")
+        #expect(s.contains(#"'/Users/me/it'\''s here/claude' auth login --claudeai"#))
+        #expect(!s.contains("logout"))
+    }
+}

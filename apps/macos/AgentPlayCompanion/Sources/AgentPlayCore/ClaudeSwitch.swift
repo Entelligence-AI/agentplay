@@ -97,6 +97,38 @@ public enum ClaudeSwitch {
         return line + " -w \(q(value))\n"
     }
 
+    /// Where the `claude` command is: the usual install places, then a login shell's PATH.
+    public static func claudeExecutable() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        for p in ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.claude/local/claude"]
+            where FileManager.default.isExecutableFile(atPath: p) { return p }
+        let sh = Process()
+        sh.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        sh.arguments = ["-lc", "command -v claude"]
+        let out = Pipe()
+        sh.standardOutput = out
+        sh.standardError = Pipe()
+        guard (try? sh.run()) != nil else { return nil }
+        let path = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        sh.waitUntilExit()
+        return path.hasPrefix("/") ? path : nil
+    }
+
+    /// A Terminal script that signs Claude Code in to another account. No /logout: that can cancel the saved login.
+    public static func loginScript(claude: String) -> String {
+        let q = "'" + claude.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return """
+        #!/bin/sh
+        clear
+        echo "Sign in with the Claude account you want to add. Your current one is already saved in AgentPlay."
+        echo
+        \(q) auth login --claudeai
+        echo
+        echo "Done. AgentPlay saves this account by itself. You can close this window."
+        """
+    }
+
     // MARK: Keychain and files
 
     static func runSecurity(_ args: [String], stdin: String? = nil) -> (Data, Int32) {

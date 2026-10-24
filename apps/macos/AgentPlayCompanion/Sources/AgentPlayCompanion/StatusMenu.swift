@@ -222,7 +222,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 sub.addItem(save)
             }
             sub.addItem(.separator())
-            sub.addItem(item("Add Another Account…") { AccountHelp.showAdd() })
+            let add = item(model.addingAccount ? "Waiting for Sign-In…" : "Add Another Account…") { [model] in model.addClaudeAccount() }
+            setSubtitle("Opens Claude's sign-in; AgentPlay saves the new account by itself", on: add)
+            add.isEnabled = !model.addingAccount
+            sub.addItem(add)
             sub.addItem(item("Manage Accounts…") { [model] in model.settingsPane = .account; Windows.show(.settings) })
             i.submenu = sub
             if let cur = model.savedAccounts.first(where: { $0.accountUuid == me.accountUuid }) { setSubtitle(cur.title, on: i) }
@@ -639,26 +642,6 @@ struct UsageDetail: View {
                 .font(.body)
             }
         }
-    }
-}
-
-// MARK: - Adding an account
-
-@MainActor
-enum AccountHelp {
-    static func showAdd() {
-        NSApp.activate()
-        let a = NSAlert()
-        a.messageText = "Add another Claude account"
-        a.informativeText = """
-        1. In AgentPlay, save the account you're on now (Switch Claude Account → Save).
-        2. In a terminal, run claude and type /login. Sign in with the other account. Don't use /logout first: it can cancel the saved login.
-        3. Open this menu again and choose Save for the new account.
-
-        To have AgentPlay save each new sign-in for you, turn on "Remember accounts I sign in to" in Settings → Account.
-        """
-        a.addButton(withTitle: "OK")
-        a.runModal()
     }
 }
 
