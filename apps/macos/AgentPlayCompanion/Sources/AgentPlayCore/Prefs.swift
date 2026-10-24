@@ -16,6 +16,11 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
     /// Opt-in Claude usage from the user's Claude account (ClaudeAccount). Optional so older saved prefs decode.
     public var claudeAccountUsage: Bool? = nil
     public var usesClaudeAccount: Bool { claudeAccountUsage == true }
+    /// Pip in the menu bar (else the two plain bars), and the line beside it when something happens.
+    public var pipEnabled: Bool? = nil
+    public var pipIslandEnabled: Bool? = nil
+    public var showsPip: Bool { pipEnabled ?? true }
+    public var showsPipIsland: Bool { pipIslandEnabled ?? true }
 
     public init(now: Date = Date()) { history = AlertHistory(watermark: now) }
 

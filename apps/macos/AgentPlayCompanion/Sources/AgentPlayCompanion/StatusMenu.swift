@@ -23,8 +23,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
-        self.statusItem.menu = menu
-        self.statusItem.button?.imagePosition = .imageLeading
+        // No `statusItem.menu`: AppKit would open it on every click and we'd never see one. We open it ourselves,
+        // so a click on the line beside Pip can act on what it says.
+        if let b = self.statusItem.button {
+            b.imagePosition = .imageLeading
+            b.target = self
+            b.action = #selector(clicked)
+            b.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
         model.objectWillChange
             .sink { [weak self] _ in self?.scheduleIconUpdate() }
             .store(in: &bag)
@@ -50,27 +56,93 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
 
+    private var waveFrame = 0
+    private var waveTimer: Timer?
+    private var lastEventId: String?
+    private var lastTick = 0
+    private var typeFrame = 0
+
     func updateIcon() {
         guard let button = statusItem.button else { return }
         let bars = model.statusBars
-        button.image = StatusIcon.image(session: bars.session, weekly: bars.weekly, stale: bars.stale,
-                                        waiting: model.hasWaiting, pulse: false)
-        if model.prefs.showActivityInMenuBar, let pct = bars.session {
+        let pose = model.pipPose
+        if model.prefs.showsPip {
+            if model.activityTick != lastTick { lastTick = model.activityTick; typeFrame &+= 1 }
+            let frame = pose == .wave ? waveFrame : pose == .work ? typeFrame : 0
+            let lv = model.isSample ? (session: nil, weekly: nil) : Pip.levels(model.snapshot?.limits ?? [])
+            button.image = PipIcon.image(pose, frame: frame, session: lv.session, weekly: lv.weekly, stale: bars.stale)
+        } else {
+            button.image = StatusIcon.image(session: bars.session, weekly: bars.weekly, stale: bars.stale,
+                                            waiting: model.hasWaiting, pulse: false)
+        }
+        if let e = model.pipEvent {
+            // The line beside Pip: short, so it never pushes neighbours behind the notch.
+            // The pose says what happened; the line says which one. Short, so it never pushes icons behind the notch.
+            button.title = " " + Format.truncate(e.label, max: 14)
+            button.font = .systemFont(ofSize: 12, weight: .medium)
+            if e.id != lastEventId { lastEventId = e.id; if e.kind == .needsYou { startWave() } }
+        } else if model.prefs.showActivityInMenuBar, let pct = bars.session {
             button.title = Format.percent((pct * 100).rounded())
             button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         } else {
             button.title = ""
         }
+        button.toolTip = model.pipEvent.map { "\($0.text). Click to \(actionWord($0)); right-click for the menu." }
+            ?? PipIcon.description(pose)
         var parts = ["AgentPlay"]
         if let s = bars.session { parts.append("session \(Int(s * 100)) percent used") }
         if let w = bars.weekly { parts.append("weekly \(Int(w * 100)) percent used") }
         if model.hasWaiting { parts.append("a session needs you") }
+        if let e = model.pipEvent { parts.append(e.text) }
         button.setAccessibilityLabel(parts.joined(separator: ", "))
+    }
+
+    func actionWord(_ e: PipEvent) -> String {
+        switch e.kind {
+        case .needsYou, .finished: "go to it"
+        case .failed: "see where it failed"
+        case .limit: "open your usage page"
+        }
+    }
+
+    /// The wave moves for a few seconds when someone starts waiting, then holds the raised hand.
+    private func startWave() {
+        waveTimer?.invalidate()
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              !ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
+        var ticks = 0
+        waveTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] t in
+            MainActor.assumeIsolated {
+                guard let self else { t.invalidate(); return }
+                ticks += 1
+                self.waveFrame &+= 1
+                self.updateIcon()
+                if ticks >= 16 { t.invalidate(); self.waveTimer = nil; self.waveFrame = 0; self.updateIcon() }
+            }
+        }
+    }
+
+    // MARK: clicks
+
+    @objc private func clicked() {
+        let event = NSApp.currentEvent
+        let right = event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true
+        if !right, event?.modifierFlags.contains(.option) == true { model.openViewer(); return }
+        if !right, let e = model.pipEvent { model.act(on: e); updateIcon(); return }
+        openMenu()
+    }
+
+    func openMenu() {
+        guard let b = statusItem.button else { return }
+        rebuild(now: nowOverride ?? Date())
+        b.highlight(true)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: b.isFlipped ? b.bounds.height + 4 : -4), in: b)
+        b.highlight(false)
     }
 
     // MARK: NSMenuDelegate
 
-    func menuNeedsUpdate(_ menu: NSMenu) { rebuild(now: nowOverride ?? Date()) }
+    func menuNeedsUpdate(_ menu: NSMenu) {}  // built in openMenu, before it shows
 
     func menuWillOpen(_ menu: NSMenu) {
         model.popoverOpen = true
@@ -89,6 +161,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private func add(_ e: MenuEntry, to menu: NSMenu, now: Date) {
         switch e {
+        case .pip:
+            menu.addItem(hosted(PipHeader(model: model)))
+
         case .header(let t):
             menu.addItem(.sectionHeader(title: t))
 
@@ -347,6 +422,34 @@ struct ProviderCard: View {
             return "\(name) runs out in \(Format.duration(out.timeIntervalSince(now))) at this pace"
         }
         return nil
+    }
+}
+
+/// Pip at twice its menu-bar size, and one line about now. Updates in place while the menu is open.
+struct PipHeader: View {
+    @ObservedObject var model: CompanionModel
+
+    var body: some View {
+        let now = Date()
+        let pose = model.pipPose
+        let lv = Pip.levels(model.snapshot?.limits ?? [])
+        let say = Pip.sentence(pose, live: model.snapshot?.live ?? [], limits: model.snapshot?.limits ?? [],
+                               recent: model.pipRecent, now: now)
+        HStack(spacing: 10) {
+            Image(nsImage: PipIcon.image(pose, session: lv.session, weekly: lv.weekly))
+                .renderingMode(.template).interpolation(.none).resizable()
+                .frame(width: 40, height: 36)
+                .foregroundStyle(Ink.primary)
+                .accessibilityLabel(PipIcon.description(pose))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(say.title).font(.headline).foregroundStyle(Ink.primary).lineLimit(2)
+                if let d = say.detail { Text(d).font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 6)
+        .frame(minWidth: Menu.width, maxWidth: .infinity, alignment: .leading)
     }
 }
 

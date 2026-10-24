@@ -104,6 +104,14 @@ struct GeneralPane: View {
                 Text("Show session % next to the icon")
                 Text("The icon's two bars are the 5-hour and weekly windows of your most constrained provider.")
             }
+            Toggle(isOn: Binding(get: { model.prefs.showsPip }, set: { model.prefs.pipEnabled = $0 })) {
+                Text("Pip in the menu bar")
+                Text("Fills with your 5-hour usage, stands on the week, and its pose says what needs you. Off shows two plain bars.")
+            }
+            Toggle(isOn: Binding(get: { model.prefs.showsPipIsland }, set: { model.prefs.pipIslandEnabled = $0 })) {
+                Text("Say what happened next to the icon")
+                Text("\"docs-site needs you\" for a few seconds; click it to go there.")
+            }
             Toggle("Launch at login", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
             Toggle(isOn: $model.prefs.soundOnManualActions) {
                 Text("Soft sound on actions I take")

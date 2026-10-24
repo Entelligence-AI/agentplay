@@ -24,9 +24,32 @@ Order follows attention:
 | Recent Errors › | Submenu: each error or pattern; click opens the replay at that step |
 | Turn On Live Limits… | Settings → Live Limits, which shows the exact change before applying it |
 
-## Menu-bar icon
+## Menu-bar icon: Pip
 
-Two template bars: the 5-hour window on top and the weekly window below. A dot shows when a session needs you, and the bars dim when the numbers are stale. With no limits, it shows the AgentPlay mark. It never animates. Rendered in [bars](screens/statusitem-bars-light.png), [waiting](screens/statusitem-waiting-light.png), [stale](screens/statusitem-stale-light.png) and [mark](screens/statusitem-mark-light.png).
+Pip is a small template character, so macOS tints it for any menu bar. Its body fills with the 5-hour session, it stands on a ground line that is the week, and its pose is the one thing worth knowing now, in this order:
+
+| Pose | When | |
+|---|---|---|
+| Waving | A session is waiting on you. The arm moves for 8 s, then holds | ![](screens/pip-wave-light.png) |
+| Hourglass | A plan window is spent until it resets | ![](screens/pip-limit-light.png) |
+| X eyes | A command just failed three times | ![](screens/pip-oops-light.png) |
+| Arms up | A session just finished | ![](screens/pip-cheer-light.png) |
+| Sweat drop | Ahead of pace (or 90% used) on a plan window | ![](screens/pip-sweat-light.png) |
+| Typing | An agent is working; the frame changes when an agent actually writes, never on a timer | ![](screens/pip-work-light.png) |
+| Asleep | Nothing running | ![](screens/pip-sleep-light.png) |
+
+When something happens, a short line appears beside Pip for 8 s: which session or command, since the pose says what ([needs you](screens/statusitem-island-light.png)). It stays under about 110 pt so it can't push other icons behind the notch.
+
+| Input on the icon | Does |
+|---|---|
+| Click while the line shows | Acts on it: go to the waiting or finished session's terminal, open the replay at a failure, open the usage page for a spent window |
+| Click otherwise | Opens the menu |
+| Right-click or Control-click | Always opens the menu |
+| Option-click | Opens AgentPlay |
+
+Nothing moves under Reduce Motion or in Low Power Mode, and no timer runs while Pip is still. Settings → General turns Pip off (two plain bars instead) and the line off separately. The menu opens with Pip at twice the size and one sentence: "1 waiting on you: docs-site", "Going fast, 2h 10m left in this session", "All quiet", with session and week below.
+
+Notifications for "Session needs you" carry Go to Terminal, Snooze 15 Minutes and Mute This Session.
 
 ## States
 

@@ -65,7 +65,9 @@ enum Notifier {
             intentIdentifiers: []),
             UNNotificationCategory(
                 identifier: needsYouCategory,
-                actions: [UNNotificationAction(identifier: muteSessionAction, title: "Mute This Session", options: [])],
+                actions: [UNNotificationAction(identifier: goAction, title: "Go to Terminal", options: []),
+                          UNNotificationAction(identifier: snoozeAction, title: "Snooze 15 Minutes", options: []),
+                          UNNotificationAction(identifier: muteSessionAction, title: "Mute This Session", options: [])],
                 intentIdentifiers: [])])
     }
 
@@ -98,6 +100,8 @@ enum Notifier {
     static let needsYouThread = "needsYou"
     static let needsYouCategory = "agentplay.needsYou"
     static let muteSessionAction = "agentplay.muteSession"
+    static let goAction = "agentplay.go"
+    static let snoozeAction = "agentplay.snooze15"
 
     /// The agent, and the project only if the user allows repo names; nothing from the conversation.
     static func postNeedsYou(_ l: LiveSession, includeRepo: Bool) {

@@ -5,6 +5,7 @@ import Foundation
 /// provider cards and the usage summary and chart are custom views, and those are display-only.
 /// Order follows attention: what needs you, then limits, then sessions, then usage.
 enum MenuEntry: Equatable {
+    case pip                                     // hosted: Pip, large, and what it has to say
     case header(String)                          // native section header
     case message(title: String, detail: String?) // informational, not clickable
     case provider(ProviderSummary)               // hosted card: name, plan, freshness, meters, pace
@@ -88,6 +89,7 @@ enum MenuBuilder {
             return out + footer()
         }
         if let e = lastError { out.append(.message(title: "Last Refresh Failed", detail: e.localizedDescription)) }
+        if !isSample, prefs.showsPip { out += [.pip, .separator] }
 
         // 1. Sessions waiting on you: the one thing worth interrupting for.
         let lines = sessionLines(s, prefs: prefs, now: now)

@@ -78,6 +78,28 @@ enum Renderer {
                 captureWindow(SettingsWindow.make(model: m), to: dir.appendingPathComponent(name))
             }
         }
+        // Pip: every pose at menu-bar size, and the real status item with the line beside it.
+        for pose in PipPose.allCases {
+            for dark in [false, true] {
+                writeIcon(PipIcon.image(pose, session: pose == .sleep ? 0.2 : 0.55, weekly: 0.7),
+                          to: dir.appendingPathComponent("pip-\(pose.rawValue)-\(dark ? "dark" : "light").png"), dark: dark)
+            }
+        }
+        let island = fixtureModel("two-active")
+        island.markLive()
+        island.setPipForRender(PipEvent(kind: .needsYou, text: "docs-site needs you", label: "docs-site", sessionId: nil, pid: nil, seq: nil, id: "r"))
+        for dark in [false, true] {
+            NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            let c = StatusItemController(model: island)
+            c.updateIcon()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+            if let v = c.statusItem.button?.window?.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                v.cacheDisplay(in: v.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: dir.appendingPathComponent("statusitem-island-\(dark ? "dark" : "light").png"))
+            }
+            NSStatusBar.system.removeStatusItem(c.statusItem)
+        }
         NSApp.appearance = nil
         for (name, img) in [
             ("statusitem-bars", StatusIcon.image(session: 0.34, weekly: 0.58, stale: false, waiting: false, pulse: false)),

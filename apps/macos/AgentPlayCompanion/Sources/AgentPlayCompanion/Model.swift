@@ -178,7 +178,75 @@ final class CompanionModel: ObservableObject {
         lastError = nil
         phase = .ready
         refreshLive()  // the records may be newer than the snapshot
+        noticeSnapshotEvents(s)
         deliverAlerts(s)
+    }
+
+    // MARK: Pip
+
+    /// The event beside Pip right now, if any; a click acts on it.
+    @Published private(set) var pipEvent: PipEvent?
+    /// The last event, which colours Pip's pose for a moment after the line beside it has gone.
+    @Published private(set) var pipRecent: PipEvent?
+    /// Bumps when an agent writes: Pip's typing frame changes with real work, not on a timer.
+    @Published private(set) var activityTick = 0
+    private var seenAlerts: Set<String>?
+    private var limitWasSpent = false
+    private var pipClear: Task<Void, Never>?
+
+    /// Render hook: put an event beside Pip.
+    func setPipForRender(_ e: PipEvent?) { pipEvent = e; pipRecent = e }
+
+    var pipPose: PipPose {
+        Pip.pose(live: snapshot?.live ?? [], limits: snapshot?.limits ?? [], recent: pipRecent, now: Date())
+    }
+
+    private func announce(_ events: [PipEvent]) {
+        let order: [PipEvent.Kind] = [.needsYou, .failed, .limit, .finished]
+        guard let e = events.min(by: { order.firstIndex(of: $0.kind)! < order.firstIndex(of: $1.kind)! }), !isSample else { return }
+        if let cur = pipEvent, order.firstIndex(of: cur.kind)! < order.firstIndex(of: e.kind)! { return }  // keep the more urgent one
+        pipEvent = prefs.showsPipIsland ? e : nil
+        pipRecent = e
+        pipClear?.cancel()
+        pipClear = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            self?.pipEvent = nil
+            try? await Task.sleep(for: .seconds(e.kind == .needsYou ? 0 : 12))
+            guard !Task.isCancelled else { return }
+            self?.pipRecent = nil
+        }
+    }
+
+    /// A click on the line beside Pip.
+    func act(on e: PipEvent) {
+        pipEvent = nil
+        switch e.kind {
+        case .needsYou, .finished:
+            if let sid = e.sessionId { goToSession(sessionId: sid, pid: e.pid, seq: e.seq) }
+        case .failed:
+            openViewer(sessionId: e.sessionId, seq: e.seq, errorsTab: true)
+        case .limit:
+            if let u = URL(string: ClaudeAccount.usagePage) { NSWorkspace.shared.open(u) }
+        }
+    }
+
+    /// Alerts and spent windows, compared with the last look.
+    private func noticeSnapshotEvents(_ s: Snapshot) {
+        let repos = Dictionary(s.runs.compactMap { r in r.repo.map { (r.sessionId, $0) } }, uniquingKeysWith: { a, _ in a })
+        var events = Pip.events(liveBefore: [], liveAfter: [], alertsBefore: seenAlerts, alerts: s.alerts, repos: repos)
+        seenAlerts = Set(s.alerts.map(\.signature))
+        let spent = s.limits.first { w in
+            w.used.isAvailable && (w.used.value?.usedPercent ?? 0) >= 100 && (w.resetsAt.map { $0 > Date() } ?? false)
+        }
+        if let w = spent, !limitWasSpent {
+            let reset = w.resetsAt.map { Format.clock($0) } ?? "soon"
+            events.append(PipEvent(kind: .limit, text: "\(w.providerLabel) is back at \(reset)", label: "back \(reset)",
+                                   sessionId: nil, pid: nil,
+                                   seq: nil, id: "limit|\(w.id)|\(reset)"))
+        }
+        limitWasSpent = spent != nil
+        announce(events)
     }
 
     // MARK: Claude account usage (opt-in)
@@ -275,6 +343,8 @@ final class CompanionModel: ObservableObject {
         guard var s = snapshot, !isSample else { return }
         let merged = LiveRecords.merge(snapshot: s.live, records: LiveRecords.read(dir: claudeSessionsDir))
         let news = LiveRecords.newlyWaiting(before: lastLive, after: merged)
+        let repos = Dictionary(s.runs.compactMap { r in r.repo.map { (r.sessionId, $0) } }, uniquingKeysWith: { a, _ in a })
+        announce(Pip.events(liveBefore: lastLive, liveAfter: merged, alertsBefore: nil, alerts: [], repos: repos))
         let stillWaiting = Set(merged.filter { $0.status == .waiting }.map(\.sessionId))
         for old in lastLive ?? [] where old.status == .waiting && !stillWaiting.contains(old.sessionId) {
             Notifier.clearNeedsYou(sessionId: old.sessionId)  // answered: the banner shouldn't linger
@@ -361,7 +431,10 @@ final class CompanionModel: ObservableObject {
         var paths = [".claude/projects", ".codex/sessions"].map { home.appendingPathComponent($0).path }
         for (_, extra) in prefs.customFolders { paths += extra }
         watcher = FileWatcher(paths: paths.filter { FileManager.default.fileExists(atPath: $0) }) { [weak self] in
-            Task { @MainActor in self?.scheduleRefresh(reason: .fileEvent) }
+            Task { @MainActor in
+                self?.activityTick &+= 1  // an agent wrote: Pip types
+                self?.scheduleRefresh(reason: .fileEvent)
+            }
         }
         watcher?.start()
         resetFallbackTimer()
@@ -541,6 +614,7 @@ final class CompanionModel: ObservableObject {
     func handleNotificationTap(sessionId: String?, seq: Int?, action: String, patternKey: String?, pid: Int32? = nil) {
         if action == Notifier.muteAction, let patternKey { mutePattern(patternKey); return }
         if action == Notifier.muteSessionAction, let sessionId { muteRun(sessionId); return }
+        if action == Notifier.snoozeAction { snooze(15 * 60); return }
         if let sessionId, pid != nil { goToSession(sessionId: sessionId, pid: pid, seq: seq); return }
         openViewer(sessionId: sessionId, seq: seq)
     }
