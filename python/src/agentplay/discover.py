@@ -239,14 +239,14 @@ def candidates(source: Any, *, since: datetime | None = None) -> list[Candidate]
 
 def source_bytes(c: Candidate) -> int:
     """On-disk size of a session's transcript plus Claude Code subagent files."""
+    from ._core.ingestion.coding_agent._sources.local.source import claude_code_subagent_files
+
     total = 0
     with captured():
         p = Path(c.path)
         if p.is_file():
             total += p.stat().st_size
-            sub = p.with_suffix("") / "subagents"
-            if sub.is_dir():
-                total += sum(f.stat().st_size for f in sub.glob("agent-*.jsonl"))
+            total += sum(f.stat().st_size for f in claude_code_subagent_files(p))
     return total
 
 

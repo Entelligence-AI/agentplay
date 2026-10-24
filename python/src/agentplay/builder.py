@@ -18,7 +18,7 @@ Redaction contract (raw transcripts never leave the machine):
 * ``path_mode`` = ``dirs_only`` drops file names, ``hashed`` HMACs every segment.
 
 Claude Code is read directly from its JSONL (main transcript plus
-``<session>/subagents/agent-*.jsonl``) because the shared span parser does not
+``<session>/subagents/**/agent-*.jsonl``) because the shared span parser does not
 emit subagent tool calls and only keeps per-turn token totals. Every other agent
 goes through the shared ``LocalSource`` spans (``build_map_from_spans``).
 """
@@ -2573,43 +2573,43 @@ def build_claude_code_map(
     tasks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a map for one Claude Code session file (plus its subagent transcripts)."""
+    from agentplay._core.ingestion.coding_agent._sources.local.source import claude_code_subagent_files
+
     transcript = Path(transcript)
     b = MapBuilder(path_mode=path_mode, hmac_key=hmac_key, resolver=resolver)
     b.task_specs = tasks
     links: dict[str, str] = {}
     _read_claude_transcript(b, transcript, "main", links)
-    sub_dir = transcript.with_suffix("") / "subagents"
-    if sub_dir.is_dir():
-        for f in sorted(sub_dir.glob("agent-*.jsonl")):
-            raw_id = f.stem[len("agent-") :]
-            if raw_id.startswith("acompact-"):
-                # Auto-compaction snapshots re-record parent API messages, not an agent's
-                # work: a subagent would be fake and its llm events would double-count them.
-                # The compaction call itself stays billed on the parent.
-                continue
-            aid = links.get(raw_id) or ("sa-" + raw_id[:12])
-            sub_type, model = "general", ""
-            meta = f.with_suffix(".meta.json")
-            if meta.exists():
-                try:
-                    m = json.loads(meta.read_text(encoding="utf-8"))
-                    sub_type = str(m.get("agentType") or m.get("subagent_type") or sub_type)[:40]
-                    model = str(m.get("model") or "")[:60]
-                except (ValueError, OSError):
-                    pass
-            launch = next((e for e in b.events if e.get("child") == aid), None)
-            if launch is not None:
-                sub_type = launch.get("subagentType", sub_type)
-            b.agents.append(
-                {
-                    "id": aid,
-                    "parent": "main",
-                    "kind": "subagent",
-                    "subagentType": sub_type,
-                    **({"model": model} if model else {}),
-                }
-            )
-            _read_claude_transcript(b, f, aid, {})
+    for f in claude_code_subagent_files(transcript):
+        raw_id = f.stem[len("agent-") :]
+        if raw_id.startswith("acompact-"):
+            # Auto-compaction snapshots re-record parent API messages, not an agent's
+            # work: a subagent would be fake and its llm events would double-count them.
+            # The compaction call itself stays billed on the parent.
+            continue
+        aid = links.get(raw_id) or ("sa-" + raw_id[:12])
+        sub_type, model = "general", ""
+        meta = f.with_suffix(".meta.json")
+        if meta.exists():
+            try:
+                m = json.loads(meta.read_text(encoding="utf-8"))
+                sub_type = str(m.get("agentType") or m.get("subagent_type") or sub_type)[:40]
+                model = str(m.get("model") or "")[:60]
+            except (ValueError, OSError):
+                pass
+        launch = next((e for e in b.events if e.get("child") == aid), None)
+        if launch is not None:
+            sub_type = launch.get("subagentType", sub_type)
+        b.agents.append(
+            {
+                "id": aid,
+                "parent": "main",
+                "kind": "subagent",
+                "subagentType": sub_type,
+                **({"model": model} if model else {}),
+            }
+        )
+        _read_claude_transcript(b, f, aid, {})
     doc = b.finish(
         session={
             "id": f"local:claude-code:{transcript.stem}",

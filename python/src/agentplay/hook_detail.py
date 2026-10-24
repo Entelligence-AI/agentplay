@@ -70,8 +70,11 @@ def _text(value: Any) -> str | None:
     return value[:MAX_CHARS] if isinstance(value, str) and value else None
 
 def _transcripts(path: str) -> list[str]:
-    """The session transcript, then its subagents' (``<session>/subagents/agent-*.jsonl``)."""
-    return [path, *sorted(str(f) for f in (Path(path).with_suffix("") / "subagents").glob("agent-*.jsonl"))]
+    """The session transcript, then its subagents' (``<session>/subagents/**/agent-*.jsonl``)."""
+    from ._core.ingestion.coding_agent._sources.local.source import claude_code_subagent_files
+
+    # Not strict: one unreadable folder must not hide hooks in the readable ones.
+    return [path, *(str(f) for f in claude_code_subagent_files(Path(path), strict=False))]
 
 def _load(path: str, line_no: int, uuid: str) -> dict[str, Any] | None:
     """The hook attachment on one line, or None if the file changed under us."""

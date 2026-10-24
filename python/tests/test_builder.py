@@ -228,6 +228,61 @@ def test_acompact_snapshot_is_not_a_subagent_lane(transcript):
     assert doc["totals"]["tokens"] == before["totals"]["tokens"]
 
 
+def test_workflow_subagent_gets_a_lane_without_leaking_text(transcript):
+    before = sm.build_claude_code_map(transcript)
+    cwd = json.loads(transcript.read_text().splitlines()[0])["cwd"]
+    run = transcript.with_suffix("") / "subagents" / "workflows" / "wf_0a1b2c3d-4e5"
+    run.mkdir(parents=True)
+    (run / "agent-a0f1e2d3c4b5a6978.meta.json").write_text(
+        json.dumps(
+            {"agentType": "workflow-subagent", "description": "SECRET-WF-DESC", "workflowPhase": "SECRET-WF-PHASE"}
+        )
+    )
+    (run / "agent-a0f1e2d3c4b5a6978.jsonl").write_text(
+        _line(
+            type="user",
+            timestamp="2026-09-10T01:00:05Z",
+            cwd=cwd,
+            isSidechain=True,
+            message={"role": "user", "content": "SECRET-WF-PROMPT"},
+        )
+        + _line(
+            type="assistant",
+            timestamp="2026-09-10T01:00:06Z",
+            cwd=cwd,
+            isSidechain=True,
+            message={
+                "id": "w1",
+                "model": "claude-sonnet-5",
+                "usage": {"input_tokens": 11, "output_tokens": 4},
+                "content": [
+                    {"type": "tool_use", "id": "wt1", "name": "Bash", "input": {"command": "pytest -q SECRET-WF-ARG"}}
+                ],
+            },
+        )
+        + _line(
+            type="user",
+            timestamp="2026-09-10T01:00:07Z",
+            cwd=cwd,
+            isSidechain=True,
+            message={
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "wt1", "content": "SECRET-WF-OUTPUT"}],
+            },
+        )
+    )
+    doc = sm.build_claude_code_map(transcript)
+    (lane,) = [a for a in doc["agents"] if a.get("subagentType") == "workflow-subagent"]
+    assert (lane["parent"], lane["kind"]) == ("main", "subagent")
+    assert [e.get("tool") for e in doc["events"] if e["agent"] == lane["id"] and e["kind"] != "llm"] == ["Bash"]
+    assert doc["totals"]["subagents"] == before["totals"]["subagents"] + 1
+    assert doc["totals"]["requests"] == before["totals"]["requests"] + 1
+    assert doc["totals"]["tokens"] == before["totals"]["tokens"] + 15
+    raw = json.dumps(doc)
+    for secret in ("SECRET-WF-DESC", "SECRET-WF-PHASE", "SECRET-WF-PROMPT", "SECRET-WF-ARG", "SECRET-WF-OUTPUT"):
+        assert secret not in raw
+
+
 def test_builder_never_leaks_free_text(transcript):
     doc = sm.build_claude_code_map(transcript)
     # Session facts and search postings are held to the same contract as the map.
