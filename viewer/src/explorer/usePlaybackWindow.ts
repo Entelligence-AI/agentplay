@@ -98,8 +98,6 @@ export function usePlaybackWindow(map: SessionMap) {
   );
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const t = e.target as HTMLElement;
-    if (t.closest('input, textarea, [contenteditable="true"]')) return;
     const action = replayKeyAction(e);
     if (!action) return;
     if (action.type === 'jump') {

@@ -83,15 +83,28 @@ describe('playbackReducer', () => {
 });
 
 describe('replayKeyAction', () => {
-  const key = (k: string, mods: Partial<Record<string, boolean>> = {}) =>
+  const key = (
+    k: string,
+    mods: Partial<Record<string, boolean>> = {},
+    target: EventTarget = document.createElement('div')
+  ) =>
     replayKeyAction({
       key: k,
       shiftKey: false,
       metaKey: false,
       ctrlKey: false,
       altKey: false,
+      defaultPrevented: false,
+      target,
       ...mods,
     });
+  const keysOn = (target: Element) =>
+    [' ', 'ArrowRight', 'e'].map((k) => key(k, {}, target)?.type ?? null);
+  const focused = (html: string) => {
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    return host.querySelector('[data-t]')!;
+  };
 
   it('space toggles, arrows step (Shift steps 10)', () => {
     expect(key(' ')).toEqual({ type: 'toggle' });
@@ -118,5 +131,54 @@ describe('replayKeyAction', () => {
     expect(key('e', { metaKey: true })).toBeNull();
     expect(key(' ', { ctrlKey: true })).toBeNull();
     expect(key('ArrowRight', { altKey: true })).toBeNull();
+  });
+
+  it('the replay region, a map dot and the page body get every shortcut', () => {
+    for (const target of [
+      focused('<div role="region" tabindex="-1" data-t><p>map</p></div>'),
+      focused('<svg role="img"><circle tabindex="0" data-t></circle></svg>'),
+      focused('<div contenteditable="false" data-t>14:05</div>'),
+      document.body,
+    ])
+      expect(keysOn(target)).toEqual(['toggle', 'step', 'jump']);
+  });
+
+  it('Space presses a focused button, link or summary instead of playing', () => {
+    for (const html of [
+      '<button data-t>4×</button>',
+      '<a href="#" data-t>PR #12</a>',
+      '<details><summary data-t>Tool categories</summary></details>',
+      '<svg><text role="button" tabindex="0" data-t>index.ts</text></svg>',
+    ])
+      expect(keysOn(focused(html)), html).toEqual([null, 'step', 'jump']);
+  });
+
+  it('tabs and radios keep Space and the arrows', () => {
+    for (const html of [
+      '<div role="tablist"><button role="tab" data-t>Details</button></div>',
+      '<div role="radiogroup"><button role="radio" data-t>PR</button></div>',
+    ])
+      expect(keysOn(focused(html)), html).toEqual([null, null, 'jump']);
+  });
+
+  it('text fields, lists, menus and popups keep every key', () => {
+    for (const html of [
+      '<input data-t>',
+      '<textarea data-t></textarea>',
+      '<select data-t></select>',
+      '<div contenteditable data-t></div>',
+      '<div contenteditable="plaintext-only" data-t></div>',
+      '<input role="combobox" data-t>',
+      '<div role="listbox"><button role="option" data-t>14:05</button></div>',
+      '<div role="menu"><div role="menuitem" tabindex="-1" data-t>Next</div></div>',
+      '<div role="dialog" tabindex="-1" data-t><p>All models</p></div>',
+      '<div role="dialog"><button data-t>claude-opus</button></div>',
+    ])
+      expect(keysOn(focused(html)), html).toEqual([null, null, null]);
+  });
+
+  it('a key a control already handled maps to nothing', () => {
+    expect(key(' ', { defaultPrevented: true })).toBeNull();
+    expect(key('ArrowRight', { defaultPrevented: true })).toBeNull();
   });
 });

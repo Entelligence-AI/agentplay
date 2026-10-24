@@ -99,10 +99,21 @@ const JUMP_KEYS: Record<string, JumpKey> = {
   r: 'retry',
 };
 
+const TAKES_EVERY_KEY =
+  'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"], [role="listbox"], [role="option"], [role="menu"], [role="dialog"]';
+const TAKES_ARROWS = `${TAKES_EVERY_KEY}, [role="tab"], [role="radio"]`;
+const KEPT_BY: Record<ReplayKeyAction['type'], string> = {
+  jump: TAKES_EVERY_KEY,
+  step: TAKES_ARROWS,
+  toggle: `${TAKES_ARROWS}, button, summary, a[href], [role="button"]`,
+};
+
 /**
  * Space plays or pauses, the arrow keys step (Shift steps 10), and E / X / D /
  * O / R jump to the next edit / error / delay / output / retry. Any modifier
- * other than Shift means the key belongs to the browser, so it maps to nothing.
+ * other than Shift means the key belongs to the browser. A key the focused
+ * control uses, or already handled, belongs to that control. Both map to
+ * nothing.
  */
 export function replayKeyAction(e: {
   key: string;
@@ -110,14 +121,24 @@ export function replayKeyAction(e: {
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
+  defaultPrevented: boolean;
+  target: EventTarget | null;
 }): ReplayKeyAction | null {
-  if (e.metaKey || e.ctrlKey || e.altKey) return null;
-  if (e.key === ' ') return { type: 'toggle' };
-  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-    const d = (e.shiftKey ? 10 : 1) * (e.key === 'ArrowRight' ? 1 : -1);
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return null;
+  const action = actionForKey(e.key, e.shiftKey);
+  if (!action) return null;
+  const kept =
+    e.target instanceof Element && e.target.closest(KEPT_BY[action.type]);
+  return kept ? null : action;
+}
+
+function actionForKey(key: string, shift: boolean): ReplayKeyAction | null {
+  if (key === ' ') return { type: 'toggle' };
+  if (key === 'ArrowRight' || key === 'ArrowLeft') {
+    const d = (shift ? 10 : 1) * (key === 'ArrowRight' ? 1 : -1);
     return { type: 'step', delta: d };
   }
-  const k = e.key.toLowerCase();
+  const k = key.toLowerCase();
   return Object.hasOwn(JUMP_KEYS, k)
     ? { type: 'jump', kind: JUMP_KEYS[k] }
     : null;
