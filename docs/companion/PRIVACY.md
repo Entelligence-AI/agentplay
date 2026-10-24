@@ -41,7 +41,7 @@ What the popover does show is what the viewer shows from the same maps: agent, r
 
 ## Notifications
 
-Off by default. macOS is asked for permission only when the user switches on an alert. A notification carries the agent, the command family and a count, for example "pnpm test failed 3 times in a row." "Session needs you" says "Claude Code needs you" and is skipped when that session's terminal is already the frontmost app. Repo names, in either, only if the user turns that on (`needsYouNamesTheProjectOnlyWhenAllowed`). The payload holds the session id and event `seq` so a click can open the moment; nothing else. History records alert ids and times only; Settings → Notifications → Forget alert history clears it, and the watermark moves forward so nothing old fires afterwards.
+Off by default. macOS is asked for permission only when the user switches on an alert. A notification carries the agent, the command family and a count, for example "pnpm test failed 3 times in a row." "Session needs you" says "Claude Code needs you" and is skipped when that session's terminal is already the frontmost app. "Session finished" carries how long it worked, tool-call and error counts and the last step's tool or command name, from the map. Repo names, in any of them, only if the user turns that on (`needsYouNamesTheProjectOnlyWhenAllowed`, `finishedNoteNeedsRealWorkAndSaysHowItWent`). The payload holds the session id and event `seq` so a click can open the moment; nothing else. History records alert ids and times only; Settings → Notifications → Forget alert history clears it, and the watermark moves forward so nothing old fires afterwards.
 
 ## What it writes
 

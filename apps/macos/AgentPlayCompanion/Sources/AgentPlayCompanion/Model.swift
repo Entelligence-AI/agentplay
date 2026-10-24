@@ -343,8 +343,14 @@ final class CompanionModel: ObservableObject {
         guard var s = snapshot, !isSample else { return }
         let merged = LiveRecords.merge(snapshot: s.live, records: LiveRecords.read(dir: claudeSessionsDir))
         let news = LiveRecords.newlyWaiting(before: lastLive, after: merged)
+        let busySince = Dictionary((lastLive ?? []).filter { $0.status == .busy }.map { ($0.sessionId, $0.statusSince) },
+                                   uniquingKeysWith: { a, _ in a })
         let repos = Dictionary(s.runs.compactMap { r in r.repo.map { (r.sessionId, $0) } }, uniquingKeysWith: { a, _ in a })
-        announce(Pip.events(liveBefore: lastLive, liveAfter: merged, alertsBefore: nil, alerts: [], repos: repos))
+        let events = Pip.events(liveBefore: lastLive, liveAfter: merged, alertsBefore: nil, alerts: [], repos: repos)
+        announce(events)
+        for e in events where e.kind == .finished {
+            if let l = merged.first(where: { $0.sessionId == e.sessionId }) { notifyFinished(l, busySince: busySince[l.sessionId] ?? nil, runs: s.runs) }
+        }
         let stillWaiting = Set(merged.filter { $0.status == .waiting }.map(\.sessionId))
         for old in lastLive ?? [] where old.status == .waiting && !stillWaiting.contains(old.sessionId) {
             Notifier.clearNeedsYou(sessionId: old.sessionId)  // answered: the banner shouldn't linger
@@ -355,6 +361,20 @@ final class CompanionModel: ObservableObject {
             snapshot = s
         }
         notifyNeedsYou(news)
+    }
+
+    private func notifyFinished(_ l: LiveSession, busySince: Date?, runs: [RunActivity]) {
+        let a = prefs.alerts
+        guard a.enabled.contains(.finished), !a.mutedSessions.contains(l.sessionId) else { return }
+        let now = Date()
+        if let until = a.snoozeUntil, until > now { return }
+        if let q = a.quietHours, q.contains(now, timeZone: .current) { return }
+        if Self.isPresenting() { return }
+        if let pid = l.pid, let app = TerminalFocus.app(for: pid), app.isActive { return }
+        let run = runs.first { $0.sessionId == l.sessionId }
+        guard let note = Redacted.finished(l, run: run, busySince: busySince, includeRepo: a.includeRepoInNotifications, now: now)
+        else { return }
+        Notifier.postFinished(note, session: l, seq: run?.lastEvent?.seq)
     }
 
     private func notifyNeedsYou(_ sessions: [LiveSession]) {
@@ -615,6 +635,7 @@ final class CompanionModel: ObservableObject {
         if action == Notifier.muteAction, let patternKey { mutePattern(patternKey); return }
         if action == Notifier.muteSessionAction, let sessionId { muteRun(sessionId); return }
         if action == Notifier.snoozeAction { snooze(15 * 60); return }
+        if action == Notifier.replayAction { openViewer(sessionId: sessionId, seq: seq); return }
         if let sessionId, pid != nil { goToSession(sessionId: sessionId, pid: pid, seq: seq); return }
         openViewer(sessionId: sessionId, seq: seq)
     }

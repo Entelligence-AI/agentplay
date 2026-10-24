@@ -165,6 +165,25 @@ public enum Redacted {
         return Note(title: "\(agent) needs you", body: "A session is waiting for your input.")
     }
 
+    /// Worth a banner only after real work: a quick reply isn't news.
+    public static let finishedMinimum: TimeInterval = 120
+
+    /// "payments-api is done", "Worked 14m · 32 tool calls · 1 error · last: pnpm test". Counts and tool or
+    /// command names only, from the map; nothing from the conversation.
+    public static func finished(_ l: LiveSession, run: RunActivity?, busySince: Date?, includeRepo: Bool, now: Date) -> Note? {
+        let worked = busySince.map { now.timeIntervalSince($0) }
+        guard let worked, worked >= finishedMinimum else { return nil }
+        let agent = AgentNames.label(l.agentTool)
+        let title = includeRepo && l.project != nil ? "\(Format.truncate(l.project, max: 32)) is done" : "\(agent) is done"
+        var parts = ["Worked \(Format.duration(worked))"]
+        if let c = run?.counts {
+            if let n = c.calls, n > 0 { parts.append(n == 1 ? "1 tool call" : "\(n) tool calls") }
+            if let e = c.errors, e > 0 { parts.append(e == 1 ? "1 error" : "\(e) errors") }
+        }
+        if let e = run?.lastEvent { parts.append("last: \(e.err ? "\(e.label) failed" : e.label)") }
+        return Note(title: title, body: parts.joined(separator: " · "))
+    }
+
     public static func notification(for a: AlertCandidate, repo: String?, includeRepo: Bool) -> Note {
         let agent = AgentNames.label(a.agentTool)
         let place = includeRepo && repo != nil ? " in \(Format.truncate(repo, max: 24))" : ""

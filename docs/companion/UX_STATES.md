@@ -49,7 +49,7 @@ When something happens, a short line appears beside Pip for 8 s: which session o
 
 Nothing moves under Reduce Motion or in Low Power Mode, and no timer runs while Pip is still. Settings → General turns Pip off (two plain bars instead) and the line off separately. The menu opens with Pip at twice the size and one sentence: "1 waiting on you: docs-site", "Going fast, 2h 10m left in this session", "All quiet", with session and week below.
 
-Notifications for "Session needs you" carry Go to Terminal, Snooze 15 Minutes and Mute This Session.
+Notifications for "Session needs you" carry Go to Terminal, Snooze 15 Minutes and Mute This Session. "Session finished" (opt-in) fires only after two minutes of work and says how it went, "payments-api is done: Worked 14m · 32 tool calls · 1 error · last: pnpm test", with Go to Terminal and Open Replay.
 
 ## States
 

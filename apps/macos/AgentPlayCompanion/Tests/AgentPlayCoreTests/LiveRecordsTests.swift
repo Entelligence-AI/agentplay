@@ -58,6 +58,16 @@ import Testing
         #expect(Redacted.needsYou(l, includeRepo: true).title == "payments-api needs you")
     }
 
+    @Test func finishedNoteNeedsRealWorkAndSaysHowItWent() throws {
+        let l = try #require(LiveRecords.parse(record(["status": "idle"])))
+        let now = Date(timeIntervalSince1970: 1_792_800_000)
+        #expect(Redacted.finished(l, run: nil, busySince: now.addingTimeInterval(-30), includeRepo: true, now: now) == nil)
+        let run = try fixture("two-active").runs.first { $0.counts.calls ?? 0 > 0 }
+        let note = try #require(Redacted.finished(l, run: run, busySince: now.addingTimeInterval(-14 * 60), includeRepo: false, now: now))
+        #expect(note.title == "Claude Code is done" && note.body.hasPrefix("Worked 14m"))
+        #expect(note.body.contains("tool call") && !note.body.contains("payments-api"))
+    }
+
     @Test func onlyTransitionsIntoWaitingAreNews() throws {
         let busy = try #require(LiveRecords.parse(record(["status": "busy"])))
         let waiting = try #require(LiveRecords.parse(record([:])))

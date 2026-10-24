@@ -64,6 +64,11 @@ enum Notifier {
                       UNNotificationAction(identifier: muteAction, title: "Mute this pattern", options: [])],
             intentIdentifiers: []),
             UNNotificationCategory(
+                identifier: finishedCategory,
+                actions: [UNNotificationAction(identifier: goAction, title: "Go to Terminal", options: []),
+                          UNNotificationAction(identifier: replayAction, title: "Open Replay", options: [])],
+                intentIdentifiers: []),
+            UNNotificationCategory(
                 identifier: needsYouCategory,
                 actions: [UNNotificationAction(identifier: goAction, title: "Go to Terminal", options: []),
                           UNNotificationAction(identifier: snoozeAction, title: "Snooze 15 Minutes", options: []),
@@ -101,6 +106,8 @@ enum Notifier {
     static let needsYouCategory = "agentplay.needsYou"
     static let muteSessionAction = "agentplay.muteSession"
     static let goAction = "agentplay.go"
+    static let replayAction = "agentplay.replay"
+    static let finishedCategory = "agentplay.finished"
     static let snoozeAction = "agentplay.snooze15"
 
     /// The agent, and the project only if the user allows repo names; nothing from the conversation.
@@ -117,6 +124,21 @@ enum Notifier {
         if let pid = l.pid { info["pid"] = Int(pid) }
         content.userInfo = info
         let id = "needs|\(l.sessionId)|\(Int(l.statusSince?.timeIntervalSince1970 ?? Date().timeIntervalSince1970))"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+
+    static func postFinished(_ note: Redacted.Note, session l: LiveSession, seq: Int?) {
+        guard available else { return }
+        let content = UNMutableNotificationContent()
+        content.title = note.title
+        content.body = note.body
+        content.threadIdentifier = "finished"
+        content.categoryIdentifier = finishedCategory
+        var info: [String: Any] = ["sessionId": l.sessionId, "kind": "finished"]
+        if let pid = l.pid { info["pid"] = Int(pid) }
+        if let seq { info["seq"] = seq }
+        content.userInfo = info
+        let id = "done|\(l.sessionId)|\(Int(Date().timeIntervalSince1970))"
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 
