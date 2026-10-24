@@ -50,7 +50,7 @@ enum Renderer {
         if let u = fixtureModel("two-active").snapshot?.usage {
             shots.append(("submenu-usage-details", AnyView(UsageDetail(report: u))))
         }
-        for step in 1...5 {
+        for step in 1...4 {
             let view = AnyView(OnboardingView(step: step).environmentObject(fixtureModel("two-active")))
             for dark in [false, true] {
                 // As the real welcome window: its background, title bar and all.
@@ -59,7 +59,8 @@ enum Renderer {
                 w.styleMask = [.titled, .closable, .fullSizeContentView]
                 w.titleVisibility = .hidden
                 w.titlebarAppearsTransparent = true
-                captureWindow(w, to: dir.appendingPathComponent("onboarding-\(step)-\(dark ? "dark" : "light").png"))
+                captureWindow(w, to: dir.appendingPathComponent("onboarding-\(step)-\(dark ? "dark" : "light").png"),
+                              wait: step == 3 || step == 1 ? 2.2 : 0.5)  // the learnings fade in; Pip wakes
             }
         }
         for (name, view) in shots {
@@ -145,10 +146,10 @@ enum Renderer {
     }
 
     /// A real window, offscreen, captured with its frame (title bar, toolbar, background).
-    static func captureWindow(_ w: NSWindow, to url: URL) {
+    static func captureWindow(_ w: NSWindow, to url: URL, wait: TimeInterval = 0.5) {
         w.setFrameOrigin(NSPoint(x: -10000, y: -10000))
         w.orderFrontRegardless()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        RunLoop.current.run(until: Date().addingTimeInterval(wait))
         if let v = w.contentView?.superview, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
             v.cacheDisplay(in: v.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: url)

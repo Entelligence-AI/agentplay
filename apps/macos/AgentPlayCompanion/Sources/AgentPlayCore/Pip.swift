@@ -96,6 +96,81 @@ public enum Pip {
         }
     }
 
+    /// Something Pip suggests, and what clicking it does.
+    public struct Tip: Equatable, Sendable {
+        public enum Action: Equatable, Sendable {
+            case goTo(sessionId: String, pid: Int32?)
+            case fix(Insights.Fix)
+            case usagePage
+            case insights
+            case none
+        }
+        public var text: String
+        public var action: Action
+        public init(text: String, action: Action) { self.text = text; self.action = action }
+    }
+
+    /// Pip's suggestions, most useful first: what needs you, what's running hot, what to fix, how you steer.
+    public static func tips(_ s: Snapshot, now: Date) -> [Tip] {
+        var out: [Tip] = []
+        if let w = (s.live ?? []).first(where: { $0.status == .waiting }) {
+            out.append(Tip(text: "\(w.project ?? "A session") is waiting for you.", action: .goTo(sessionId: w.sessionId, pid: w.pid)))
+        }
+        if let hot = hotWindow(s.limits, now: now) {
+            let name = hot.window == "five_hour" ? "This session's window" : "This week"
+            let used = Format.percent(hot.used.value?.usedPercent ?? 0)
+            let out_ = Pace.of(used: hot.used.value?.usedPercent ?? 0, windowMinutes: hot.windowMinutes,
+                               resetsAt: hot.resetsAt, now: now)?.runsOutAt
+            out.append(Tip(text: "\(name) is at \(used)" + (out_.map { ", gone in \(Format.duration($0.timeIntervalSince(now))) at this pace." } ?? "."),
+                           action: .usagePage))
+        }
+        if let f = s.insights?.fixes.first {
+            let pts = f.points.map { " (+\(Format.points($0)) points)" } ?? ""
+            out.append(Tip(text: f.title.replacingOccurrences(of: "`", with: "") + pts + ".", action: .fix(f)))
+        }
+        if let sig = s.usage?.signals, let now_ = sig.current.correctionRate, let before = sig.previous.correctionRate,
+           now_ - before >= 2 {
+            out.append(Tip(text: "You've corrected the agent more this month: \(Format.percent(now_)) of messages, up from \(Format.percent(before)).",
+                           action: .insights))
+        }
+        if let l = s.learn, l.detail.contains("passed later") {
+            out.append(Tip(text: "\(l.command ?? "A command") fails a lot but passes later. That's retrying, not waste.", action: .insights))
+        }
+        if out.isEmpty { out.append(Tip(text: "All quiet. I'll wave when a session needs you.", action: .none)) }
+        return out
+    }
+
+    /// Three things learnt from this Mac's own sessions, for the first run: where the work goes, which model does
+    /// it, and the biggest thing worth fixing. Falls back to counts when there's little to go on.
+    public struct Learning: Equatable, Sendable, Hashable {
+        public var symbol: String   // SF Symbol
+        public var text: String
+    }
+
+    public static func learnings(_ s: Snapshot) -> [Learning] {
+        var out: [Learning] = []
+        let week = s.usage?.last30Days
+        if let top = week?.byRepo?.first(where: { $0.key != "outside a repo" }), let total = week, total.tokens.total > 0 {
+            let share = Int((Double(top.tokens.total) / Double(total.tokens.total) * 100).rounded())
+            out.append(Learning(symbol: "folder", text: "Most of your agent work happens in \(top.key): \(share)% of the last 30 days."))
+        }
+        if let m = week?.byModel?.first, let total = week, total.tokens.total > 0 {
+            let share = Int((Double(m.tokens.total) / Double(total.tokens.total) * 100).rounded())
+            out.append(Learning(symbol: "cpu", text: "\(m.key) does \(share)% of it."))
+        }
+        if let f = s.insights?.fixes.first {
+            out.append(Learning(symbol: "wrench.and.screwdriver", text: f.pattern.replacingOccurrences(of: "`", with: "") + " I can show you why."))
+        } else if let score = s.insights?.score {
+            out.append(Learning(symbol: "heart.text.square", text: "Your run health is \(Int(score.rounded())) out of 100. I'll show you what would raise it."))
+        }
+        if out.count < 3 {
+            let n = s.sources.filter { $0.status == .found }.reduce(0) { $0 + $1.sessionCount }
+            let agents = s.foundSources.map(\.label).joined(separator: " and ")
+            if n > 0 { out.insert(Learning(symbol: "tray.full", text: "\(n) sessions from \(agents), all read on this Mac."), at: 0) }
+        }
+        return Array(out.prefix(3))
+    }
+
     /// The fill and the ground: the most constrained provider's session and weekly fractions.
     public static func levels(_ limits: [ProviderLimitWindow]) -> (session: Double?, weekly: Double?) {
         guard let p = ProviderSummary.build(limits).first(where: { !$0.windows.isEmpty }) else { return (nil, nil) }

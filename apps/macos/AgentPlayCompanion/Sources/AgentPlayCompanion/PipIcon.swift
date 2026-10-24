@@ -5,7 +5,11 @@ import AppKit
 /// bar. The body fills with the 5-hour session and Pip stands on the week; eyes are XOR'd so they read on the
 /// fill and on the empty jar alike. `frame` alternates the two poses that move: typing and waving.
 enum PipIcon {
-    static func image(_ pose: PipPose, frame: Int = 0, session: Double?, weekly: Double?, stale: Bool = false) -> NSImage {
+    /// Eyes as the pose has them, shut for a blink, or looking up at whoever is pointing at Pip.
+    enum Eyes { case pose, closed, up }
+
+    static func image(_ pose: PipPose, frame: Int = 0, session: Double?, weekly: Double?, stale: Bool = false,
+                      eyes: Eyes = .pose, hop: Bool = false) -> NSImage {
         let img = NSImage(size: NSSize(width: 20, height: 18), flipped: false) { _ in
             let ink = NSColor.black.withAlphaComponent(stale ? 0.5 : 1)
             func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> NSRect {
@@ -16,6 +20,7 @@ enum PipIcon {
                 r.fill(using: NSGraphicsContext.current?.compositingOperation ?? .sourceOver)
             }
             let b = frame % 2 == 1
+            if hop { NSGraphicsContext.current?.cgContext.translateBy(x: 0, y: 1.5) }  // a little jump
             // The ground is the week: a track, filled as far as the week is used.
             fill(px(2, 0, 36, 2), 0.3)
             if let weekly { fill(px(2, 0, max(2, 36 * min(1, weekly)), 2)) }
@@ -32,7 +37,7 @@ enum PipIcon {
             // Eyes.
             let ctx = NSGraphicsContext.current
             ctx?.compositingOperation = .xor
-            switch pose {
+            switch eyes == .closed ? .sleep : eyes == .up ? .cheer : pose {
             case .sleep, .limit:
                 fill(px(13, 18, 5, 2)); fill(px(22, 18, 5, 2))
             case .work:
@@ -44,7 +49,8 @@ enum PipIcon {
                     fill(px(21.5 + d, 15 + d, 2, 2)); fill(px(25.1 - d, 15 + d, 2, 2))
                 }
             case .wave, .cheer, .sweat:
-                fill(px(14, 17, 3, 5)); fill(px(23, 17, 3, 5))
+                let y: CGFloat = eyes == .up ? 20 : 17  // looking up at the pointer
+                fill(px(14, y, 3, 5)); fill(px(23, y, 3, 5))
             }
             ctx?.compositingOperation = .sourceOver
             // Arms and marks.

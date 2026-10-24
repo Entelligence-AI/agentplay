@@ -86,8 +86,17 @@ Notifications for "Session needs you" carry Go to Terminal, Snooze 15 Minutes an
 
 The standard Mac settings window: toolbar tabs (General, Live Limits, Sources, Notifications, Privacy, Account, Diagnostics), grouped forms, the window titled after the pane. [General](screens/settings-general-light.png).
 
-## Onboarding (five steps)
+## Onboarding (four steps, told by Pip)
 
-[1 Welcome](screens/onboarding-1-light.png) · [2 Find sessions](screens/onboarding-2-light.png) · [3 First value](screens/onboarding-3-light.png) · [4 Optional choices](screens/onboarding-4-light.png) · [5 Stay local](screens/onboarding-5-light.png)
+1. **Meet Pip**: Pip wakes (asleep, then blinks and waves): "Hi, I'm Pip." [screen](screens/onboarding-1-light.png)
+2. **Reading your sessions**: Pip types while a live counter climbs as the first scan indexes; "Read on this Mac. Nothing leaves it." It moves on by itself when done. [screen](screens/onboarding-2-light.png)
+3. **What I learnt**: three facts from this Mac's own sessions fade in one by one: where the work goes, which model does it, the biggest fix. [screen](screens/onboarding-3-light.png)
+4. **Find me in the menu bar**: the pose legend (needs you, finished, keeps failing, going fast, limit reached) and three choices: needs-you alerts, Claude usage from your account, open at login. [screen](screens/onboarding-4-light.png)
 
-Notification permission is requested only when the user switches on an alert, in step 4 or Settings. "Connect Entelligence" is visible but disabled, with the reason.
+Progress dots, no step counter. Every animation follows Reduce Motion.
+
+## Pip, interactive
+
+- **Point at Pip** in the menu bar: it looks up at you (tracking-area events, no timer).
+- **In the menu** Pip blinks, types while agents work and waves while one waits, on a quarter-second beat that exists only while the menu is open.
+- **Click Pip** in the menu: it hops and moves to its next suggestion, drawn from your data: what's waiting, a window running hot, the top fix, a jump in corrections, a pattern that's only retrying. The row under it does the suggestion: Go to It, Apply This Fix…, Open My Usage Page, Open Run Health…

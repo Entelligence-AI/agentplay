@@ -2,127 +2,221 @@ import AgentPlayCore
 import AppKit
 import SwiftUI
 
-/// First run in a standard window: welcome, find sessions, live limits, a few choices, stay local.
-/// Native controls only; no network anywhere in it.
+/// First run, told by Pip: it wakes up, reads this Mac's sessions while you watch, says three things it learnt
+/// from them, and shows how it'll talk to you from the menu bar. Four short steps; motion follows Reduce Motion.
 struct OnboardingView: View {
     @EnvironmentObject var model: CompanionModel
     @State var step = 1
     @State private var scanning = false
+    @State private var shown = 0          // learnings revealed so far
+    @State private var opened = Date()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
             Group {
                 switch step {
-                case 1: welcome
-                case 2: find
-                case 3: limits
-                case 4: preferences
-                default: account
+                case 1: meet
+                case 2: reading
+                case 3: learnt
+                default: home
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            Divider()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.opacity)
             HStack {
-                Text("Step \(step) of 5").font(.callout).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    ForEach(1...4, id: \.self) { i in
+                        Circle().fill(i == step ? Color.accentColor : Color.secondary.opacity(0.3)).frame(width: 6, height: 6)
+                    }
+                }
+                .accessibilityLabel("Step \(step) of 4")
                 Spacer()
-                if step > 1 { Button("Back") { step -= 1 } }
+                if step > 1 && step != 2 { Button("Back") { go(step - 1) } }
                 primary
             }
-            .padding(.horizontal, 20).padding(.vertical, 14)
+            .padding(.horizontal, 22).padding(.vertical, 16)
         }
-        .frame(width: 480, height: 380)
+        .frame(width: 520, height: 470)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: step)
     }
 
     @ViewBuilder var primary: some View {
         switch step {
-        case 1: Button("Find My Sessions") { step = 2; scan() }.keyboardShortcut(.defaultAction)
-        case 5: Button("Done") { finish() }.keyboardShortcut(.defaultAction)
-        default: Button("Continue") { step += 1 }.keyboardShortcut(.defaultAction).disabled(scanning && step == 2)
+        case 1: Button("Nice to Meet You") { go(2); scan() }.keyboardShortcut(.defaultAction)
+        case 2: Button(scanning ? "Reading…" : "Continue") { go(3) }.keyboardShortcut(.defaultAction).disabled(scanning)
+        case 3: Button("Continue") { go(4) }.keyboardShortcut(.defaultAction)
+        default: Button("Start") { finish() }.keyboardShortcut(.defaultAction)
         }
     }
 
-    func page<Content: View>(_ symbol: String, _ title: String, _ subtitle: String,
-                             @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 28)).foregroundStyle(.tint)
-            Text(title).font(.title2.weight(.semibold))
-            Text(subtitle).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            content()
-        }
-        .padding(24)
+    func go(_ s: Int) {
+        step = s
+        opened = Date()
+        if s == 3 { reveal() }
     }
 
-    var welcome: some View {
-        page("waveform.path.ecg", "Your coding agents, in the menu bar",
-             "Usage limits, running sessions and errors from Claude Code, Codex, Cursor and more, read from this Mac. No account, nothing uploaded.") {
-            Button("Explore With Sample Data") { model.loadSample(); step = 3 }.buttonStyle(.link)
+    // MARK: Pip, big
+
+    /// Pip at six times its menu-bar size, moving on a quarter-second beat while this window is up.
+    func pip(_ pose: PipPose, wakeAfter: TimeInterval? = nil) -> some View {
+        TimelineView(.periodic(from: .now, by: reduceMotion ? 3600 : 0.25)) { t in
+            let tick = reduceMotion ? 0 : Int(t.date.timeIntervalSinceReferenceDate * 4)
+            let awake = wakeAfter.map { t.date.timeIntervalSince(opened) > $0 } ?? true
+            let p: PipPose = awake ? pose : .sleep
+            let blink = awake && tick % 14 == 0 && p != .sleep
+            Image(nsImage: PipIcon.image(p, frame: (p == .work || p == .wave) ? tick / 2 : 0,
+                                         session: p == .sleep ? 0.15 : 0.45, weekly: 0.6,
+                                         eyes: blink ? .closed : .pose))
+                .renderingMode(.template).interpolation(.none).resizable()
+                .frame(width: 120, height: 108)
+                .foregroundStyle(.primary)
+                .accessibilityLabel("Pip, \(PipIcon.description(p).lowercased())")
         }
     }
 
-    var find: some View {
-        page("magnifyingglass", scanning ? "Finding your sessions…" : "Found on this Mac",
-             "Only the folders these agents use. If your repos are in Documents, macOS may ask once.") {
-            if let s = model.snapshot, !scanning {
-                Form {
-                    ForEach(s.sources.filter { $0.status != .notFound }) { src in
-                        LabeledContent(src.label, value: src.status == .found ? "\(src.sessionCount) session\(src.sessionCount == 1 ? "" : "s")" : "Can't read")
+    func title(_ s: String) -> some View {
+        Text(s).font(.system(size: 26, weight: .semibold, design: .rounded)).multilineTextAlignment(.center)
+    }
+
+    func body(_ s: String) -> some View {
+        Text(s).font(.title3).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 420)
+    }
+
+    // MARK: 1. Meet Pip
+
+    var meet: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 8)
+            pip(.wave, wakeAfter: 1.2)
+            title("Hi, I'm Pip.")
+            body("I live in your menu bar and keep an eye on your coding agents: what's running, what needs you, and how much of your plan is left.")
+            Button("Just Show Me With Sample Data") { model.loadSample(); go(3) }.buttonStyle(.link).padding(.top, 4)
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: 2. Reading your sessions
+
+    var found: Int {
+        if case .scanning(let n?) = model.phase { return n }
+        return model.snapshot?.sources.filter { $0.status == .found }.reduce(0) { $0 + $1.sessionCount } ?? 0
+    }
+
+    var reading: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 8)
+            pip(scanning ? .work : .cheer)
+            title(scanning ? "Reading your sessions…" : "All read.")
+            Text("\(found)")
+                .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
+            Text(found == 1 ? "session" : "sessions").font(.headline).foregroundStyle(.secondary)
+            if !scanning, let s = model.snapshot, !s.foundSources.isEmpty {
+                body("From " + s.foundSources.map(\.label).joined(separator: ", ") + ".")
+            }
+            Label("Read on this Mac. Nothing leaves it.", systemImage: "lock.fill")
+                .font(.callout).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: 3. What I learnt
+
+    var learnings: [Pip.Learning] { model.snapshot.map(Pip.learnings) ?? [] }
+
+    func reveal() {
+        shown = 0
+        let n = learnings.count
+        guard !reduceMotion else { shown = n; return }
+        for i in 0..<n {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35 + 0.45 * Double(i)) {
+                withAnimation(.easeOut(duration: 0.35)) { shown = i + 1 }
+            }
+        }
+    }
+
+    var learnt: some View {
+        VStack(spacing: 14) {
+            pip(.cheer).padding(.top, 18)
+            title(model.isSample ? "Here's what I'd tell you" : "Here's what I learnt")
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(learnings.enumerated()), id: \.offset) { i, l in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: l.symbol).font(.title3).foregroundStyle(.tint).frame(width: 24)
+                        Text(l.text).font(.body).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
                     }
-                    if s.foundSources.isEmpty { Text("No agents found yet").foregroundStyle(.secondary) }
-                }
-                .formStyle(.grouped).scrollDisabled(true).frame(maxHeight: 160)
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    if case .scanning(let n?) = model.phase { Text("\(n) session\(n == 1 ? "" : "s") so far").foregroundStyle(.secondary) }
-                    Button("Cancel") { model.cancelScan(); scanning = false }
+                    .padding(12)
+                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .opacity(i < shown ? 1 : 0)
+                    .offset(y: i < shown ? 0 : 8)
                 }
             }
+            .frame(maxWidth: 440)
+            Spacer()
         }
+        .padding(.horizontal, 24)
+        .onAppear { if shown == 0 { reveal() } }
     }
 
-    var limits: some View {
-        page("gauge.with.dots.needle.33percent", "Live Claude limits",
-             "Claude Code reports your 5-hour and weekly usage to its status line. Turn this on and AgentPlay saves that report on this Mac to show it in the menu. You can turn it off in Settings.") {
-            if model.claudeBridgeOn {
-                Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-            } else {
-                Button("Review and Turn On…") {
-                    model.settingsPane = .claude
-                    Windows.show(.settings)
-                }
+    // MARK: 4. Where I live
+
+    var home: some View {
+        VStack(spacing: 12) {
+            title("Find me in the menu bar").padding(.top, 22)
+            body("My pose tells you what needs you. Point at me and I'll look up; click me for the details.")
+            HStack(spacing: 18) {
+                legend(.wave, "Needs you")
+                legend(.cheer, "Finished")
+                legend(.oops, "Keeps failing")
+                legend(.sweat, "Going fast")
+                legend(.limit, "Limit reached")
             }
-        }
-    }
-
-    var preferences: some View {
-        page("slider.horizontal.3", "A few choices", "All optional. Alerts stay off unless you turn them on.") {
+            .padding(.vertical, 4)
             Form {
-                Toggle("Show session % next to the icon", isOn: $model.prefs.showActivityInMenuBar)
-                Toggle("Launch at login", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
                 Toggle(isOn: Binding(get: { model.prefs.alerts.enabled.contains(.needsYou) },
                                      set: { model.setPreset(.needsYou, on: $0) })) {
-                    Text("Notify me when a session needs me")
-                    Text("Skipped when its terminal is already in front.")
+                    Text("Tell me when a session needs me")
                 }
-                Toggle("Notify me when a command fails 3 times", isOn: Binding(
-                    get: { model.prefs.alerts.enabled.contains(.repeatedFailure) },
-                    set: { model.setPreset(.repeatedFailure, on: $0) }))
+                Toggle(isOn: Binding(get: { model.prefs.usesClaudeAccount }, set: { model.setClaudeAccount($0) })) {
+                    Text("Show Claude usage from my account")
+                    Text("Asks your Claude account, like claude.ai's usage page. macOS asks once.")
+                }
+                Toggle("Open AgentPlay when I log in", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
             }
-            .formStyle(.grouped).scrollDisabled(true)
+            .formStyle(.grouped).scrollDisabled(true).frame(maxWidth: 460, maxHeight: 170)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 24)
     }
 
-    var account: some View {
-        page("lock.shield", "Everything stays on this Mac",
-             "No account is needed for anything here. Entelligence sign-in isn't available yet; when it is, it will be optional and ask before syncing anything.") {
-            EmptyView()
+    func legend(_ pose: PipPose, _ text: String) -> some View {
+        VStack(spacing: 6) {
+            Image(nsImage: PipIcon.image(pose, session: 0.45, weekly: 0.6))
+                .renderingMode(.template).interpolation(.none).resizable()
+                .frame(width: 40, height: 36).foregroundStyle(.primary)
+            Text(text).font(.caption).foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
     }
+
+    // MARK: actions
 
     func scan() {
         guard !model.isSample else { return }
         scanning = true
-        Task { await model.runFirstScan(); scanning = false }
+        Task {
+            await model.runFirstScan()
+            scanning = false
+            // A beat on "All read." before the reveal.
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 900))
+            if step == 2 { go(3) }
+        }
     }
 
     func finish() {

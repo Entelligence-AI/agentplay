@@ -206,6 +206,32 @@ final class CompanionModel: ObservableObject {
     private var limitWasSpent = false
     private var pipClear: Task<Void, Never>?
 
+    /// The pointer is over Pip in the menu bar: it looks up.
+    @Published var pipPeek = false
+    /// Which of Pip's suggestions the menu shows; clicking Pip moves to the next.
+    @Published private(set) var tipIndex = 0
+    /// True for a moment after Pip is clicked: a little hop.
+    @Published private(set) var pipHop = false
+
+    var tips: [Pip.Tip] { snapshot.map { Pip.tips($0, now: Date()) } ?? [] }
+    var currentTip: Pip.Tip? { tips.isEmpty ? nil : tips[tipIndex % tips.count] }
+
+    func nextTip() {
+        tipIndex &+= 1
+        pipHop = true
+        Task { try? await Task.sleep(for: .milliseconds(350)); pipHop = false }
+    }
+
+    func perform(_ tip: Pip.Tip) {
+        switch tip.action {
+        case .goTo(let sid, let pid): goToSession(sessionId: sid, pid: pid, seq: nil)
+        case .fix(let f): f.applicable ? applyFix(f) : openInsights()
+        case .usagePage: if let u = URL(string: ClaudeAccount.usagePage) { NSWorkspace.shared.open(u) }
+        case .insights: openInsights()
+        case .none: break
+        }
+    }
+
     /// Render hook: put an event beside Pip.
     func setPipForRender(_ e: PipEvent?) { pipEvent = e; pipRecent = e }
 

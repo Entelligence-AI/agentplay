@@ -30,6 +30,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             b.target = self
             b.action = #selector(clicked)
             b.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            // Pip looks up when the pointer comes over it. Events, not a timer: nothing runs while it's away.
+            b.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                             owner: self, userInfo: nil))
         }
         model.objectWillChange
             .sink { [weak self] _ in self?.scheduleIconUpdate() }
@@ -70,7 +73,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             if model.activityTick != lastTick { lastTick = model.activityTick; typeFrame &+= 1 }
             let frame = pose == .wave ? waveFrame : pose == .work ? typeFrame : 0
             let lv = model.isSample ? (session: nil, weekly: nil) : Pip.levels(model.snapshot?.limits ?? [])
-            button.image = PipIcon.image(pose, frame: frame, session: lv.session, weekly: lv.weekly, stale: bars.stale)
+            let eyes: PipIcon.Eyes = model.pipPeek && pose != .sleep && pose != .limit ? .up : .pose
+            button.image = PipIcon.image(pose, frame: frame, session: lv.session, weekly: lv.weekly, stale: bars.stale, eyes: eyes)
         } else {
             button.image = StatusIcon.image(session: bars.session, weekly: bars.weekly, stale: bars.stale,
                                             waiting: model.hasWaiting, pulse: false)
@@ -97,6 +101,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         button.setAccessibilityLabel(parts.joined(separator: ", "))
     }
 
+    static func label(_ a: Pip.Tip.Action) -> String {
+        switch a {
+        case .goTo: "Go to It"
+        case .fix(let f): f.applicable ? "Apply This Fix…" : "Show Me the Fix…"
+        case .usagePage: "Open My Usage Page"
+        case .insights: "Open Run Health…"
+        case .none: ""
+        }
+    }
+
     func actionWord(_ e: PipEvent) -> String {
         switch e.kind {
         case .needsYou, .finished: "go to it"
@@ -121,6 +135,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
         }
     }
+
+    @objc func mouseEntered(with event: NSEvent) { model.pipPeek = true }
+    @objc func mouseExited(with event: NSEvent) { model.pipPeek = false }
 
     // MARK: clicks
 
@@ -171,7 +188,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func add(_ e: MenuEntry, to menu: NSMenu, now: Date) {
         switch e {
         case .pip:
-            menu.addItem(hosted(PipHeader(model: model)))
+            let host = ClickHostingView(rootView: AnyView(PipHeader(model: model).environmentObject(model)))
+            host.onClick = { [weak self] in self?.model.nextTip() }
+            host.sizeToContent(width: Menu.width)
+            host.autoresizingMask = [.width]
+            let h = NSMenuItem()
+            h.view = host
+            menu.addItem(h)
+            // What Pip suggests, as a real menu item: its label says what a click does.
+            if let tip = model.currentTip, tip.action != .none {
+                let i = item(Self.label(tip.action)) { [model] in model.perform(tip) }
+                i.image = symbol("sparkles")
+                setSubtitle("Click Pip for another suggestion", on: i)
+                menu.addItem(i)
+            }
 
         case .header(let t):
             menu.addItem(.sectionHeader(title: t))
@@ -479,7 +509,7 @@ final class ClosureMenuItem: NSMenuItem {
 }
 
 /// NSMenu sizes custom rows from `intrinsicContentSize`, so the measured height goes there.
-final class MenuHostingView: NSHostingView<AnyView> {
+class MenuHostingView: NSHostingView<AnyView> {
     private var measured: NSSize?
     override var intrinsicContentSize: NSSize { measured ?? super.intrinsicContentSize }
 
@@ -572,32 +602,60 @@ struct ProviderCard: View {
     }
 }
 
-/// Pip at twice its menu-bar size, and one line about now. Updates in place while the menu is open.
+/// Pip at twice its menu-bar size, alive while the menu is open: it blinks, types and waves, hops when clicked,
+/// and says one thing worth knowing. The animation lives only as long as this view, so nothing runs when closed.
 struct PipHeader: View {
     @ObservedObject var model: CompanionModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: reduceMotion ? 3600 : 0.25)) { t in
+            let tick = Int(t.date.timeIntervalSinceReferenceDate * 4)
+            content(tick: reduceMotion ? 0 : tick)
+        }
+    }
+
+    func content(tick: Int) -> some View {
         let now = Date()
         let pose = model.pipPose
         let lv = Pip.levels(model.snapshot?.limits ?? [])
         let say = Pip.sentence(pose, live: model.snapshot?.live ?? [], limits: model.snapshot?.limits ?? [],
                                recent: model.pipRecent, now: now)
-        HStack(spacing: 10) {
-            Image(nsImage: PipIcon.image(pose, session: lv.session, weekly: lv.weekly))
+        // A blink every four seconds; typing and waving step twice a second.
+        let blink = tick % 16 == 0 && pose != .sleep && pose != .limit
+        let frame = (pose == .work || pose == .wave) ? tick / 2 : 0
+        return HStack(alignment: .top, spacing: 10) {
+            Image(nsImage: PipIcon.image(pose, frame: frame, session: lv.session, weekly: lv.weekly,
+                                         eyes: blink ? .closed : .pose, hop: model.pipHop))
                 .renderingMode(.template).interpolation(.none).resizable()
                 .frame(width: 40, height: 36)
                 .foregroundStyle(Ink.primary)
                 .accessibilityLabel(PipIcon.description(pose))
+                .help("Click me for another suggestion")
             VStack(alignment: .leading, spacing: 2) {
-                Text(say.title).font(.headline).foregroundStyle(Ink.primary).lineLimit(2)
-                if let d = say.detail { Text(d).font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary) }
+                Text(say.title).font(.headline).foregroundStyle(Ink.primary).lineLimit(1).minimumScaleFactor(0.85)
+                if let tip = model.currentTip {
+                    Text(tip.text).font(.subheadline).foregroundStyle(Ink.primary)
+                        .lineLimit(2, reservesSpace: true).padding(.top, 3)
+                        .id(model.tipIndex)
+                        .transition(.opacity)
+                }
             }
             Spacer(minLength: 0)
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.tipIndex)
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 6)
-        .frame(minWidth: Menu.width, maxWidth: .infinity, alignment: .leading)
+        // A fixed height: the menu measures rows once, and the tip changes under it.
+        .frame(width: Menu.width, height: 76, alignment: .topLeading)
     }
+}
+
+/// A custom row that takes a click without closing the menu: Pip, in the header.
+final class ClickHostingView: MenuHostingView {
+    var onClick: (() -> Void)?
+    override func mouseUp(with event: NSEvent) { onClick?() }
+    override func mouseDown(with event: NSEvent) {}
 }
 
 // MARK: - Insights

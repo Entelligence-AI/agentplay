@@ -63,4 +63,18 @@ import Testing
         let seen = Set(alerts.map(\.signature))
         #expect(Pip.events(liveBefore: [], liveAfter: [], alertsBefore: seen, alerts: alerts, repos: [:]).isEmpty)
     }
+
+    @Test func tipsLeadWithWhatNeedsYou() throws {
+        let s = try fixture("two-active")
+        let tips = Pip.tips(s, now: s.generatedAt)
+        #expect(tips.first?.text == "docs-site is waiting for you.")
+        if case .goTo(let sid, _) = tips.first?.action { #expect(sid.hasSuffix("sample-9e2b")) } else { Issue.record("expected goTo") }
+        #expect(!Pip.tips(try fixture("no-agents"), now: s.generatedAt).isEmpty)
+    }
+
+    @Test func learningsComeFromTheUsersOwnData() throws {
+        let l = Pip.learnings(try fixture("two-active"))
+        #expect(!l.isEmpty && l.count <= 3)
+        #expect(l.contains { $0.text.contains("payments-api") || $0.text.contains("sessions from") })
+    }
 }
