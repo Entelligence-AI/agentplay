@@ -132,9 +132,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         openMenu()
     }
 
+    /// Light or Dark as set in System Settings, whatever the menu bar or wallpaper looks like.
+    static var systemAppearance: NSAppearance? {
+        let dark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+        return NSAppearance(named: dark ? .darkAqua : .aqua)
+    }
+
     func openMenu() {
         guard let b = statusItem.button else { return }
         rebuild(now: nowOverride ?? Date())
+        // Opened from the status button, a menu takes the menu bar's look, which on macOS 26 follows the wallpaper
+        // (a light wallpaper gives a light menu in Dark Mode). Menus follow the system setting, as Apple's do.
+        if nowOverride == nil { menu.appearance = Self.systemAppearance }
         b.highlight(true)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: b.isFlipped ? b.bounds.height + 4 : -4), in: b)
         b.highlight(false)
@@ -706,6 +715,7 @@ enum Toast {
         p.backgroundColor = .clear
         p.hasShadow = true
         p.level = .statusBar
+        p.appearance = StatusItemController.systemAppearance
         p.contentView = host
         if let b = button, let w = b.window {
             let r = w.convertToScreen(b.convert(b.bounds, to: nil))
