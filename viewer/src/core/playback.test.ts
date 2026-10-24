@@ -3,6 +3,7 @@ import {
   MS_PER_EVENT,
   SPEEDS,
   initialPlayback,
+  playbackClock,
   playbackReducer,
   replayKeyAction,
   type PlaybackAction,
@@ -14,6 +15,22 @@ const run = (s: PlaybackState, ...actions: PlaybackAction[]) =>
 
 const loaded = (n = 100, start = 10) =>
   playbackReducer(initialPlayback, { type: 'load', n, start });
+
+const clocked = (s: PlaybackState) => {
+  const c = {
+    state: s,
+    actions: [] as PlaybackAction[],
+    frames(...ts: number[]) {
+      ts.forEach(tick);
+      return c;
+    },
+  };
+  const tick = playbackClock(s.speedIdx, (a) => {
+    c.actions.push(a);
+    c.state = playbackReducer(c.state, a);
+  });
+  return c;
+};
 
 describe('playbackReducer', () => {
   it('loads paused and clamps the start', () => {
@@ -58,27 +75,68 @@ describe('playbackReducer', () => {
     expect(SPEEDS[s2.speedIdx]).toBe(1);
   });
 
-  it('ticks advance by elapsed time times speed', () => {
-    let s = run(loaded(), { type: 'play' }); // 4x
-    s = playbackReducer(s, { type: 'tick', dtMs: MS_PER_EVENT / 8 });
-    expect(s.p).toBe(10); // 0.5 event accumulated
-    s = playbackReducer(s, { type: 'tick', dtMs: MS_PER_EVENT / 8 });
-    expect(s.p).toBe(11);
-    s = playbackReducer(s, { type: 'tick', dtMs: MS_PER_EVENT });
-    expect(s.p).toBe(15);
-  });
-
   it('stops at the last event', () => {
     let s = run(loaded(20, 18), { type: 'play' });
-    s = playbackReducer(s, { type: 'tick', dtMs: MS_PER_EVENT * 10 });
+    s = playbackReducer(s, { type: 'advance', by: 10 });
     expect(s.p).toBe(19);
     expect(s.playing).toBe(false);
-    expect(playbackReducer(s, { type: 'tick', dtMs: 1000 })).toBe(s);
+    expect(playbackReducer(s, { type: 'advance', by: 1 })).toBe(s);
   });
 
-  it('ignores ticks while paused', () => {
+  it('ignores advances while paused', () => {
     const s = loaded();
-    expect(playbackReducer(s, { type: 'tick', dtMs: 1000 })).toBe(s);
+    expect(playbackReducer(s, { type: 'advance', by: 1 })).toBe(s);
+  });
+});
+
+describe('playbackClock', () => {
+  const playing = (n = 100, start = 10) =>
+    run(loaded(n, start), { type: 'play' });
+  const event4x = MS_PER_EVENT / 4;
+
+  it('a frame that completes no event leaves the state untouched', () => {
+    const s = playing();
+    const c = clocked(s).frames(1000, 1016.7, 1033.4);
+    expect(c.actions).toEqual([]);
+    expect(c.state).toBe(s);
+  });
+
+  it('a frame that completes one event advances by exactly one', () => {
+    const c = clocked(playing()).frames(1000, 1000 + event4x);
+    expect(c.actions).toEqual([{ type: 'advance', by: 1 }]);
+    expect(c.state.p).toBe(11);
+  });
+
+  it('carries the fraction of an event across frames', () => {
+    const c = clocked(playing()).frames(1000, 1000 + event4x / 2);
+    expect(c.state.p).toBe(10);
+    c.frames(1000 + event4x, 1000 + event4x * 5);
+    expect(c.state.p).toBe(15);
+  });
+
+  it('a long stalled frame counts as 250 ms, not as the stall', () => {
+    const c = clocked(playing(1000, 0)).frames(1000, 31_000);
+    expect(c.state.p).toBe(4);
+    expect(c.state.playing).toBe(true);
+  });
+
+  it('plays at the speed it was created with', () => {
+    const s = run(loaded(), { type: 'cycleSpeed' }, { type: 'play' });
+    expect(SPEEDS[s.speedIdx]).toBe(16);
+    expect(clocked(s).frames(1000, 1000 + MS_PER_EVENT).state.p).toBe(26);
+  });
+
+  it('keeps partial progress across a speed change when given the same carry', () => {
+    const carry = { last: 0, acc: 0 };
+    const actions: PlaybackAction[] = [];
+    // Half an event at 1x, then a 4x clock picks up where it left off.
+    const slow = playbackClock(0, (a) => actions.push(a), carry);
+    slow(1000);
+    slow(1000 + MS_PER_EVENT / 2);
+    expect(actions).toEqual([]);
+    const fast = playbackClock(1, (a) => actions.push(a), carry);
+    fast(1000 + MS_PER_EVENT / 2 + event4x / 2);
+    expect(actions).toEqual([{ type: 'advance', by: 1 }]);
   });
 });
 
