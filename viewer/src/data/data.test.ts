@@ -5,7 +5,7 @@ import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { SESSION_MAP_SCHEMA_V1_LEGACY, sessionMapSchema } from '@/core/schema';
 import { listRows } from './memoryListing';
-import { dedupeSessions, fnv1a, parseMapBytes, rowFromMap } from './parse';
+import { dedupeSessions, fnv1a, parseMapBytes, parseMapJson, rowFromMap } from './parse';
 import { fileSource } from './fileSource';
 
 const DEMO = path.resolve(__dirname, '../../public/demo');
@@ -57,6 +57,62 @@ describe('parseMapBytes', () => {
 
   it('hashes deterministically', () => {
     expect(fnv1a(new TextEncoder().encode('abc'))).toBe('1a47e90b');
+  });
+});
+
+describe('parseMapJson', () => {
+  type Node = { $ref?: string; type?: string | string[]; enum?: unknown[]; properties?: Record<string, Node>; items?: Node };
+  type Path = (string | number)[];
+  const schema = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../../../schema/agentplay-v1.schema.json'), 'utf8')
+  );
+  const resolve = (n: Node): Node =>
+    n.$ref ? resolve(n.$ref.slice(2).split('/').reduce((o, k) => o[k], schema)) : n;
+  const nullablePaths = (node: Node, at: Path = []): Path[] => {
+    const n = resolve(node);
+    const nullable = (Array.isArray(n.type) && n.type.includes('null')) || !!n.enum?.includes(null);
+    return [
+      ...(at.length && nullable ? [at] : []),
+      ...Object.entries(n.properties ?? {}).flatMap(([k, v]) => nullablePaths(v, [...at, k])),
+      ...(n.items ? nullablePaths(n.items, [...at, 0]) : []),
+    ];
+  };
+  const get = (o: unknown, p: Path) => p.reduce<any>((x, k) => x?.[k], o);
+  const withoutNulls = (v: unknown) =>
+    JSON.parse(JSON.stringify(v, (_k, x) => (x === null ? undefined : x)));
+  const oneOfEach = () => ({
+    schema: 'agentplay/v1',
+    session: { id: 's1', startedAt: '2026-10-01T00:00:00Z' },
+    totals: {},
+    repos: [{ id: 'r1', name: 'api' }],
+    files: [{ id: 0, repo: 'r1', path: 'src/a.ts' }],
+    prs: [{ provider: 'github', number: 1, url: 'https://example.test/pr/1', seq: 0 }],
+    agents: [{ id: 'main' }],
+    tasks: [{ n: 1 }],
+    events: [
+      { t: 0, kind: 'tool', targets: [{ touch: 'read' }], vcs: { provider: 'git', action: 'commit' } },
+    ],
+  });
+
+  it('reads every field the JSON Schema allows as null the same as a missing field', () => {
+    const paths = nullablePaths(schema);
+    expect(paths.length).toBeGreaterThan(100);
+    const doc = oneOfEach();
+    for (const p of [...paths].reverse()) get(doc, p.slice(0, -1))[p[p.length - 1]] = null;
+    expect(withoutNulls(parseMapJson(doc))).toEqual(withoutNulls(parseMapJson(oneOfEach())));
+  });
+
+  it('names the first invalid field without echoing its value', async () => {
+    const bad = { ...oneOfEach(), files: [{ id: 0, repo: 'r1', path: 'src/a.ts', reads: 'do not echo' }] };
+    expect(() => parseMapJson(bad)).toThrow(expect.objectContaining({ code: 'invalid_map' }));
+    const res = await fileSource().addFiles([
+      new File([JSON.stringify(bad)], 'bad-field.json'),
+      new File([JSON.stringify({ ...bad, schema: 'agentplay/v2' })], 'v2.json'),
+    ]);
+    const [field, v2] = res.failed;
+    expect(field.reason).toContain('files.0.reads');
+    expect(field.reason).not.toContain('do not echo');
+    expect(v2.reason).toBe('not an agentplay v1 document');
   });
 });
 
