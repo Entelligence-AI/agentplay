@@ -75,8 +75,11 @@ struct ErrorLine: Equatable, Identifiable {
 }
 
 enum MenuBuilder {
+    /// How far `trim` goes: each step drops a row of the least important sections so the menu fits a short screen.
+    static let maxTrim = 4
+
     static func entries(snapshot s: Snapshot?, phase: Phase, prefs: CompanionPrefs, lastError: SnapshotError?,
-                        isSample: Bool, now: Date, bridgeOn: Bool) -> [MenuEntry] {
+                        isSample: Bool, now: Date, bridgeOn: Bool, trim: Int = 0) -> [MenuEntry] {
         var out: [MenuEntry] = []
         if isSample {
             // Unmissable and one click to leave: sample numbers must never pass for yours.
@@ -133,8 +136,8 @@ enum MenuBuilder {
                 out.append(.message(title: "No Sessions Indexed Yet", detail: "Refresh to scan \(s.foundSources.map(\.label).joined(separator: ", "))."))
             }
         }
-        // Four when insights follow, so the menu still fits a laptop screen.
-        out += rest.prefix(s.insights?.score != nil ? 4 : 5).map(MenuEntry.session)
+        // Four when insights follow, fewer when the screen is short.
+        out += rest.prefix(max(1, (s.insights?.score != nil ? 4 : 5) - trim)).map(MenuEntry.session)
         if s.store.available { out.append(.action(.showAllSessions)) }
 
         // 4. Insights: run health, the fixes that would raise it, and what keeps failing, details one level down.
@@ -144,9 +147,9 @@ enum MenuBuilder {
             out.append(.separator)
             out.append(.header("Insights · Last \(s.insights?.days ?? 30) Days"))
             if let ins { out.append(.health(ins)) }
-            if let sig = s.usage?.signals, sig.current.messages >= 20 { out.append(.signals(sig)) }
-            if let ins { out += ins.fixes.prefix(3).map(MenuEntry.fix) }
-            if !errs.isEmpty { out.append(.errors(Array(errs.prefix(3)))) }
+            if let sig = s.usage?.signals, sig.current.messages >= 20, trim < 4 { out.append(.signals(sig)) }
+            if let ins { out += ins.fixes.prefix(max(1, 3 - trim)).map(MenuEntry.fix) }
+            if !errs.isEmpty, trim < 3 { out.append(.errors(Array(errs.prefix(3)))) }
         }
 
         // 5. Estimated usage: two lines here, the rest one level down.

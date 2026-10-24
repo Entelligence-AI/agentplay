@@ -954,9 +954,9 @@ final class CompanionModel: ObservableObject {
 
     // MARK: menu
 
-    func menuEntries(now: Date) -> [MenuEntry] {
+    func menuEntries(now: Date, trim: Int = 0) -> [MenuEntry] {
         MenuBuilder.entries(snapshot: snapshot, phase: phase, prefs: prefs, lastError: lastError,
-                            isSample: isSample, now: now, bridgeOn: claudeBridgeOn)
+                            isSample: isSample, now: now, bridgeOn: claudeBridgeOn, trim: trim)
     }
 
     func refreshBridgeState() {

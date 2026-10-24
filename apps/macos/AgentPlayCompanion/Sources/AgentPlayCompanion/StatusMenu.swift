@@ -156,13 +156,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     func openMenu() {
-        guard let b = statusItem.button else { return }
-        rebuild(now: nowOverride ?? Date())
-        // Opened from the status button, a menu takes the menu bar's look, which on macOS 26 follows the wallpaper
-        // (a light wallpaper gives a light menu in Dark Mode). Menus follow the system setting, as Apple's do.
+        guard let b = statusItem.button, let w = b.window else { return }
+        // Opened inside the status button, a menu takes the menu bar's glass, which on macOS 26 follows the
+        // wallpaper: Dark Mode text on light glass, grey and hard to read. Opened at a screen point it takes the
+        // app's look, which follows the system setting, as Apple's menus do.
         if nowOverride == nil { menu.appearance = Self.systemAppearance }
+        let r = w.convertToScreen(b.convert(b.bounds, to: nil))
+        let top = r.minY - 4
+        // Never taller than the screen: a menu that scrolls hides Pip under its arrow. Trim the least
+        // important rows until it fits.
+        let bottom = ((w.screen ?? NSScreen.main)?.visibleFrame.minY ?? 0) + 8
+        let room = top - bottom
+        for trim in 0...MenuBuilder.maxTrim {
+            rebuild(now: nowOverride ?? Date(), trim: trim)
+            if menu.size.height <= room { break }
+        }
         b.highlight(true)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: b.isFlipped ? b.bounds.height + 4 : -4), in: b)
+        menu.popUp(positioning: nil, at: NSPoint(x: r.minX, y: top), in: nil)
         b.highlight(false)
     }
 
@@ -180,9 +190,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     // MARK: building
 
-    func rebuild(now: Date) {
+    func rebuild(now: Date, trim: Int = 0) {
         menu.removeAllItems()
-        for e in model.menuEntries(now: now) { add(e, to: menu, now: now) }
+        for e in model.menuEntries(now: now, trim: trim) { add(e, to: menu, now: now) }
     }
 
     private func add(_ e: MenuEntry, to menu: NSMenu, now: Date) {
@@ -647,7 +657,7 @@ struct PipHeader: View {
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 6)
         // A fixed height: the menu measures rows once, and the tip changes under it.
-        .frame(width: Menu.width, height: 76, alignment: .topLeading)
+        .frame(minWidth: Menu.width, maxWidth: .infinity, minHeight: 76, maxHeight: 76, alignment: .topLeading)
     }
 }
 
@@ -879,8 +889,16 @@ struct MeterRow: View {
 /// Label colours for SwiftUI inside NSMenu, where the hierarchical styles don't resolve.
 enum Ink {
     static let primary = Color(nsColor: .controlTextColor)  // what native menu titles use
-    static let secondary = Color(nsColor: .secondaryLabelColor)
-    static let tertiary = Color(nsColor: .tertiaryLabelColor)
+    // Stronger than the window defaults (55% and 25%): menu glass shows what's behind it. Resolved per appearance
+    // when drawn; `withAlphaComponent` on a system colour would freeze it at launch.
+    static let secondary = Color(nsColor: ink(0.75))
+    static let tertiary = Color(nsColor: ink(0.58))
+
+    private static func ink(_ alpha: CGFloat) -> NSColor {
+        NSColor(name: nil) { ap in
+            ap.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: alpha) : NSColor(white: 0, alpha: alpha - 0.05)
+        }
+    }
 }
 
 /// Today and the last 30 days, label left, value right.
