@@ -68,6 +68,67 @@ final class CompanionModel: ObservableObject {
     }
 
     var isSample: Bool { sampleMode || snapshot?.isSample == true }
+
+    // MARK: film (dev builds only)
+
+    /// Filming: a fixture shown as if live, with every read of this Mac switched off (no refresh, no live watch,
+    /// no login, no account call). Nothing about the person filming can reach the screen.
+    private(set) var filmMode = false
+
+    /// The persona on the account card while filming.
+    static let filmIdentity = ClaudeAccount.Identity(accountUuid: nil, email: "sam@example.com", organization: "Northwind", seatTier: nil)
+
+    func startFilm(snapshot s: Snapshot) {
+        filmMode = true
+        started = true
+        sampleMode = false
+        snapshot = s
+        lastUpdated = s.generatedAt
+        phase = .ready
+        claudeIdentity = Self.filmIdentity
+        prefs.onboardingDone = true
+        prefs.showActivityInMenuBar = false
+        Task { await refreshNotificationStatus() }
+    }
+
+    /// Change what the fixture's live sessions say, so Pip's pose follows a script.
+    func filmLive(_ live: [LiveSession]) { snapshot?.live = live }
+
+    /// Put an event beside Pip, as a real one would land.
+    func filmEvent(_ e: PipEvent?) {
+        pipClear?.cancel()
+        pipEvent = e
+        pipRecent = e
+    }
+
+    /// An agent wrote something: Pip's typing frame moves.
+    func filmTick() { activityTick &+= 1 }
+
+    /// Claude's windows at these levels, resetting in `resetsIn` seconds.
+    func filmLimits(session: Double, weekly: Double, resetsIn: TimeInterval) {
+        guard var s = snapshot else { return }
+        for i in s.limits.indices where s.limits[i].provider == "claude-code" {
+            let pct = (s.limits[i].window == "five_hour" ? session : weekly) * 100
+            s.limits[i].used.value?.usedPercent = pct
+            s.limits[i].used.value?.leftPercent = 100 - pct
+            s.limits[i].used.observedAt = Date()
+            s.limits[i].resetsAt = Date().addingTimeInterval(s.limits[i].window == "five_hour" ? resetsIn : 3 * 86400)
+        }
+        snapshot = s
+    }
+
+    /// The first scan, with a counter that climbs while Pip reads.
+    private func filmFirstScan() async {
+        let s = snapshot
+        let total = s?.sources.filter { $0.status == .found }.reduce(0) { $0 + $1.sessionCount } ?? 0
+        snapshot = nil
+        for n in stride(from: 0, through: total, by: max(1, total / 40)) {
+            phase = .scanning(found: n)
+            try? await Task.sleep(for: .milliseconds(45))
+        }
+        snapshot = s
+        phase = .ready
+    }
     var now: Date { Date() }
 
     // MARK: lifecycle
@@ -144,6 +205,7 @@ final class CompanionModel: ObservableObject {
     // MARK: data
 
     func refresh(_ mode: SnapshotService.Mode) async {
+        guard !filmMode else { return }
         guard let service, !sampleMode else { return }
         lastRefreshStarted = Date()
         if snapshot == nil || mode == .fullScan { phase = .scanning(found: nil) }
@@ -296,6 +358,7 @@ final class CompanionModel: ObservableObject {
     @Published private(set) var claudeIdentity: ClaudeAccount.Identity?
 
     func refreshIdentity() {
+        guard !filmMode else { return }
         let id = isSample ? .sample : ClaudeAccount.readIdentity()
         if id != claudeIdentity { claudeIdentity = id }
         guard !isSample, let uuid = id?.accountUuid else { return }
@@ -463,6 +526,7 @@ final class CompanionModel: ObservableObject {
 
     /// At most every few minutes, never while Anthropic has asked us to wait, never for sample data.
     func refreshAccount(force: Bool) {
+        guard !filmMode else { return }
         let now = Date()
         guard prefs.usesClaudeAccount, !isSample, !accountFetching, now >= accountBackoffUntil else { return }
         guard force || now.timeIntervalSince(lastAccountFetch) >= 120 else { return }
@@ -516,6 +580,7 @@ final class CompanionModel: ObservableObject {
     /// Claude Code rewrites `~/.claude/sessions/<pid>.json` when a session starts or stops waiting. Watching that
     /// folder alone, with a short latency, is what makes "needs you" arrive in about a second.
     private func startLiveWatch() {
+        guard !filmMode else { return }
         let dir = claudeSessionsDir
         guard FileManager.default.fileExists(atPath: dir.path) else { return }
         sessionsWatcher = FileWatcher(paths: [dir.path], latency: 0.3) { [weak self] in
@@ -578,6 +643,7 @@ final class CompanionModel: ObservableObject {
 
     /// From a notification or a menu row: the session's terminal if there is one, else its replay.
     func goToSession(sessionId: String, pid: Int32?, seq: Int?) {
+        guard !filmMode else { toast = "Brought Terminal forward."; return }
         if let pid, TerminalFocus.bringForward(pid: pid) { return }
         openViewer(sessionId: sessionId, seq: seq)
     }
@@ -632,6 +698,7 @@ final class CompanionModel: ObservableObject {
     enum RefreshReason { case fileEvent, timer, popoverOpened, wake, manual }
 
     private func startWatching() {
+        guard !filmMode else { return }
         let home = FileManager.default.homeDirectoryForCurrentUser
         var paths = [".claude/projects", ".codex/sessions"].map { home.appendingPathComponent($0).path }
         for (_, extra) in prefs.customFolders { paths += extra }
@@ -655,6 +722,7 @@ final class CompanionModel: ObservableObject {
     }
 
     func scheduleRefresh(reason: RefreshReason) {
+        guard !filmMode else { return }
         guard service != nil, !sampleMode, prefs.onboardingDone else { return }
         // A refresh costs a few seconds of CPU (see docs/companion/EXPERIMENTS.md), so it is rationed:
         // file events are debounced and spaced out, more tightly while the popover is open.
@@ -712,12 +780,28 @@ final class CompanionModel: ObservableObject {
     }
 
     private func command(_ args: [String]) async -> CompanionCommand.Reply {
+        if filmMode { return Self.filmReply(args) }
         guard let runtime else { return .init(ok: false, message: "The AgentPlay runtime is missing.", fields: [:]) }
         return await CompanionCommand.run(runtime, args, extraEnv: envBox.value)
     }
 
+    /// What the core would answer while filming: the preview and the write of the one fix the script applies.
+    private static func filmReply(_ args: [String]) -> CompanionCommand.Reply {
+        switch args.first {
+        case "fix" where args.dropFirst().first == "preview":
+            return .init(ok: true, message: nil, fields: [
+                "repo": "payments-api", "file": ".claude/settings.json", "granted": "false", "root": "~/code/payments-api",
+                "before": "", "after": "\"SessionStart\": [{\"matcher\": \"startup\", \"hooks\": [\n  {\"type\": \"command\", \"command\": \"scripts/agent-env.sh\"}\n]}]"])
+        case "fix":
+            return .init(ok: true, message: nil, fields: ["file": ".claude/settings.json"])
+        default:
+            return .init(ok: true, message: nil, fields: [:])
+        }
+    }
+
     /// A write changed what the insights should show: drop their 15-minute cache and look again.
     private func afterWrite() {
+        guard !filmMode else { return }
         try? FileManager.default.removeItem(at: storeHome.appendingPathComponent("cache/companion-insights.json"))
         Task { await refresh(.read) }
     }
@@ -752,7 +836,15 @@ final class CompanionModel: ObservableObject {
             }
             a.addButton(withTitle: "Apply")
             a.addButton(withTitle: "Cancel")
-            guard a.runModal() == .alertFirstButtonReturn else { return }
+            let response: NSApplication.ModalResponse
+            if filmMode, let host = Film.alertHost(for: a) {
+                // Filming drives the pointer from the main actor, which a modal loop would block: a sheet instead.
+                response = await withCheckedContinuation { c in a.beginSheetModal(for: host) { c.resume(returning: $0) } }
+                host.orderOut(nil)
+            } else {
+                response = a.runModal()
+            }
+            guard response == .alertFirstButtonReturn else { return }
             let r = await command(["fix", "apply", f.id] + (granted ? [] : ["--grant"]))
             toast = r.ok ? "Applied to \(r.fields["file"] ?? file). Undo it from Run Health any time." : (r.message ?? "Couldn't apply it.")
             if r.ok { afterWrite() }
@@ -782,6 +874,7 @@ final class CompanionModel: ObservableObject {
 
     /// The viewer's Run health page, where fixes are previewed, applied and undone.
     func openInsights(page: String = "health") {
+        guard !filmMode else { return }
         guard !isSample, let viewer else { openViewer(); return }
         Task {
             guard let base = try? await viewer.ensure() else { toast = "Couldn't start the local viewer."; return }
@@ -802,6 +895,7 @@ final class CompanionModel: ObservableObject {
     }
 
     func openViewer(sessionId: String? = nil, seq: Int? = nil, errorsTab: Bool = false) {
+        guard !filmMode else { return }
         playClick()
         if isSample {
             // The sample's sessions don't exist anywhere. Open the viewer's own bundled demo instead.
@@ -854,11 +948,13 @@ final class CompanionModel: ObservableObject {
 
     func finishOnboarding() {
         prefs.onboardingDone = true
+        guard !filmMode else { return }
         startWatching()
         Task { await refresh(.read) }
     }
 
     func runFirstScan() async {
+        if filmMode { await filmFirstScan(); return }
         await refresh(.fullScan)
     }
 

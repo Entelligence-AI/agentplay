@@ -45,6 +45,10 @@ public enum ClaudeAccount {
         public var organization: String?
         public var seatTier: String?
 
+        public init(accountUuid: String?, email: String?, organization: String?, seatTier: String?) {
+            self.accountUuid = accountUuid; self.email = email; self.organization = organization; self.seatTier = seatTier
+        }
+
         /// Shown with sample data, so a sample never carries the real login.
         public static let sample = Identity(accountUuid: nil, email: "you@example.com", organization: "Example Org", seatTier: nil)
 

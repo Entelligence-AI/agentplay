@@ -198,6 +198,17 @@ enum CompanionMain {
             while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
             exit(0)
         }
+        if LaunchOptions.isDev, let dir = LaunchOptions.value("--film-out") ?? (LaunchOptions.value("--film") != nil ? "/tmp/agentplay-film" : nil) {
+            // Dev only: film a scripted take over a fixture (see Film.swift).
+            MainActor.assumeIsolated {
+                Film.outDir = URL(fileURLWithPath: dir)
+                let app = NSApplication.shared
+                let delegate = FilmDelegate()
+                app.delegate = delegate
+                withExtendedLifetime(delegate) { app.run() }
+            }
+            exit(0)
+        }
         if let dir = LaunchOptions.renderDir {
             // Dev only: draw every state to PNG and exit (docs/companion/screens).
             MainActor.assumeIsolated { Renderer.renderAll(to: dir) }

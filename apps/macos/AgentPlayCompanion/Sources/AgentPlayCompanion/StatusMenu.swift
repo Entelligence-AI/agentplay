@@ -1029,15 +1029,22 @@ enum Toast {
     private static var panel: NSPanel?
     private static var hide: DispatchWorkItem?
 
+    private static var controller: NSHostingController<AnyView>?
+
     static func show(_ text: String, under button: NSStatusBarButton?) {
         panel?.orderOut(nil)
-        let host = NSHostingView(rootView:
+        let vc = NSHostingController(rootView: AnyView(
             Text(text).font(.callout).multilineTextAlignment(.leading)
                 .frame(maxWidth: 280, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous)))
-        let size = host.fittingSize
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))))
+        // sizeThatFits measures the view; a hosting view's fittingSize reports several hundred points here.
+        let size = vc.sizeThatFits(in: NSSize(width: 304, height: 400))
+        vc.sizingOptions = []   // or the hosting view's own intrinsic size (the same bad number) would grow the panel
+        controller = vc
+        let host = vc.view
+        host.frame = NSRect(origin: .zero, size: size)
         let p = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isOpaque = false

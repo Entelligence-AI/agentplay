@@ -1,0 +1,2963 @@
+{
+ "schema": "agentplay.companion/v1",
+ "schemaVersion": 1,
+ "agentplayVersion": "0.2.4",
+ "generatedAt": "2026-10-23T10:46:00Z",
+ "store": {
+  "available": true,
+  "sessionCount": 14,
+  "indexError": null
+ },
+ "sources": [
+  {
+   "agent": "claude-code",
+   "label": "Claude Code",
+   "status": "found",
+   "paths": [
+    "~/.claude"
+   ],
+   "sessionCount": 7,
+   "latestAt": "2026-10-23T09:46:00Z",
+   "remedy": null
+  },
+  {
+   "agent": "codex",
+   "label": "Codex",
+   "status": "found",
+   "paths": [
+    "~/.codex"
+   ],
+   "sessionCount": 4,
+   "latestAt": "2026-10-23T07:46:00Z",
+   "remedy": null
+  },
+  {
+   "agent": "cursor",
+   "label": "Cursor",
+   "status": "not_found",
+   "paths": [],
+   "sessionCount": 0,
+   "latestAt": null,
+   "remedy": null
+  },
+  {
+   "agent": "copilot",
+   "label": "Copilot CLI",
+   "status": "not_found",
+   "paths": [],
+   "sessionCount": 0,
+   "latestAt": null,
+   "remedy": null
+  },
+  {
+   "agent": "copilot-vscode",
+   "label": "Copilot (VS Code)",
+   "status": "not_found",
+   "paths": [],
+   "sessionCount": 0,
+   "latestAt": null,
+   "remedy": null
+  },
+  {
+   "agent": "opencode",
+   "label": "OpenCode",
+   "status": "found",
+   "paths": [
+    "~/.local/share/opencode"
+   ],
+   "sessionCount": 3,
+   "latestAt": "2026-10-23T03:46:00Z",
+   "remedy": null
+  },
+  {
+   "agent": "kiro",
+   "label": "Kiro",
+   "status": "not_found",
+   "paths": [],
+   "sessionCount": 0,
+   "latestAt": null,
+   "remedy": null
+  },
+  {
+   "agent": "gemini-cli",
+   "label": "gemini-cli",
+   "status": "not_found",
+   "paths": [],
+   "sessionCount": 0,
+   "latestAt": null,
+   "remedy": null
+  },
+  {
+   "agent": "antigravity-cli",
+   "label": "antigravity-cli",
+   "status": "not_found",
+   "paths": [],
+   "sessionCount": 0,
+   "latestAt": null,
+   "remedy": null
+  }
+ ],
+ "runs": [
+  {
+   "sessionId": "local:claude-code:sample-m00",
+   "agentTool": "claude-code",
+   "agentLabel": "Claude Code",
+   "repo": "frontend",
+   "repoCount": 1,
+   "startedAt": "2026-10-23T09:46:00Z",
+   "lastEventAt": "2026-10-23T09:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 1,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-23T09:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": {
+    "seq": 3,
+    "at": "2026-10-23T09:46:40Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": true,
+    "pending": false,
+    "errClass": "exit_code",
+    "retryOf": null,
+    "attempt": null
+   },
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-23T09:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-23T09:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-23T09:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-23T09:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": true,
+     "pending": false,
+     "errClass": "exit_code",
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-23T09:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:codex:sample-m01",
+   "agentTool": "codex",
+   "agentLabel": "Codex",
+   "repo": "payments-api",
+   "repoCount": 1,
+   "startedAt": "2026-10-23T07:46:00Z",
+   "lastEventAt": "2026-10-23T07:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-23T07:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": null,
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-23T07:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-23T07:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-23T07:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-23T07:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-23T07:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:claude-code:sample-m02",
+   "agentTool": "claude-code",
+   "agentLabel": "Claude Code",
+   "repo": "frontend",
+   "repoCount": 1,
+   "startedAt": "2026-10-23T05:46:00Z",
+   "lastEventAt": "2026-10-23T05:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-23T05:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": null,
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-23T05:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-23T05:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-23T05:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-23T05:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-23T05:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:opencode:sample-m03",
+   "agentTool": "opencode",
+   "agentLabel": "OpenCode",
+   "repo": "payments-api",
+   "repoCount": 1,
+   "startedAt": "2026-10-23T03:46:00Z",
+   "lastEventAt": "2026-10-23T03:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 1,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-23T03:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": {
+    "seq": 3,
+    "at": "2026-10-23T03:46:40Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": true,
+    "pending": false,
+    "errClass": "exit_code",
+    "retryOf": null,
+    "attempt": null
+   },
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-23T03:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-23T03:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-23T03:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-23T03:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": true,
+     "pending": false,
+     "errClass": "exit_code",
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-23T03:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:claude-code:sample-m04",
+   "agentTool": "claude-code",
+   "agentLabel": "Claude Code",
+   "repo": "frontend",
+   "repoCount": 1,
+   "startedAt": "2026-10-23T01:46:00Z",
+   "lastEventAt": "2026-10-23T01:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-23T01:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": null,
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-23T01:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-23T01:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-23T01:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-23T01:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-23T01:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:codex:sample-m05",
+   "agentTool": "codex",
+   "agentLabel": "Codex",
+   "repo": "payments-api",
+   "repoCount": 1,
+   "startedAt": "2026-10-22T23:46:00Z",
+   "lastEventAt": "2026-10-22T23:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-22T23:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": null,
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-22T23:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-22T23:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-22T23:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-22T23:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-22T23:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:claude-code:sample-m06",
+   "agentTool": "claude-code",
+   "agentLabel": "Claude Code",
+   "repo": "frontend",
+   "repoCount": 1,
+   "startedAt": "2026-10-22T21:46:00Z",
+   "lastEventAt": "2026-10-22T21:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 1,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-22T21:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": {
+    "seq": 3,
+    "at": "2026-10-22T21:46:40Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": true,
+    "pending": false,
+    "errClass": "exit_code",
+    "retryOf": null,
+    "attempt": null
+   },
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-22T21:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-22T21:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-22T21:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-22T21:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": true,
+     "pending": false,
+     "errClass": "exit_code",
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-22T21:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:opencode:sample-m07",
+   "agentTool": "opencode",
+   "agentLabel": "OpenCode",
+   "repo": "payments-api",
+   "repoCount": 1,
+   "startedAt": "2026-10-22T19:46:00Z",
+   "lastEventAt": "2026-10-22T19:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-22T19:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": null,
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-22T19:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-22T19:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-22T19:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-22T19:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-22T19:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:claude-code:sample-m08",
+   "agentTool": "claude-code",
+   "agentLabel": "Claude Code",
+   "repo": "frontend",
+   "repoCount": 1,
+   "startedAt": "2026-10-22T17:46:00Z",
+   "lastEventAt": "2026-10-22T17:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-22T17:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": null,
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-22T17:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-22T17:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-22T17:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-22T17:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-22T17:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:codex:sample-m09",
+   "agentTool": "codex",
+   "agentLabel": "Codex",
+   "repo": "payments-api",
+   "repoCount": 1,
+   "startedAt": "2026-10-22T15:46:00Z",
+   "lastEventAt": "2026-10-22T15:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 1,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-22T15:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": {
+    "seq": 3,
+    "at": "2026-10-22T15:46:40Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": true,
+    "pending": false,
+    "errClass": "exit_code",
+    "retryOf": null,
+    "attempt": null
+   },
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-22T15:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-22T15:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-22T15:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-22T15:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": true,
+     "pending": false,
+     "errClass": "exit_code",
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-22T15:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:claude-code:sample-m10",
+   "agentTool": "claude-code",
+   "agentLabel": "Claude Code",
+   "repo": "frontend",
+   "repoCount": 1,
+   "startedAt": "2026-10-22T13:46:00Z",
+   "lastEventAt": "2026-10-22T13:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-22T13:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": null,
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-22T13:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-22T13:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-22T13:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-22T13:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-22T13:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  },
+  {
+   "sessionId": "local:opencode:sample-m11",
+   "agentTool": "opencode",
+   "agentLabel": "OpenCode",
+   "repo": "payments-api",
+   "repoCount": 1,
+   "startedAt": "2026-10-22T11:46:00Z",
+   "lastEventAt": "2026-10-22T11:47:00Z",
+   "lastActivityAt": null,
+   "mapBehindSeconds": null,
+   "activity": {
+    "value": "idle",
+    "kind": "derived",
+    "source": "local_index",
+    "observedAt": null,
+    "window": "none",
+    "confidence": "low",
+    "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+    "freshness": "unknown"
+   },
+   "outcome": "completed",
+   "models": [
+    "claude-sonnet-5"
+   ],
+   "pathMode": "relative",
+   "truncated": false,
+   "imported": false,
+   "counts": {
+    "events": 5,
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "compactions": 0
+   },
+   "categories": {
+    "read": 1,
+    "search": 0,
+    "edit": 1,
+    "exec": 0,
+    "verify": 2,
+    "mcp": 0,
+    "subagent": 0,
+    "web": 0,
+    "error": 0,
+    "compaction": 0
+   },
+   "lastEvent": {
+    "seq": 4,
+    "at": "2026-10-22T11:47:00Z",
+    "kind": "verify",
+    "cat": "test",
+    "agent": "main",
+    "label": "pytest",
+    "target": null,
+    "err": false,
+    "pending": false,
+    "errClass": null,
+    "retryOf": null,
+    "attempt": null
+   },
+   "lastError": null,
+   "recentEvents": [
+    {
+     "seq": 0,
+     "at": "2026-10-22T11:46:00Z",
+     "kind": "user",
+     "cat": null,
+     "agent": "main",
+     "label": "prompt",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 1,
+     "at": "2026-10-22T11:46:05Z",
+     "kind": "read",
+     "cat": "file",
+     "agent": "main",
+     "label": "Read",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 2,
+     "at": "2026-10-22T11:46:20Z",
+     "kind": "edit",
+     "cat": "file",
+     "agent": "main",
+     "label": "Edit",
+     "target": "src/a.py",
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 3,
+     "at": "2026-10-22T11:46:40Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    },
+    {
+     "seq": 4,
+     "at": "2026-10-22T11:47:00Z",
+     "kind": "verify",
+     "cat": "test",
+     "agent": "main",
+     "label": "pytest",
+     "target": null,
+     "err": false,
+     "pending": false,
+     "errClass": null,
+     "retryOf": null,
+     "attempt": null
+    }
+   ],
+   "pendingTool": null,
+   "context": {
+    "value": null,
+    "kind": "unavailable",
+    "source": "none",
+    "observedAt": null,
+    "window": "context",
+    "confidence": "low",
+    "explanation": "This session has no recorded model requests with token counts.",
+    "freshness": "unknown"
+   },
+   "liveStatus": null
+  }
+ ],
+ "unreadable": [],
+ "alerts": [
+  {
+   "rule": "repeated_failure",
+   "signature": "0f46eb43b1abb49c",
+   "patternKey": "9016650128ab6d9f",
+   "sessionId": "local:claude-code:sample-7f3a",
+   "agentTool": "claude-code",
+   "command": "pnpm test",
+   "errClass": "exit_code",
+   "agent": "main",
+   "count": 3,
+   "firstSeq": 5,
+   "firstAt": "2026-10-23T10:42:48Z",
+   "triggerSeq": 10,
+   "triggerAt": "2026-10-23T10:44:50Z",
+   "resolvedSeq": null,
+   "evidence": {
+    "value": 3,
+    "kind": "recorded",
+    "source": "agentplay_map",
+    "observedAt": "2026-10-23T10:44:50Z",
+    "window": "session",
+    "confidence": "high",
+    "explanation": "pnpm test failed 3 times in a row (exit_code) in one run, with no success of it in between.",
+    "freshness": "unknown"
+   }
+  }
+ ],
+ "limits": [
+  {
+   "provider": "claude-code",
+   "window": "five_hour",
+   "windowMinutes": 300,
+   "plan": null,
+   "limitId": "five_hour",
+   "resetsAt": "2026-10-23T13:04:00Z",
+   "usageUrl": "https://claude.ai/settings/usage",
+   "used": {
+    "value": {
+     "usedPercent": 34.0,
+     "leftPercent": 66.0
+    },
+    "kind": "provider_reported",
+    "source": "approved_provider_cli",
+    "observedAt": "2026-10-23T10:45:30Z",
+    "window": "five_hour",
+    "confidence": "high",
+    "explanation": "Reported by Claude Code's statusline. Plan windows are account-wide, so this includes your other devices.",
+    "freshness": "fresh"
+   }
+  },
+  {
+   "provider": "claude-code",
+   "window": "weekly",
+   "windowMinutes": 10080,
+   "plan": null,
+   "limitId": "seven_day",
+   "resetsAt": "2026-10-26T14:46:00Z",
+   "usageUrl": "https://claude.ai/settings/usage",
+   "used": {
+    "value": {
+     "usedPercent": 58.0,
+     "leftPercent": 42.0
+    },
+    "kind": "provider_reported",
+    "source": "approved_provider_cli",
+    "observedAt": "2026-10-23T10:45:30Z",
+    "window": "weekly",
+    "confidence": "high",
+    "explanation": "Reported by Claude Code's statusline. Plan windows are account-wide, so this includes your other devices.",
+    "freshness": "fresh"
+   }
+  },
+  {
+   "provider": "codex",
+   "window": "five_hour",
+   "windowMinutes": 300,
+   "plan": "plus",
+   "limitId": "codex",
+   "resetsAt": "2026-10-23T12:57:40Z",
+   "usageUrl": "https://chatgpt.com/codex/settings/usage",
+   "conflictingPlans": null,
+   "used": {
+    "value": {
+     "usedPercent": 32.0,
+     "leftPercent": 68.0
+    },
+    "kind": "provider_reported",
+    "source": "agentplay_map",
+    "observedAt": "2026-10-23T10:45:40Z",
+    "window": "five_hour",
+    "confidence": "high",
+    "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment.",
+    "freshness": "fresh"
+   }
+  },
+  {
+   "provider": "codex",
+   "window": "weekly",
+   "windowMinutes": 10080,
+   "plan": "plus",
+   "limitId": "codex",
+   "resetsAt": "2026-10-27T10:45:40Z",
+   "usageUrl": "https://chatgpt.com/codex/settings/usage",
+   "conflictingPlans": null,
+   "used": {
+    "value": {
+     "usedPercent": 41.0,
+     "leftPercent": 59.0
+    },
+    "kind": "provider_reported",
+    "source": "agentplay_map",
+    "observedAt": "2026-10-23T10:45:40Z",
+    "window": "weekly",
+    "confidence": "high",
+    "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment.",
+    "freshness": "fresh"
+   }
+  }
+ ],
+ "live": [
+  {
+   "agentTool": "claude-code",
+   "sessionId": "local:claude-code:sample-9e2b",
+   "status": "waiting",
+   "pid": null,
+   "entrypoint": null,
+   "project": "docs-site",
+   "startedAt": "2026-10-23T10:20:00Z",
+   "statusSince": "2026-10-23T10:45:20Z",
+   "inStore": false
+  },
+  {
+   "agentTool": "claude-code",
+   "sessionId": "local:claude-code:sample-7f3a",
+   "status": "busy",
+   "pid": null,
+   "entrypoint": null,
+   "project": "payments-api",
+   "startedAt": "2026-10-23T10:42:00Z",
+   "statusSince": "2026-10-23T10:45:20Z",
+   "inStore": true
+  }
+ ],
+ "learn": {
+  "signature": "a19e187902006807",
+  "patternKey": "90145916b9cb4f0b",
+  "kind": "observed",
+  "command": "pytest",
+  "title": "`pytest` failed 5 times in 5 runs.",
+  "denominator": "Across 14 recent sessions, last 14 days",
+  "detail": "It passed later in the same run in 5 of those 5 runs. A retry that ends in a pass is often normal work, not waste.",
+  "failures": {
+   "value": 5,
+   "kind": "derived",
+   "source": "local_index",
+   "observedAt": "2026-10-23T10:46:00Z",
+   "window": "project",
+   "confidence": "high",
+   "explanation": "Counted from recorded pytest events whose call failed, in the newest 14 sessions of the last 14 days (at most 40). Calls still running are not counted.",
+   "freshness": "unknown"
+  },
+  "runs": 5,
+  "sessions": 14,
+  "evidence": [
+   {
+    "sessionId": "local:claude-code:sample-m00",
+    "agentTool": "claude-code",
+    "repo": "frontend",
+    "seq": 3,
+    "at": "2026-10-23T09:46:40Z"
+   },
+   {
+    "sessionId": "local:opencode:sample-m03",
+    "agentTool": "opencode",
+    "repo": "payments-api",
+    "seq": 3,
+    "at": "2026-10-23T03:46:40Z"
+   },
+   {
+    "sessionId": "local:claude-code:sample-m06",
+    "agentTool": "claude-code",
+    "repo": "frontend",
+    "seq": 3,
+    "at": "2026-10-22T21:46:40Z"
+   },
+   {
+    "sessionId": "local:codex:sample-m09",
+    "agentTool": "codex",
+    "repo": "payments-api",
+    "seq": 3,
+    "at": "2026-10-22T15:46:40Z"
+   },
+   {
+    "sessionId": "local:claude-code:sample-m12",
+    "agentTool": "claude-code",
+    "repo": "frontend",
+    "seq": 3,
+    "at": "2026-10-22T09:46:40Z"
+   }
+  ]
+ },
+ "usage": {
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "kind": "estimated",
+  "explanation": "Counted from your local AgentPlay maps, subagents included and each request once. Costs are estimates at list prices; requests on unpriced models are counted separately, not as $0. Usage on other devices, the web or the API isn't here.",
+  "today": {
+   "tokens": {
+    "input": 42800,
+    "cacheWrite": 214000,
+    "cacheRead": 1840400,
+    "output": 42800,
+    "total": 2140000
+   },
+   "costUsd": 4.21,
+   "requests": 238,
+   "unpricedRequests": 0,
+   "sessions": 3,
+   "byModel": [
+    {
+     "key": "claude-opus-5-5",
+     "tokens": {
+      "input": 32000,
+      "cacheWrite": 160000,
+      "cacheRead": 1376000,
+      "output": 32000,
+      "total": 1600000
+     },
+     "costUsd": 3.6,
+     "requests": 177,
+     "unpricedRequests": 0,
+     "sessions": 2
+    },
+    {
+     "key": "claude-sonnet-5-5",
+     "tokens": {
+      "input": 10800,
+      "cacheWrite": 54000,
+      "cacheRead": 464400,
+      "output": 10800,
+      "total": 540000
+     },
+     "costUsd": 0.61,
+     "requests": 60,
+     "unpricedRequests": 0,
+     "sessions": 1
+    }
+   ],
+   "byAgent": [
+    {
+     "key": "claude-code",
+     "tokens": {
+      "input": 38000,
+      "cacheWrite": 190000,
+      "cacheRead": 1634000,
+      "output": 38000,
+      "total": 1900000
+     },
+     "costUsd": 3.8,
+     "requests": 211,
+     "unpricedRequests": 0,
+     "sessions": 2
+    },
+    {
+     "key": "codex",
+     "tokens": {
+      "input": 4800,
+      "cacheWrite": 24000,
+      "cacheRead": 206400,
+      "output": 4800,
+      "total": 240000
+     },
+     "costUsd": 0.41,
+     "requests": 26,
+     "unpricedRequests": 0,
+     "sessions": 1
+    }
+   ],
+   "byRepo": [
+    {
+     "key": "payments-api",
+     "tokens": {
+      "input": 26000,
+      "cacheWrite": 130000,
+      "cacheRead": 1118000,
+      "output": 26000,
+      "total": 1300000
+     },
+     "costUsd": 2.7,
+     "requests": 144,
+     "unpricedRequests": 0,
+     "sessions": 1
+    },
+    {
+     "key": "docs-site",
+     "tokens": {
+      "input": 12800,
+      "cacheWrite": 64000,
+      "cacheRead": 550400,
+      "output": 12800,
+      "total": 640000
+     },
+     "costUsd": 1.2,
+     "requests": 71,
+     "unpricedRequests": 0,
+     "sessions": 1
+    },
+    {
+     "key": "frontend",
+     "tokens": {
+      "input": 4000,
+      "cacheWrite": 20000,
+      "cacheRead": 172000,
+      "output": 4000,
+      "total": 200000
+     },
+     "costUsd": 0.31,
+     "requests": 22,
+     "unpricedRequests": 0,
+     "sessions": 1
+    }
+   ]
+  },
+  "last7Days": {
+   "tokens": {
+    "input": 388000,
+    "cacheWrite": 1940000,
+    "cacheRead": 16684000,
+    "output": 388000,
+    "total": 19400000
+   },
+   "costUsd": 38.9,
+   "requests": 2140,
+   "unpricedRequests": 0,
+   "sessions": 21,
+   "byModel": [
+    {
+     "key": "claude-opus-5-5",
+     "tokens": {
+      "input": 284000,
+      "cacheWrite": 1420000,
+      "cacheRead": 12212000,
+      "output": 284000,
+      "total": 14200000
+     },
+     "costUsd": 31.2,
+     "requests": 1577,
+     "unpricedRequests": 0,
+     "sessions": 19
+    },
+    {
+     "key": "claude-sonnet-5-5",
+     "tokens": {
+      "input": 88000,
+      "cacheWrite": 440000,
+      "cacheRead": 3784000,
+      "output": 88000,
+      "total": 4400000
+     },
+     "costUsd": 6.1,
+     "requests": 488,
+     "unpricedRequests": 0,
+     "sessions": 6
+    },
+    {
+     "key": "gpt-5.5-codex",
+     "tokens": {
+      "input": 16000,
+      "cacheWrite": 80000,
+      "cacheRead": 688000,
+      "output": 16000,
+      "total": 800000
+     },
+     "costUsd": 1.6,
+     "requests": 88,
+     "unpricedRequests": 0,
+     "sessions": 1
+    }
+   ],
+   "byAgent": [
+    {
+     "key": "claude-code",
+     "tokens": {
+      "input": 352000,
+      "cacheWrite": 1760000,
+      "cacheRead": 15136000,
+      "output": 352000,
+      "total": 17600000
+     },
+     "costUsd": 36.1,
+     "requests": 1955,
+     "unpricedRequests": 0,
+     "sessions": 24
+    },
+    {
+     "key": "codex",
+     "tokens": {
+      "input": 36000,
+      "cacheWrite": 180000,
+      "cacheRead": 1548000,
+      "output": 36000,
+      "total": 1800000
+     },
+     "costUsd": 2.8,
+     "requests": 200,
+     "unpricedRequests": 0,
+     "sessions": 2
+    }
+   ],
+   "byRepo": [
+    {
+     "key": "payments-api",
+     "tokens": {
+      "input": 182000,
+      "cacheWrite": 910000,
+      "cacheRead": 7826000,
+      "output": 182000,
+      "total": 9100000
+     },
+     "costUsd": 18.6,
+     "requests": 1011,
+     "unpricedRequests": 0,
+     "sessions": 12
+    },
+    {
+     "key": "frontend",
+     "tokens": {
+      "input": 124000,
+      "cacheWrite": 620000,
+      "cacheRead": 5332000,
+      "output": 124000,
+      "total": 6200000
+     },
+     "costUsd": 12.1,
+     "requests": 688,
+     "unpricedRequests": 0,
+     "sessions": 8
+    },
+    {
+     "key": "docs-site",
+     "tokens": {
+      "input": 82000,
+      "cacheWrite": 410000,
+      "cacheRead": 3526000,
+      "output": 82000,
+      "total": 4100000
+     },
+     "costUsd": 8.2,
+     "requests": 455,
+     "unpricedRequests": 0,
+     "sessions": 5
+    }
+   ]
+  },
+  "last30Days": {
+   "tokens": {
+    "input": 1436000,
+    "cacheWrite": 7180000,
+    "cacheRead": 61748000,
+    "output": 1436000,
+    "total": 71800000
+   },
+   "costUsd": 143.0,
+   "requests": 8120,
+   "unpricedRequests": 0,
+   "sessions": 84,
+   "byModel": [
+    {
+     "key": "claude-opus-5-5",
+     "tokens": {
+      "input": 1040000,
+      "cacheWrite": 5200000,
+      "cacheRead": 44720000,
+      "output": 1040000,
+      "total": 52000000
+     },
+     "costUsd": 114.0,
+     "requests": 5777,
+     "unpricedRequests": 0,
+     "sessions": 72
+    },
+    {
+     "key": "claude-sonnet-5-5",
+     "tokens": {
+      "input": 320000,
+      "cacheWrite": 1600000,
+      "cacheRead": 13760000,
+      "output": 320000,
+      "total": 16000000
+     },
+     "costUsd": 22.5,
+     "requests": 1777,
+     "unpricedRequests": 0,
+     "sessions": 22
+    },
+    {
+     "key": "gpt-5.5-codex",
+     "tokens": {
+      "input": 76000,
+      "cacheWrite": 380000,
+      "cacheRead": 3268000,
+      "output": 76000,
+      "total": 3800000
+     },
+     "costUsd": 6.5,
+     "requests": 422,
+     "unpricedRequests": 0,
+     "sessions": 5
+    }
+   ],
+   "byAgent": [
+    {
+     "key": "claude-code",
+     "tokens": {
+      "input": 1280000,
+      "cacheWrite": 6400000,
+      "cacheRead": 55040000,
+      "output": 1280000,
+      "total": 64000000
+     },
+     "costUsd": 131.0,
+     "requests": 7111,
+     "unpricedRequests": 0,
+     "sessions": 88
+    },
+    {
+     "key": "codex",
+     "tokens": {
+      "input": 156000,
+      "cacheWrite": 780000,
+      "cacheRead": 6708000,
+      "output": 156000,
+      "total": 7800000
+     },
+     "costUsd": 12.0,
+     "requests": 866,
+     "unpricedRequests": 0,
+     "sessions": 10
+    }
+   ],
+   "byRepo": [
+    {
+     "key": "payments-api",
+     "tokens": {
+      "input": 660000,
+      "cacheWrite": 3300000,
+      "cacheRead": 28380000,
+      "output": 660000,
+      "total": 33000000
+     },
+     "costUsd": 66.0,
+     "requests": 3666,
+     "unpricedRequests": 0,
+     "sessions": 45
+    },
+    {
+     "key": "frontend",
+     "tokens": {
+      "input": 440000,
+      "cacheWrite": 2200000,
+      "cacheRead": 18920000,
+      "output": 440000,
+      "total": 22000000
+     },
+     "costUsd": 44.0,
+     "requests": 2444,
+     "unpricedRequests": 0,
+     "sessions": 30
+    },
+    {
+     "key": "docs-site",
+     "tokens": {
+      "input": 336000,
+      "cacheWrite": 1680000,
+      "cacheRead": 14448000,
+      "output": 336000,
+      "total": 16800000
+     },
+     "costUsd": 33.0,
+     "requests": 1866,
+     "unpricedRequests": 0,
+     "sessions": 23
+    }
+   ]
+  },
+  "daily": [
+   {
+    "date": "2026-10-10",
+    "tokens": 1100000,
+    "costUsd": 2.09,
+    "requests": 122
+   },
+   {
+    "date": "2026-10-11",
+    "tokens": 2400000,
+    "costUsd": 4.56,
+    "requests": 266
+   },
+   {
+    "date": "2026-10-12",
+    "tokens": 800000,
+    "costUsd": 1.52,
+    "requests": 88
+   },
+   {
+    "date": "2026-10-13",
+    "tokens": 3100000,
+    "costUsd": 5.89,
+    "requests": 344
+   },
+   {
+    "date": "2026-10-14",
+    "tokens": 2200000,
+    "costUsd": 4.18,
+    "requests": 244
+   },
+   {
+    "date": "2026-10-15",
+    "tokens": 300000,
+    "costUsd": 0.57,
+    "requests": 33
+   },
+   {
+    "date": "2026-10-16",
+    "tokens": 0,
+    "costUsd": 0.0,
+    "requests": 0
+   },
+   {
+    "date": "2026-10-17",
+    "tokens": 2900000,
+    "costUsd": 5.51,
+    "requests": 322
+   },
+   {
+    "date": "2026-10-18",
+    "tokens": 3400000,
+    "costUsd": 6.46,
+    "requests": 377
+   },
+   {
+    "date": "2026-10-19",
+    "tokens": 1700000,
+    "costUsd": 3.23,
+    "requests": 188
+   },
+   {
+    "date": "2026-10-20",
+    "tokens": 2600000,
+    "costUsd": 4.94,
+    "requests": 288
+   },
+   {
+    "date": "2026-10-21",
+    "tokens": 4000000,
+    "costUsd": 7.6,
+    "requests": 444
+   },
+   {
+    "date": "2026-10-22",
+    "tokens": 2100000,
+    "costUsd": 3.99,
+    "requests": 233
+   },
+   {
+    "date": "2026-10-23",
+    "tokens": 2140000,
+    "costUsd": 4.07,
+    "requests": 237
+   }
+  ],
+  "claudeBlock": null,
+  "signals": {
+   "days": 30,
+   "current": {
+    "messages": 262,
+    "calls": 1840,
+    "corrections": 18,
+    "interrupts": 9,
+    "refusals": 2,
+    "frustrated": 13,
+    "correctionRate": 0.069,
+    "interruptRate": 0.034,
+    "frustrationRate": 0.05,
+    "refusalRate": 0.008
+   },
+   "previous": {
+    "messages": 240,
+    "calls": 1620,
+    "corrections": 26,
+    "interrupts": 11,
+    "refusals": 3,
+    "frustrated": 22,
+    "correctionRate": 0.108,
+    "interruptRate": 0.046,
+    "frustrationRate": 0.092,
+    "refusalRate": 0.012
+   },
+   "daily": [
+    {
+     "date": "2026-09-24",
+     "messages": 7,
+     "correctionRate": 0.057,
+     "interruptRate": 0.034,
+     "frustrationRate": 0.078,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-09-25",
+     "messages": 5,
+     "correctionRate": 0.036,
+     "interruptRate": 0.056,
+     "frustrationRate": 0.052,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-09-26",
+     "messages": 16,
+     "correctionRate": 0.119,
+     "interruptRate": 0.036,
+     "frustrationRate": 0.025,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-09-27",
+     "messages": 9,
+     "correctionRate": 0.055,
+     "interruptRate": 0.015,
+     "frustrationRate": 0.034,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-09-28",
+     "messages": 7,
+     "correctionRate": 0.115,
+     "interruptRate": 0.042,
+     "frustrationRate": 0.022,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-09-29",
+     "messages": 8,
+     "correctionRate": 0.102,
+     "interruptRate": 0.025,
+     "frustrationRate": 0.035,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-09-30",
+     "messages": 14,
+     "correctionRate": 0.108,
+     "interruptRate": 0.052,
+     "frustrationRate": 0.097,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-01",
+     "messages": 9,
+     "correctionRate": 0.038,
+     "interruptRate": 0.044,
+     "frustrationRate": 0.068,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-02",
+     "messages": 12,
+     "correctionRate": 0.052,
+     "interruptRate": 0.024,
+     "frustrationRate": 0.04,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-03",
+     "messages": 12,
+     "correctionRate": 0.106,
+     "interruptRate": 0.025,
+     "frustrationRate": 0.021,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-04",
+     "messages": 15,
+     "correctionRate": 0.109,
+     "interruptRate": 0.035,
+     "frustrationRate": 0.088,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-05",
+     "messages": 10,
+     "correctionRate": 0.068,
+     "interruptRate": 0.033,
+     "frustrationRate": 0.043,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-06",
+     "messages": 7,
+     "correctionRate": 0.057,
+     "interruptRate": 0.012,
+     "frustrationRate": 0.085,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-07",
+     "messages": 4,
+     "correctionRate": 0.072,
+     "interruptRate": 0.036,
+     "frustrationRate": 0.1,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-08",
+     "messages": 14,
+     "correctionRate": 0.072,
+     "interruptRate": 0.06,
+     "frustrationRate": 0.047,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-09",
+     "messages": 7,
+     "correctionRate": 0.036,
+     "interruptRate": 0.042,
+     "frustrationRate": 0.093,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-10",
+     "messages": 11,
+     "correctionRate": 0.055,
+     "interruptRate": 0.047,
+     "frustrationRate": 0.048,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-11",
+     "messages": 9,
+     "correctionRate": 0.087,
+     "interruptRate": 0.026,
+     "frustrationRate": 0.036,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-12",
+     "messages": 4,
+     "correctionRate": 0.094,
+     "interruptRate": 0.039,
+     "frustrationRate": 0.042,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-13",
+     "messages": 7,
+     "correctionRate": 0.041,
+     "interruptRate": 0.025,
+     "frustrationRate": 0.095,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-14",
+     "messages": 4,
+     "correctionRate": 0.034,
+     "interruptRate": 0.055,
+     "frustrationRate": 0.076,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-15",
+     "messages": 8,
+     "correctionRate": 0.096,
+     "interruptRate": 0.011,
+     "frustrationRate": 0.097,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-16",
+     "messages": 8,
+     "correctionRate": 0.059,
+     "interruptRate": 0.043,
+     "frustrationRate": 0.032,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-17",
+     "messages": 13,
+     "correctionRate": 0.091,
+     "interruptRate": 0.041,
+     "frustrationRate": 0.026,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-18",
+     "messages": 11,
+     "correctionRate": 0.056,
+     "interruptRate": 0.04,
+     "frustrationRate": 0.04,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-19",
+     "messages": 6,
+     "correctionRate": 0.06,
+     "interruptRate": 0.012,
+     "frustrationRate": 0.021,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-20",
+     "messages": 6,
+     "correctionRate": 0.063,
+     "interruptRate": 0.06,
+     "frustrationRate": 0.084,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-21",
+     "messages": 13,
+     "correctionRate": 0.039,
+     "interruptRate": 0.031,
+     "frustrationRate": 0.099,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-22",
+     "messages": 7,
+     "correctionRate": 0.04,
+     "interruptRate": 0.047,
+     "frustrationRate": 0.025,
+     "refusalRate": 0.0
+    },
+    {
+     "date": "2026-10-23",
+     "messages": 13,
+     "correctionRate": 0.091,
+     "interruptRate": 0.012,
+     "frustrationRate": 0.032,
+     "refusalRate": 0.0
+    }
+   ]
+  },
+  "timingMs": 0
+ },
+ "insights": {
+  "days": 30,
+  "sessions": 14,
+  "minSessions": 10,
+  "score": 72.9,
+  "prevScore": 68.4,
+  "components": [
+   {
+    "key": "shipping",
+    "name": "Shipping",
+    "points": 0.0,
+    "prevPoints": 14
+   },
+   {
+    "key": "verification",
+    "name": "Verification",
+    "points": 20.0,
+    "prevPoints": 13
+   },
+   {
+    "key": "efficiency",
+    "name": "Efficiency",
+    "points": 12.9,
+    "prevPoints": 15
+   },
+   {
+    "key": "context",
+    "name": "Context hygiene",
+    "points": 20.0,
+    "prevPoints": 16
+   },
+   {
+    "key": "environment",
+    "name": "Environment health",
+    "points": 20.0,
+    "prevPoints": 10
+   }
+  ],
+  "applied": [],
+  "autotune": {
+   "enabled": false,
+   "lastRun": null,
+   "pending": [],
+   "active": []
+  },
+  "fixes": [
+   {
+    "id": "hook-sessionstart-startup",
+    "rule": "hook_failing",
+    "repo": "payments-api",
+    "subject": "SessionStart:startup",
+    "component": "environment",
+    "title": "Fix the `SessionStart:startup` hook",
+    "pattern": "The `SessionStart:startup` hook failed in 9 of the last 12 sessions in payments-api.",
+    "effect": "Every session starts without an error in its first second, and the agent stops retrying the environment check.",
+    "points": 4.4,
+    "sessions": 9,
+    "evidence": [
+     "payments-api \u00b7 3h ago",
+     "payments-api \u00b7 yesterday",
+     "payments-api \u00b7 2d ago"
+    ],
+    "applicable": true,
+    "hook": {
+     "commands": [
+      "scripts/agent-env.sh"
+     ],
+     "settingsFiles": [
+      "~/code/payments-api/.claude/settings.json"
+     ],
+     "cause": "It answers as a UserPromptSubmit hook when run for SessionStart."
+    }
+   },
+   {
+    "id": "verify-before-commit",
+    "rule": "verify_before_commit",
+    "repo": "frontend",
+    "subject": null,
+    "component": "verification",
+    "title": "Run the tests before each commit",
+    "pattern": "4 of 7 commits in frontend went in without a passing test run first.",
+    "effect": "Commits that fail CI get caught on this Mac instead.",
+    "points": 3.1,
+    "sessions": 7,
+    "evidence": [
+     "frontend \u00b7 5h ago"
+    ],
+    "applicable": true,
+    "hook": null
+   },
+   {
+    "id": "context-reads",
+    "rule": "context_rereads",
+    "repo": "docs-site",
+    "subject": null,
+    "component": "context",
+    "title": "Stop re-reading `README.md` every session",
+    "pattern": "README.md was read 31 times across 10 sessions in docs-site.",
+    "effect": "Less context spent before the first edit.",
+    "points": 2.0,
+    "sessions": 10,
+    "evidence": [
+     "docs-site \u00b7 1h ago"
+    ],
+    "applicable": false,
+    "hook": null
+   }
+  ]
+ },
+ "timing": {
+  "snapshotMs": 0
+ },
+ "sample": true
+}
