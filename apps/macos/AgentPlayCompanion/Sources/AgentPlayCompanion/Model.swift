@@ -98,7 +98,18 @@ final class CompanionModel: ObservableObject {
             return
         }
         if prefs.onboardingDone {
-            Task { await refresh(.read); await refresh(.refresh) }
+            // No store yet (a new Mac, a cleared ~/.agentplay): the first look is a full scan, not two days.
+            let home = ProcessInfo.processInfo.environment["AGENTPLAY_HOME"].map { URL(fileURLWithPath: $0) }
+                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".agentplay")
+            let hasStore = FileManager.default.fileExists(atPath: home.appendingPathComponent("index.json").path)
+            Task {
+                if hasStore {
+                    await refresh(.read); await refresh(.refresh)
+                } else {
+                    phase = .scanning(found: nil)
+                    await refresh(.fullScan)
+                }
+            }
             startWatching()
         }
         startLiveWatch()
