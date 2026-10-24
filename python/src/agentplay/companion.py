@@ -288,6 +288,7 @@ def live_claude_sessions(homes: discover.Homes, now: datetime) -> list[dict[str,
                 "agentTool": "claude-code",
                 "sessionId": f"local:claude-code:{sid}",
                 "status": status,
+                "pid": pid,  # lets the app bring the session's terminal forward
                 "project": Path(cwd).name if isinstance(cwd, str) and cwd else None,
                 "startedAt": ms(rec.get("startedAt")),
                 "statusSince": ms(rec.get("statusUpdatedAt")) or ms(rec.get("updatedAt")),

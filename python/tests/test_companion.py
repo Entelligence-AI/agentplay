@@ -574,6 +574,7 @@ def test_live_claude_sessions_alive_only_and_minimal(tmp_path):
     live = companion.live_claude_sessions(homes, NOW)
     assert [r["sessionId"] for r in live] == ["local:claude-code:abc"]
     assert live[0]["status"] == "waiting" and live[0]["project"] == "payments-api"
+    assert live[0]["pid"] == me
     raw = json.dumps(live)
     for secret in ("SECRET-USER-DIR", "SECRET-SESSION-NAME", "SECRET-SOCK"):
         assert secret not in raw

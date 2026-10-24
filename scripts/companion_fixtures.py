@@ -148,6 +148,8 @@ def build(name: str, fn) -> None:
                     s["sessionCount"] = 0
         snap["sample"] = True
         snap["timing"] = {"snapshotMs": 0}
+        for r in snap.get("live") or []:
+            r["pid"] = None  # this script's own pid: varies per run, and a sample has no terminal to focus
         raw = json.dumps(snap, indent=2).replace(tmp, "/tmp/sample")
         (OUT / f"{name}.json").write_text(raw + "\n")
         keep = os.environ.get("COMPANION_FIXTURE_STORE")

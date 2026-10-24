@@ -6,8 +6,6 @@ import SwiftUI
 /// Native controls only; no network anywhere in it.
 struct OnboardingView: View {
     @EnvironmentObject var model: CompanionModel
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openWindow) private var openWindow
     @State var step = 1
     @State private var scanning = false
 
@@ -90,8 +88,7 @@ struct OnboardingView: View {
             } else {
                 Button("Review and Turn On…") {
                     model.settingsPane = .claude
-                    NSApp.activate(ignoringOtherApps: true)
-                    openWindow(id: "settings")
+                    Windows.show(.settings)
                 }
             }
         }
@@ -126,6 +123,6 @@ struct OnboardingView: View {
     func finish() {
         if model.isSample { model.leaveSample() }
         model.finishOnboarding()
-        dismiss()
+        Windows.close(.welcome)
     }
 }

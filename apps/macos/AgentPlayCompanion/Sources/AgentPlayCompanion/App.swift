@@ -60,112 +60,20 @@ enum StatusIcon {
     }
 }
 
-struct MenuBarLabel: View {
-    @ObservedObject var model: CompanionModel
-    var onFirstAppear: () -> Void = {}
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        let bars = model.statusBars
-        HStack(spacing: 4) {
-            Image(nsImage: StatusIcon.image(session: bars.session, weekly: bars.weekly, stale: bars.stale,
-                                            waiting: model.hasWaiting, pulse: model.heartbeat && !reduceMotion))
-            if model.prefs.showActivityInMenuBar, let pct = bars.session {
-                Text(Format.percent((pct * 100).rounded())).monospacedDigit()
-            }
-        }
-        .accessibilityLabel(accessibility(bars))
-        .onAppear {
-            WelcomeOpener.action = openWindow
-            MenuBarControl.install(model: model, openWindow: openWindow)
-            onFirstAppear()
-        }
-    }
-
-    func accessibility(_ b: (session: Double?, weekly: Double?, stale: Bool)) -> String {
-        var parts = ["AgentPlay"]
-        if let s = b.session { parts.append("session \(Int(s * 100)) percent used") }
-        if let w = b.weekly { parts.append("weekly \(Int(w * 100)) percent used") }
-        if model.hasWaiting { parts.append("a session needs you") }
-        return parts.joined(separator: ", ")
-    }
-}
-
-/// The underlying status item, for what MenuBarExtra doesn't expose: closing the window after an action
-/// and a native right-click menu.
-@MainActor
-enum MenuBarControl {
-    private static var monitor: Any?
-    private static weak var model: CompanionModel?
-    private static var openWindow: OpenWindowAction?
-
-    static var statusButton: NSStatusBarButton? {
-        for w in NSApp.windows where w.className.contains("NSStatusBarWindow") {
-            if let b = find(in: w.contentView) { return b }
-        }
-        return nil
-    }
-
-    private static func find(in view: NSView?) -> NSStatusBarButton? {
-        guard let view else { return nil }
-        if let b = view as? NSStatusBarButton { return b }
-        for v in view.subviews { if let b = find(in: v) { return b } }
-        return nil
-    }
-
-    static var menuWindow: NSWindow? {
-        NSApp.windows.first { $0.isVisible && $0.className.contains("MenuBarExtraWindow") }
-    }
-
-    /// Close the menu the way a click on the status item would, so MenuBarExtra keeps its state right.
-    static func close() {
-        guard menuWindow != nil else { return }
-        if let b = statusButton { b.performClick(nil) } else { menuWindow?.orderOut(nil) }
-    }
-
-    static func install(model m: CompanionModel, openWindow o: OpenWindowAction) {
-        model = m
-        openWindow = o
-        guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { event in
-            guard let w = event.window, w.className.contains("NSStatusBarWindow") else { return event }
-            showContextMenu(at: event)
-            return nil
-        }
-    }
-
-    private static func showContextMenu(at event: NSEvent) {
-        let menu = NSMenu()
-        func item(_ title: String, _ key: String, _ action: @escaping () -> Void) {
-            let i = ClosureMenuItem(title: title, keyEquivalent: key, action: action)
-            menu.addItem(i)
-        }
-        item("Refresh", "r") { model?.scheduleRefresh(reason: .manual) }
-        item("Open AgentPlay", "o") { model?.openViewer() }
-        menu.addItem(.separator())
-        item("Settings…", ",") { NSApp.activate(ignoringOtherApps: true); openWindow?(id: "settings") }
-        item("Quit AgentPlay", "q") { NSApp.terminate(nil) }
-        if let b = statusButton { menu.popUp(positioning: nil, at: NSPoint(x: 0, y: b.bounds.height + 4), in: b) }
-    }
-}
-
-final class ClosureMenuItem: NSMenuItem {
-    private let closure: () -> Void
-    init(title: String, keyEquivalent: String, action: @escaping () -> Void) {
-        closure = action
-        super.init(title: title, action: #selector(run), keyEquivalent: keyEquivalent)
-        target = self
-    }
-    required init(coder: NSCoder) { fatalError("unused") }
-    @objc private func run() { closure() }
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     var model: CompanionModel?
+    private var status: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifier.register(delegate: self)
+        MainActor.assumeIsolated {
+            let m = CompanionModel(isDevBuild: LaunchOptions.isDev)
+            model = m
+            Windows.model = m
+            status = StatusItemController(model: m)
+            m.start(fixture: LaunchOptions.fixture)
+            if !m.prefs.onboardingDone, LaunchOptions.fixture == nil { Windows.show(.welcome) }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -184,6 +92,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
         -> UNNotificationPresentationOptions { [.banner, .list] }
+}
+
+/// Settings and the welcome window, opened from AppKit (the menu, onboarding, notifications).
+@MainActor
+enum Windows {
+    enum Kind { case settings, welcome }
+    static var model: CompanionModel?
+    private static var open: [Kind: NSWindow] = [:]
+
+    static func show(_ kind: Kind) {
+        guard let model else { return }
+        NSApp.activate()
+        if let w = open[kind] {
+            if kind == .settings { SettingsWindow.select(model.settingsPane, in: w) }
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+        let w: NSWindow
+        switch kind {
+        case .settings:
+            model.refreshBridgeState()
+            w = SettingsWindow.make(model: model)
+        case .welcome:
+            w = NSWindow(contentViewController: NSHostingController(rootView: AnyView(OnboardingView().environmentObject(model))))
+            w.title = "Welcome to AgentPlay"
+            w.styleMask = [.titled, .closable, .fullSizeContentView]
+            w.titleVisibility = .hidden
+            w.titlebarAppearsTransparent = true
+        }
+        w.isReleasedWhenClosed = false
+        w.center()
+        open[kind] = w
+        w.makeKeyAndOrderFront(nil)
+    }
+
+    static func close(_ kind: Kind) { open[kind]?.close() }
 }
 
 enum LaunchOptions {
@@ -205,7 +149,6 @@ enum LaunchOptions {
 @main
 struct CompanionApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var model: CompanionModel
 
     init() {
         if let dir = LaunchOptions.isDev ? LaunchOptions.value("--render-icon") : nil {
@@ -230,58 +173,10 @@ struct CompanionApp: App {
             MainActor.assumeIsolated { Renderer.renderAll(to: dir) }
             exit(0)
         }
-        let m = MainActor.assumeIsolated { CompanionModel(isDevBuild: LaunchOptions.isDev) }
-        _model = StateObject(wrappedValue: m)
     }
 
+    // The status item and windows are AppKit (AppDelegate); SwiftUI needs one scene.
     var body: some Scene {
-        MenuBarExtra {
-            MenuView()
-                .environmentObject(model)
-                .onAppear(perform: bootstrap)
-                .onAppear {
-                    // Option-click on the mark opens the full viewer (the footer button is the discoverable route).
-                    if NSEvent.modifierFlags.contains(.option) {
-                        model.openViewer()
-                        MenuBarControl.close()
-                    }
-                }
-        } label: {
-            MenuBarLabel(model: model, onFirstAppear: bootstrap)
-        }
-        .menuBarExtraStyle(.window)
-
-        Window("AgentPlay Settings", id: "settings") {
-            SettingsView().environmentObject(model)
-        }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
-
-        Window("Welcome to AgentPlay", id: "welcome") {
-            OnboardingView().environmentObject(model)
-        }
-        .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
-        .defaultPosition(.center)
-    }
-
-    private func bootstrap() {
-        delegate.model = model
-        model.start(fixture: LaunchOptions.fixture)
-        if !model.prefs.onboardingDone, LaunchOptions.fixture == nil {
-            DispatchQueue.main.async { WelcomeOpener.open() }
-        }
-    }
-}
-
-/// Opens the welcome window once, from outside a view (first launch has no popover open yet).
-enum WelcomeOpener {
-    @MainActor static var opened = false
-    @MainActor static var action: OpenWindowAction?
-    @MainActor static func open() {
-        guard !opened else { return }
-        opened = true
-        NSApp.activate(ignoringOtherApps: true)
-        action?(id: "welcome")
+        Settings { EmptyView() }
     }
 }

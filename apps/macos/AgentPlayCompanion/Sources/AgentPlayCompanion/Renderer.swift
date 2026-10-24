@@ -24,26 +24,21 @@ enum Renderer {
 
     static func renderAll(to path: String) {
         _ = NSApplication.shared
-        NSApp.setActivationPolicy(.prohibited)
+        NSApp.setActivationPolicy(.accessory)
         let dir = URL(fileURLWithPath: path)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        var shots: [(String, AnyView)] = []
-        func menu(_ file: String, _ m: CompanionModel, highlight: String? = nil) {
-            shots.append((file, AnyView(MenuView(now: fixedNow, highlighted: highlight).environmentObject(m))))
+        // The real NSMenu, opened from a real status item and captured while it tracks.
+        func menu(_ file: String, _ m: CompanionModel) {
+            for dark in [false, true] {
+                captureMenu(m, now: fixedNow, to: dir.appendingPathComponent("\(file)-\(dark ? "dark" : "light").png"), dark: dark)
+            }
         }
         menu("menu", fixtureModel("two-active"))
-        menu("menu-hover-session", fixtureModel("two-active"), highlight: "session:local:claude-code:sample-9e2b")
-        let usage = fixtureModel("two-active"); usage.usageExpanded = true; usage.setExpanded("claude-code", false)
-        menu("menu-usage-expanded", usage)
-        let both = fixtureModel("two-active"); both.setExpanded("codex", true)
-        menu("menu-both-providers", both)
         menu("state-no-agents", fixtureModel("no-agents"))
         menu("state-detected-idle", fixtureModel("detected-idle"))
-        let stale = fixtureModel("stale-quota"); stale.setExpanded("codex", true)
-        menu("state-stale-quota", stale)
-        let conflict = fixtureModel("conflicting-plans"); conflict.setExpanded("codex", true)
-        menu("state-conflicting-plans", conflict)
+        menu("state-stale-quota", fixtureModel("stale-quota"))
+        menu("state-conflicting-plans", fixtureModel("conflicting-plans"))
         menu("state-partial", fixtureModel("partial-unavailable"))
         menu("state-many", fixtureModel("many-sessions"))
         let scanning = fixtureModel("two-active"); scanning.setPhaseForRender(.scanning(found: 412))
@@ -51,21 +46,38 @@ enum Renderer {
         let failed = fixtureModel("no-agents"); failed.setPhaseForRender(.failed(.coreTooOld("agentplay 0.2.3")))
         menu("state-error", failed)
 
+        var shots: [(String, AnyView)] = []
+        if let u = fixtureModel("two-active").snapshot?.usage {
+            shots.append(("submenu-usage-details", AnyView(UsageDetail(report: u))))
+        }
         for step in 1...5 {
             shots.append(("onboarding-\(step)", AnyView(OnboardingView(step: step).environmentObject(fixtureModel("two-active")))))
         }
-        for pane in [SettingsView.Pane.claude, .notifications, .privacy, .sources] {
-            let m = fixtureModel("two-active")
-            shots.append(("settings-\(pane.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))",
-                          AnyView(SettingsView(initialPane: pane).environmentObject(m))))
-        }
-
         for (name, view) in shots {
-            let isMenu = name.hasPrefix("menu") || name.hasPrefix("state")
+            let isMenu = name.hasPrefix("submenu")
             for dark in [false, true] {
                 write(view, to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"), dark: dark, material: isMenu)
             }
         }
+        // Settings as the real window: toolbar tabs and all.
+        for pane in [SettingsView.Pane.general, .claude, .notifications, .sources] {
+            let m = fixtureModel("two-active")
+            m.settingsPane = pane
+            for dark in [false, true] {
+                NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                let w = SettingsWindow.make(model: m)
+                w.setFrameOrigin(NSPoint(x: -10000, y: -10000))
+                w.orderFrontRegardless()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+                if let v = w.contentView?.superview, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    let name = "settings-\(pane.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))-\(dark ? "dark" : "light").png"
+                    try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent(name))
+                }
+                w.orderOut(nil)
+            }
+        }
+        NSApp.appearance = nil
         for (name, img) in [
             ("statusitem-bars", StatusIcon.image(session: 0.34, weekly: 0.58, stale: false, waiting: false, pulse: false)),
             ("statusitem-waiting", StatusIcon.image(session: 0.34, weekly: 0.58, stale: false, waiting: true, pulse: false)),
@@ -77,6 +89,36 @@ enum Renderer {
             }
         }
         print("rendered \(shots.count * 2 + 8) images to \(dir.path)")
+    }
+
+    /// Opens the menu from a throwaway status item, captures its window mid-tracking, then closes it.
+    static func captureMenu(_ m: CompanionModel, now: Date, to url: URL, dark: Bool) {
+        let controller = StatusItemController(model: m)
+        controller.nowOverride = now
+        NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        controller.menu.appearance = NSApp.appearance
+        controller.rebuild(now: now)
+        if ProcessInfo.processInfo.environment["APC_DUMP_MENU"] != nil {
+            for i in controller.menu.items {
+                print("item", i.isSeparatorItem ? "---" : i.title, i.isAlternate ? "ALT" : "", i.view.map { "view h=\($0.frame.height)" } ?? "")
+            }
+        }
+        let timer = Timer(timeInterval: 0.6, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                if let w = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("Menu") && !$0.className.contains("StatusBar") }),
+                   let v = w.contentView?.superview ?? w.contentView,
+                   let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: url)
+                }
+                controller.menu.cancelTracking()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .eventTracking)
+        if let b = controller.statusItem.button {
+            controller.menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: b)
+        }
+        NSStatusBar.system.removeStatusItem(controller.statusItem)
     }
 
     static func write(_ view: AnyView, to url: URL, dark: Bool, material: Bool) {

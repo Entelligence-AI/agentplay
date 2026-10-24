@@ -251,6 +251,8 @@ public struct LiveSession: Codable, Sendable, Equatable, Identifiable {
     public var agentTool: String
     public var sessionId: String
     public var status: LiveStatus
+    /// The agent's process, to find the terminal it runs in.
+    public var pid: Int32?
     public var project: String?
     public var startedAt: Date?
     public var statusSince: Date?
@@ -302,6 +304,14 @@ public struct UsageDay: Codable, Sendable, Equatable, Identifiable {
     public var costUsd: Double
     public var requests: Int
     public var id: String { date }
+    /// `date` is a local calendar day, "2026-10-23".
+    public var day: Date? { Self.parser.date(from: date) }
+    private static let parser: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 }
 
 public struct UsageBlock: Codable, Sendable, Equatable {

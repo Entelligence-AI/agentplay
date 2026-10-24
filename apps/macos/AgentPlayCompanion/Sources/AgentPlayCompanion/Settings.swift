@@ -24,28 +24,63 @@ struct SettingsView: View {
         }
     }
 
+    /// Renders use one pane at a time; the window itself is SettingsWindow.
     var body: some View {
-        NavigationSplitView {
-            List(Pane.allCases, selection: Binding(get: { model.settingsPane }, set: { model.settingsPane = $0 ?? .general })) { p in
-                Label(p.rawValue, systemImage: p.icon).tag(p)
+        SettingsPaneView(pane: initialPane ?? model.settingsPane)
+            .onAppear { model.refreshBridgeState() }
+    }
+}
+
+/// One pane as a grouped form, the content of one toolbar tab.
+struct SettingsPaneView: View {
+    @EnvironmentObject var model: CompanionModel
+    var pane: SettingsView.Pane
+
+    var body: some View {
+        Form {
+            switch pane {
+            case .general: GeneralPane()
+            case .claude: LiveLimitsPane()
+            case .sources: SourcesPane()
+            case .notifications: NotificationsPane()
+            case .privacy: PrivacyPane()
+            case .account: AccountPane()
+            case .diagnostics: DiagnosticsPane()
             }
-                .navigationSplitViewColumnWidth(170)
-        } detail: {
-            Form {
-                switch model.settingsPane {
-                case .general: GeneralPane()
-                case .claude: LiveLimitsPane()
-                case .sources: SourcesPane()
-                case .notifications: NotificationsPane()
-                case .privacy: PrivacyPane()
-                case .account: AccountPane()
-                case .diagnostics: DiagnosticsPane()
-                }
-            }
-            .formStyle(.grouped)
         }
-        .frame(width: 680, height: 520)
-        .onAppear { if let p = initialPane { model.settingsPane = p }; model.refreshBridgeState() }
+        .formStyle(.grouped)
+        .frame(width: 560, height: 480)
+    }
+}
+
+/// The standard Mac settings window: toolbar tabs, the window titled after the pane, last pane remembered.
+@MainActor
+enum SettingsWindow {
+    static func make(model: CompanionModel) -> NSWindow {
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        tabs.transitionOptions = []
+        for pane in SettingsView.Pane.allCases {
+            let hc = NSHostingController(rootView: AnyView(SettingsPaneView(pane: pane).environmentObject(model)))
+            hc.title = pane.rawValue
+            hc.sizingOptions = []
+            hc.preferredContentSize = NSSize(width: 560, height: 480)
+            let item = NSTabViewItem(viewController: hc)
+            item.label = pane.rawValue
+            item.image = NSImage(systemSymbolName: pane.icon, accessibilityDescription: pane.rawValue)
+            tabs.addTabViewItem(item)
+        }
+        tabs.selectedTabViewItemIndex = SettingsView.Pane.allCases.firstIndex(of: model.settingsPane) ?? 0
+        let w = NSWindow(contentViewController: tabs)
+        w.styleMask = [.titled, .closable]
+        w.toolbarStyle = .preference
+        return w
+    }
+
+    static func select(_ pane: SettingsView.Pane, in w: NSWindow) {
+        guard let tabs = w.contentViewController as? NSTabViewController,
+              let i = SettingsView.Pane.allCases.firstIndex(of: pane) else { return }
+        tabs.selectedTabViewItemIndex = i
     }
 }
 
@@ -53,24 +88,18 @@ struct GeneralPane: View {
     @EnvironmentObject var model: CompanionModel
     var body: some View {
         Section {
-            Toggle("Show session % next to the icon", isOn: $model.prefs.showActivityInMenuBar)
-            Text("The icon's two bars are the 5-hour and weekly windows of your most-used provider.")
-                .font(.caption).foregroundStyle(.secondary)
+            Toggle(isOn: $model.prefs.showActivityInMenuBar) {
+                Text("Show session % next to the icon")
+                Text("The icon's two bars are the 5-hour and weekly windows of your most constrained provider.")
+            }
             Toggle("Launch at login", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
-            Toggle("Soft sound on actions I take", isOn: $model.prefs.soundOnManualActions)
-            Text("Never for background events. Follows the system volume.").font(.caption).foregroundStyle(.secondary)
-        }
-        Section("Appearance") {
-            Text("Follows the system's light or dark mode, Reduce Motion and Increase Contrast.")
-                .foregroundStyle(.secondary)
+            Toggle(isOn: $model.prefs.soundOnManualActions) {
+                Text("Soft sound on actions I take")
+                Text("Never for background events.")
+            }
         }
         if model.isDevBuild {
             Section("Developer") { Button("Load Sample Data") { model.loadSample() } }
-        }
-        Section {
-            Button("Quit AgentPlay Companion") { NSApp.terminate(nil) }
-            Text("Quitting stops the viewer this app started and its file watchers. A viewer you started yourself keeps running.")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

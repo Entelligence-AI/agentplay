@@ -90,14 +90,16 @@ extension Renderer {
               case .success(let s) = await SnapshotService(runtime: rt).fetch(.read) else { print("no snapshot"); return }
         let dir = URL(fileURLWithPath: path)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        for (name, usageOpen) in [("live-menu", false), ("live-menu-usage", true)] {
+        await MainActor.run {
+            NSApp.setActivationPolicy(.accessory)
             let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "render.\(UUID().uuidString)")!),
                                    isDevBuild: true)
             m.installLiveForRender(s)
-            m.usageExpanded = usageOpen
             for dark in [false, true] {
-                write(AnyView(MenuView(now: s.generatedAt).environmentObject(m)),
-                      to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"), dark: dark, material: true)
+                captureMenu(m, now: s.generatedAt, to: dir.appendingPathComponent("live-menu-\(dark ? "dark" : "light").png"), dark: dark)
+            }
+            if let u = s.usage {
+                write(AnyView(UsageDetail(report: u)), to: dir.appendingPathComponent("live-usage-details.png"), dark: true, material: true)
             }
         }
         print("rendered live screens to \(dir.path)")

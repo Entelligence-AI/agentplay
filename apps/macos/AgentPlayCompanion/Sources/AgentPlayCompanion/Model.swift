@@ -31,10 +31,6 @@ final class CompanionModel: ObservableObject {
     }
     /// The extra environment for the core, readable from the background scan without touching the main actor.
     private let envBox = EnvBox()
-    /// Provider blocks the user opened or closed (empty: the first one starts open).
-    @Published private(set) var expandedProviders: Set<String> = []
-    @Published var usageExpanded = false
-    @Published private(set) var meterLeft: Set<String> = []
     @Published var settingsPane: SettingsView.Pane = .general
     @Published private(set) var claudeBridgeOn = false
     let claudeBridge = ClaudeBridge()
@@ -71,8 +67,6 @@ final class CompanionModel: ObservableObject {
         self.isDevBuild = isDevBuild
         self.prefs = prefsStore.load()
         envBox.value = prefs.folderEnvironment
-        expandedProviders = Set(prefsStore.ui.stringArray(forKey: "menu.expanded") ?? [])
-        meterLeft = Set(prefsStore.ui.stringArray(forKey: "menu.meterLeft") ?? [])
     }
 
     var isSample: Bool { sampleMode || snapshot?.isSample == true }
@@ -511,27 +505,9 @@ final class CompanionModel: ObservableObject {
 
     // MARK: menu
 
-    func menuItems(now: Date) -> [MenuItem] {
-        MenuBuilder.items(snapshot: snapshot, phase: phase, prefs: prefs, lastUpdated: lastUpdated, lastError: lastError,
-                          isSample: isSample, now: now, expanded: expandedProviders, usageExpanded: usageExpanded,
-                          bridgeOn: claudeBridgeOn)
-    }
-
-    func setExpanded(_ provider: String, _ open: Bool) {
-        var set = expandedProviders
-        // The first block starts open with nothing stored; make that explicit before the first change.
-        if set.isEmpty, let first = ProviderSummary.build(snapshot?.limits ?? []).first?.provider { set.insert(first) }
-        if open { set.insert(provider) } else { set.remove(provider) }
-        if set.isEmpty { set.insert("_none") }
-        expandedProviders = set
-        prefsStore.ui.set(Array(set), forKey: "menu.expanded")
-    }
-
-    func showsLeft(_ id: String) -> Bool { meterLeft.contains(id) }
-
-    func toggleLeft(_ id: String) {
-        if meterLeft.contains(id) { meterLeft.remove(id) } else { meterLeft.insert(id) }
-        prefsStore.ui.set(Array(meterLeft), forKey: "menu.meterLeft")
+    func menuEntries(now: Date) -> [MenuEntry] {
+        MenuBuilder.entries(snapshot: snapshot, phase: phase, prefs: prefs, lastError: lastError,
+                            isSample: isSample, now: now, bridgeOn: claudeBridgeOn)
     }
 
     func refreshBridgeState() {

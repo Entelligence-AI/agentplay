@@ -1,46 +1,20 @@
 import AgentPlayCore
 import Foundation
 
-/// The menu as data: one flat, ordered list. The view renders it top to bottom and keyboard navigation walks
-/// the selectable items, so what you see and what the arrow keys reach can't drift apart.
-enum MenuItem: Identifiable, Equatable {
-    case header(updated: String)
-    case message(title: String, detail: String?)
-    case provider(ProviderSummary, expanded: Bool)
-    case meter(ProviderLimitWindow)
-    case enableLimits(provider: String, detail: String)
-    case sectionHeader(String, trailing: String?)
-    case usage(period: String, UsagePeriod, expandable: Bool, expanded: Bool)
-    case usageDetail(UsageReport)
+/// The menu as data, in display order. StatusMenu turns each entry into a native NSMenuItem; only the
+/// provider cards and the usage summary and chart are custom views, and those are display-only.
+/// Order follows attention: what needs you, then limits, then sessions, then usage.
+enum MenuEntry: Equatable {
+    case header(String)                          // native section header
+    case message(title: String, detail: String?) // informational, not clickable
+    case provider(ProviderSummary)               // hosted card: name, plan, freshness, meters, pace
+    case enableLimits(provider: String)          // "Turn On Live Limits…"
     case session(SessionLine)
-    case error(ErrorLine)
+    case usage(UsageReport)                      // hosted two-line summary
+    case usageDetails(UsageReport)               // submenu: chart, 7 and 30 days, by model, by project
+    case errors([ErrorLine])                     // submenu of recent errors
     case action(MenuAction)
-    case separator(String)
-
-    var id: String {
-        switch self {
-        case .header: "header"
-        case .message(let t, _): "msg:\(t)"
-        case .provider(let p, _): "prov:\(p.provider)"
-        case .meter(let w): "meter:\(w.id)"
-        case .enableLimits(let p, _): "enable:\(p)"
-        case .sectionHeader(let t, _): "sec:\(t)"
-        case .usage(let p, _, _, _): "usage:\(p)"
-        case .usageDetail: "usage-detail"
-        case .session(let s): "session:\(s.id)"
-        case .error(let e): "error:\(e.id)"
-        case .action(let a): "action:\(a.rawValue)"
-        case .separator(let k): "sep:\(k)"
-        }
-    }
-
-    var isSelectable: Bool {
-        switch self {
-        case .provider, .meter, .enableLimits, .session, .error, .action: true
-        case .usage(_, _, let expandable, _): expandable
-        default: false
-        }
-    }
+    case separator
 }
 
 enum MenuAction: String, CaseIterable {
@@ -56,21 +30,13 @@ enum MenuAction: String, CaseIterable {
         }
     }
 
-    var symbol: String? {
+    var key: String {
         switch self {
-        case .refresh: "arrow.clockwise"
-        case .openViewer: "macwindow"
-        default: nil
-        }
-    }
-
-    var shortcut: String? {
-        switch self {
-        case .refresh: "⌘R"
-        case .openViewer: "⌘O"
-        case .settings: "⌘,"
-        case .quit: "⌘Q"
-        case .showAllSessions: nil
+        case .refresh: "r"
+        case .openViewer: "o"
+        case .settings: ","
+        case .quit: "q"
+        case .showAllSessions: ""
         }
     }
 }
@@ -79,21 +45,19 @@ enum MenuAction: String, CaseIterable {
 struct SessionLine: Equatable, Identifiable {
     enum Dot: Equatable { case working, waiting, idle, recent, ended }
     var id: String
-    var title: String          // "Claude Code · payments-api"
-    var detail: String         // "Edited src/charge.test.ts · context 71%"
-    var trailing: String       // "4m"
+    var title: String          // "payments-api"
+    var detail: String         // "Claude Code · Edited charge.test.ts · context 71% · 4m"
     var dot: Dot
     var sessionId: String
     var seq: Int?
     var openable: Bool         // false until its map exists
-    var repo: String?
+    var pid: Int32?            // set while an agent process runs it
 }
 
 struct ErrorLine: Equatable, Identifiable {
     var id: String
     var title: String          // "pnpm test failed 3×"
-    var detail: String         // "Claude Code · payments-api · non-zero exit"
-    var trailing: String       // "10:42"
+    var detail: String         // "Claude Code · payments-api · non-zero exit · 10:42"
     var sessionId: String?
     var seq: Int?
     var patternKey: String?
@@ -102,105 +66,76 @@ struct ErrorLine: Equatable, Identifiable {
 }
 
 enum MenuBuilder {
-    static func items(snapshot s: Snapshot?, phase: Phase, prefs: CompanionPrefs, lastUpdated: Date?,
-                      lastError: SnapshotError?, isSample: Bool, now: Date, expanded: Set<String>,
-                      usageExpanded: Bool, bridgeOn: Bool) -> [MenuItem] {
-        var out: [MenuItem] = []
-        let updated: String
-        if isSample { updated = "Sample data" }
-        else if case .scanning(let n) = phase { updated = n.map { "Scanning · \($0)" } ?? "Scanning…" }
-        else if let u = lastUpdated {
-            let age = now.timeIntervalSince(u)
-            updated = age > 600 ? "Stale, \(Format.duration(age))" : "Updated \(Format.relative(u, now: now))"
-        } else { updated = "" }
-        out.append(.header(updated: updated))
-
+    static func entries(snapshot s: Snapshot?, phase: Phase, prefs: CompanionPrefs, lastError: SnapshotError?,
+                        isSample: Bool, now: Date, bridgeOn: Bool) -> [MenuEntry] {
+        var out: [MenuEntry] = []
+        if isSample { out.append(.header("Sample Data")) }
         guard let s else {
             switch phase {
             case .failed(let e):
-                out.append(.message(title: "Can't read your sessions", detail: e.localizedDescription))
+                out.append(.message(title: "Can't Read Your Sessions", detail: e.localizedDescription))
+            case .scanning(let n?):
+                out.append(.message(title: "Finding Your Sessions…", detail: "\(n) indexed so far"))
             default:
-                out.append(.message(title: "Finding your sessions…", detail: "Reading agent folders on this Mac"))
+                out.append(.message(title: "Finding Your Sessions…", detail: "Reading agent folders on this Mac"))
             }
-            out += footer()
-            return out
+            return out + footer()
         }
-        if let e = lastError { out.append(.message(title: "Last refresh failed", detail: e.localizedDescription)) }
+        if let e = lastError { out.append(.message(title: "Last Refresh Failed", detail: e.localizedDescription)) }
 
-        // Providers, most constrained first.
+        // 1. Sessions waiting on you: the one thing worth interrupting for.
+        let lines = sessionLines(s, prefs: prefs, now: now)
+        let waiting = lines.filter { $0.dot == .waiting }
+        if !waiting.isEmpty {
+            out.append(.header("Needs You"))
+            out += waiting.map(MenuEntry.session)
+            out.append(.separator)
+        }
+
+        // 2. Plan limits, most constrained provider first; only agents this Mac uses.
         let providers = ProviderSummary.build(s.limits).filter { p in
-            // Show a provider block only for agents this Mac uses.
             s.sources.contains { $0.agent == p.provider && $0.status == .found } || !p.windows.isEmpty
         }
-        if !providers.isEmpty { out.append(.separator("top")) }
-        for (i, p) in providers.enumerated() {
-            let isOpen = expanded.contains(p.provider) || (expanded.isEmpty && i == 0)
-            out.append(.provider(p, expanded: isOpen))
-            guard isOpen else { continue }
-            if p.windows.isEmpty {
-                if p.provider == "claude-code" && !bridgeOn {
-                    out.append(.enableLimits(provider: p.provider, detail: "Show 5-hour and weekly usage"))
-                } else {
-                    out.append(.message(title: "Limits unavailable", detail: shortReason(p)))
-                }
-            } else {
-                for w in p.windows { out.append(.meter(w)) }
-                if let plans = p.conflictingPlans {
-                    out.append(.message(title: "Plans disagree",
-                                        detail: "Recent sessions reported \(plans.map(\.capitalized).joined(separator: " and ")). They may be different accounts."))
-                }
-            }
+        for p in providers {
+            out.append(.provider(p))
+            if p.windows.isEmpty, p.provider == "claude-code", !bridgeOn { out.append(.enableLimits(provider: p.provider)) }
         }
+        if !providers.isEmpty { out.append(.separator) }
 
-        // Sessions: live processes first, then recent runs.
-        let lines = sessionLines(s, prefs: prefs, now: now)
-        out.append(.separator("sessions"))
-        let working = (s.live ?? []).filter { $0.status == .busy }.count
-        let waiting = (s.live ?? []).filter { $0.status == .waiting }.count
-        var counts: [String] = []
-        if working > 0 { counts.append("\(working) working") }
-        if waiting > 0 { counts.append("\(waiting) need\(waiting == 1 ? "s" : "") you") }
-        out.append(.sectionHeader("Sessions", trailing: counts.isEmpty ? nil : counts.joined(separator: " · ")))
-        if lines.isEmpty {
-            if s.store.available {
-                out.append(.message(title: "No sessions running", detail: nil))
+        // 3. Everything else that ran recently.
+        let rest = lines.filter { $0.dot != .waiting }
+        out.append(.header("Sessions"))
+        if rest.isEmpty {
+            if !waiting.isEmpty {
+                // All of them are above.
+            } else if s.store.available {
+                out.append(.message(title: "No Recent Sessions", detail: nil))
             } else if s.foundSources.isEmpty {
-                out.append(.message(title: "No agents found", detail: "Start Claude Code or Codex, then reopen."))
+                out.append(.message(title: "No Agents Found", detail: "Start Claude Code or Codex, then reopen."))
             } else {
-                out.append(.message(title: "No sessions built yet", detail: "Refresh to scan \(s.foundSources.map(\.label).joined(separator: ", "))."))
+                out.append(.message(title: "No Sessions Indexed Yet", detail: "Refresh to scan \(s.foundSources.map(\.label).joined(separator: ", "))."))
             }
         }
-        for l in lines.prefix(4) { out.append(.session(l)) }
+        out += rest.prefix(5).map(MenuEntry.session)
         if s.store.available { out.append(.action(.showAllSessions)) }
 
-        // Recent errors and one cross-run pattern.
+        // 4. Estimated usage: two lines here, the rest one level down.
         let errs = errorLines(s, prefs: prefs, now: now)
-        if !errs.isEmpty {
-            out.append(.separator("errors"))
-            out.append(.sectionHeader("Recent errors", trailing: nil))
-            for e in errs.prefix(3) { out.append(.error(e)) }
-        }
-
-        // Usage (estimated from local maps). Last, so opening its detail never pushes sessions out of view.
         if let u = s.usage, u.last30Days.requests > 0 {
-            out.append(.separator("usage"))
-            out.append(.sectionHeader("Usage", trailing: "estimated"))
-            if let b = u.claudeBlock, b.end > now {
-                var block = UsagePeriod(tokens: b.tokens, costUsd: b.costUsd, requests: b.requests ?? 0,
-                                        unpricedRequests: b.unpricedRequests ?? 0, sessions: 0)
-                block.byModel = nil
-                out.append(.usage(period: "Current 5-hour block", block, expandable: false, expanded: false))
-            }
-            out.append(.usage(period: "Today", u.today, expandable: true, expanded: usageExpanded))
-            if usageExpanded { out.append(.usageDetail(u)) }
+            out.append(.separator)
+            out.append(.header("Usage"))
+            out.append(.usage(u))
+            out.append(.usageDetails(u))
+            if !errs.isEmpty { out.append(.errors(errs)) }
+        } else if !errs.isEmpty {
+            out.append(.separator)
+            out.append(.errors(errs))
         }
-        out += footer()
-        return out
+        return out + footer()
     }
 
-    static func footer() -> [MenuItem] {
-        [.separator("actions"), .action(.refresh), .action(.openViewer), .separator("app"),
-         .action(.settings), .action(.quit)]
+    static func footer() -> [MenuEntry] {
+        [.separator, .action(.openViewer), .action(.refresh), .separator, .action(.settings), .action(.quit)]
     }
 
     static func shortReason(_ p: ProviderSummary) -> String {
@@ -221,12 +156,12 @@ enum MenuBuilder {
             let run = runs[l.sessionId]
             seen.insert(l.sessionId)
             let repo = run?.repo ?? l.project
+            var d = [AgentNames.label(l.agentTool), Format.truncate(detail(run, status: l.status, since: l.statusSince, now: now), max: 30)]
             out.append(SessionLine(
-                id: l.sessionId, title: "\(AgentNames.label(l.agentTool)) · \(Format.truncate(repo ?? "session", max: 24))",
-                detail: detail(run, status: l.status, since: l.statusSince, now: now),
-                trailing: l.startedAt.map { Format.duration(now.timeIntervalSince($0)) } ?? "",
+                id: l.sessionId, title: Format.truncate(repo ?? "Session", max: 32),
+                detail: d.filter { !$0.isEmpty }.joined(separator: " · "),
                 dot: l.status == .waiting ? .waiting : .working, sessionId: l.sessionId,
-                seq: run?.lastEvent?.seq, openable: l.inStore, repo: repo))
+                seq: run?.lastEvent?.seq, openable: l.inStore, pid: l.pid))
         }
         let pinned = prefs.pinnedSessions
         let rest = s.runs.filter { !seen.contains($0.sessionId) }.sorted { a, b in
@@ -237,18 +172,19 @@ enum MenuBuilder {
         for r in rest {
             let dot: SessionLine.Dot = r.liveStatus == .idle ? .idle : r.state == .active ? .working
                 : r.state == .recent ? .recent : .ended
+            let pid = (s.live ?? []).first { $0.sessionId == r.sessionId }?.pid
+            let d = [r.agentLabel, Format.truncate(detail(r, status: r.liveStatus, since: nil, now: now), max: 30), Format.relative(r.latestAt, now: now)]
             out.append(SessionLine(
-                id: r.sessionId, title: "\(r.agentLabel) · \(Format.truncate(r.repo ?? "outside a repo", max: 24))",
-                detail: detail(r, status: r.liveStatus, since: nil, now: now),
-                trailing: Format.relative(r.latestAt, now: now).replacingOccurrences(of: " ago", with: ""),
-                dot: dot, sessionId: r.sessionId, seq: r.lastEvent?.seq, openable: true, repo: r.repo))
+                id: r.sessionId, title: Format.truncate(r.repo ?? "Outside a repo", max: 32),
+                detail: d.filter { !$0.isEmpty }.joined(separator: " · "),
+                dot: dot, sessionId: r.sessionId, seq: r.lastEvent?.seq, openable: true, pid: pid))
         }
         return out
     }
 
     static func detail(_ r: RunActivity?, status: LiveStatus?, since: Date?, now: Date) -> String {
         var parts: [String] = []
-        if status == .waiting { parts.append("Waiting for you" + (since.map { " · \(Format.duration(now.timeIntervalSince($0)))" } ?? "")) }
+        if status == .waiting { parts.append("Waiting" + (since.map { " \(Format.duration(now.timeIntervalSince($0)))" } ?? "")) }
         if let r {
             if let p = r.pendingTool { parts.append("Running \(p.event.label)") }
             else if let e = r.lastEvent, status != .waiting {
@@ -278,15 +214,16 @@ enum MenuBuilder {
                 var d = [AgentNames.label(a.agentTool)]
                 if let r = repo[a.sessionId] ?? nil { d.append(Format.truncate(r, max: 18)) }
                 d.append(a.isResolved ? "passed later" : Format.errClass(a.errClass))
-                return ErrorLine(id: a.signature, title: title, detail: d.joined(separator: " · "),
-                                 trailing: Format.clock(a.firstAt ?? a.triggerAt), sessionId: a.sessionId,
+                d.append(Format.clock(a.firstAt ?? a.triggerAt))
+                return ErrorLine(id: a.signature, title: title, detail: d.filter { !$0.isEmpty }.joined(separator: " · "),
+                                 sessionId: a.sessionId,
                                  seq: a.firstSeq ?? a.triggerSeq, patternKey: a.patternKey, resolved: a.isResolved,
                                  isPattern: false)
             }
         if let l = s.learn, !prefs.isLearnDismissed(l.patternKey, now: now) {
             out.append(ErrorLine(id: "learn", title: "\(l.command ?? "A command") failed \(l.failures.value ?? 0)× in \(l.runs) runs",
                                  detail: "Pattern across \(l.sessions) recent sessions · passed later in some",
-                                 trailing: "", sessionId: l.evidence.first?.sessionId, seq: l.evidence.first?.seq,
+                                 sessionId: l.evidence.first?.sessionId, seq: l.evidence.first?.seq,
                                  patternKey: l.patternKey, resolved: false, isPattern: true))
         }
         return out
