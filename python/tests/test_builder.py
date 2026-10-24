@@ -623,6 +623,71 @@ def test_derived_delays_respect_max_events(monkeypatch):
     assert all(e["kind"] != "delay" or isinstance(e.get("ref"), int) for e in doc["events"])
 
 
+def test_event_cap_keeps_the_first_events_and_whole_session_totals(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    t0 = datetime(2026, 9, 10, 1, 0, tzinfo=UTC)
+    usage = {
+        "input_tokens": 10,
+        "cache_creation_input_tokens": 100,
+        "cache_read_input_tokens": 1000,
+        "output_tokens": 50,
+    }
+    requests, calls_each = 210, 100
+    lines = []
+    for m in range(requests):
+        ids = [f"t{m}-{i}" for i in range(calls_each)]
+        last = m == requests - 1
+        lines.append(
+            _line(
+                type="assistant",
+                timestamp=(t0 + timedelta(seconds=2 * m)).isoformat(),
+                message={
+                    "id": f"m{m}",
+                    "model": "claude-sonnet-5",
+                    "usage": usage,
+                    "content": [
+                        {"type": "tool_use", "id": i, "name": "Bash", "input": {"command": "true"}}
+                        for i in ids
+                    ],
+                },
+            )
+        )
+        lines.append(
+            _line(
+                type="user",
+                timestamp=(t0 + timedelta(seconds=2 * m + 1)).isoformat(),
+                message={
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": i, "content": "x", "is_error": last}
+                        for i in ids
+                    ],
+                },
+            )
+        )
+    path = tmp_path / "big.jsonl"
+    path.write_text("".join(lines))
+
+    doc = sm.build_claude_code_map(path)
+
+    one = sm.estimate_cost_usd("claude-sonnet-5", 10, 100, 1000, 50)
+    t = doc["totals"]
+    assert t["calls"] == requests * calls_each > sm.MAX_EVENTS
+    assert t["requests"] == requests
+    assert t["errors"] == calls_each
+    assert t["tokens"] == requests * 1160
+    assert t["outputTokens"] == requests * 50
+    assert t["costUsd"] == pytest.approx(requests * one, abs=1e-3) and t["costUsd"] > 0
+    assert doc["session"]["models"] == ["claude-sonnet-5"]
+    assert doc["session"]["durationMs"] == 2 * (requests - 1) * 1000
+    assert doc["session"]["truncated"] is True
+    evs = doc["events"]
+    assert len(evs) == sm.MAX_EVENTS
+    assert {e["kind"] for e in evs} >= {"llm", "exec"}
+    assert evs[-1]["t"] < doc["session"]["durationMs"]
+
+
 def _span(span_id, name, start, end=None, parent=None, **attrs):
     return SimpleNamespace(
         span_id=span_id,

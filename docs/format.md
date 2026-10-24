@@ -69,7 +69,7 @@ The reference producer ([`python/src/agentplay/builder.py`](../python/src/agentp
 | `durationMs` | number | Time from the first event to the last |
 | `models` | string[] | Every model that served a request |
 | `pathMode` | `relative` \| `dirs_only` \| `hashed` | See the redaction contract |
-| `truncated` | bool | `true` when the producer stopped at its event cap (20,000 in the reference producer) |
+| `truncated` | bool | `true` when the producer stopped at its event cap (20,000 in the reference producer). `events` then holds the earliest events, while `calls`, `requests`, `errors`, `tokens` and `costUsd` in `totals` still count the whole session |
 | `outcome` | string | See [Outcomes](#outcomes) |
 | `role` | `root` \| `subagent` \| `helper` \| `unknown` \| null | `subagent` and `helper` sessions are usually hidden from lists; their work already appears inside their parent |
 | `parentSessionId` | string \| null | Set when `role` is `subagent` |
