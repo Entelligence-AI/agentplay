@@ -42,6 +42,37 @@ public func childEnvironment(parent: [String: String], extra: [String: String] =
     return env
 }
 
+/// One of the companion's write commands (`agentplay companion fix|autotune ...`), answered in JSON:
+/// `{"ok": true, ...}` or `{"ok": false, "code", "message"}`.
+public enum CompanionCommand {
+    public struct Reply: Sendable, Equatable {
+        public var ok: Bool
+        public var message: String?
+        public var fields: [String: String]
+        public init(ok: Bool, message: String?, fields: [String: String]) {
+            self.ok = ok; self.message = message; self.fields = fields
+        }
+    }
+
+    public static func run(_ runtime: Runtime, _ args: [String], extraEnv: [String: String] = [:]) async -> Reply {
+        let env = childEnvironment(parent: ProcessInfo.processInfo.environment, extra: extraEnv)
+        guard let r = try? await ChildProcess().run(runtime.python, ["-I", "-m", "agentplay", "companion"] + args,
+                                                    env: env, timeout: 60) else {
+            return Reply(ok: false, message: "AgentPlay didn't answer.", fields: [:])
+        }
+        return parse(r.stdout)
+    }
+
+    public static func parse(_ data: Data) -> Reply {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return Reply(ok: false, message: "AgentPlay answered with something unexpected.", fields: [:])
+        }
+        var fields: [String: String] = [:]
+        for (k, v) in obj where k != "ok" { if let s = v as? String { fields[k] = s } else if let b = v as? Bool { fields[k] = b ? "true" : "false" } }
+        return Reply(ok: obj["ok"] as? Bool ?? false, message: obj["message"] as? String, fields: fields)
+    }
+}
+
 public struct ProcessResult: Sendable {
     public var status: Int32
     public var stdout: Data

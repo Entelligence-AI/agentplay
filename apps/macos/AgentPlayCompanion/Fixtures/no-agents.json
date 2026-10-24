@@ -275,6 +275,275 @@
       }
     ],
     "claudeBlock": null,
+    "signals": {
+      "days": 30,
+      "current": {
+        "messages": 0,
+        "calls": 0,
+        "corrections": 0,
+        "interrupts": 0,
+        "refusals": 0,
+        "frustrated": 0,
+        "correctionRate": null,
+        "frustrationRate": null,
+        "interruptRate": null,
+        "refusalRate": null
+      },
+      "previous": {
+        "messages": 0,
+        "calls": 0,
+        "corrections": 0,
+        "interrupts": 0,
+        "refusals": 0,
+        "frustrated": 0,
+        "correctionRate": null,
+        "frustrationRate": null,
+        "interruptRate": null,
+        "refusalRate": null
+      },
+      "daily": [
+        {
+          "date": "2026-09-24",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-25",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-26",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-27",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-28",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-29",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-30",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-01",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-02",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-03",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-04",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-05",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-06",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-07",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-08",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-09",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-10",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-11",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-12",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-13",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-14",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-15",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-16",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-17",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-18",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-19",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-20",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-21",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-22",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-23",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        }
+      ]
+    },
     "timingMs": 0
   },
   "insights": {
@@ -315,6 +584,13 @@
         "prevPoints": null
       }
     ],
+    "applied": [],
+    "autotune": {
+      "enabled": false,
+      "lastRun": null,
+      "pending": [],
+      "active": []
+    },
     "fixes": []
   },
   "timing": {

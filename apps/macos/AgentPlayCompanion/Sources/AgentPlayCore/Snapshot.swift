@@ -339,6 +339,7 @@ public struct UsageReport: Codable, Sendable, Equatable {
     public var last30Days: UsagePeriod
     public var daily: [UsageDay]
     public var claudeBlock: UsageBlock?
+    public var signals: Signals?
 }
 
 public enum AlertRuleKind: String, TolerantEnum, Sendable, CaseIterable {
@@ -416,6 +417,36 @@ public struct ProviderLimitWindow: Codable, Sendable, Equatable, Identifiable {
     public var providerLabel: String { AgentNames.label(provider) }
 }
 
+/// How often the user steers: corrections, interruptions and frustration per message they type, refused tool
+/// calls per 100 calls. From Claude Code's transcripts; counts only.
+public struct Signals: Codable, Sendable, Equatable {
+    public struct Rates: Codable, Sendable, Equatable {
+        public var messages: Int
+        public var calls: Int
+        public var corrections: Int
+        public var interrupts: Int
+        public var refusals: Int
+        public var frustrated: Int?
+        public var correctionRate: Double?
+        public var interruptRate: Double?
+        public var frustrationRate: Double?
+        public var refusalRate: Double?
+    }
+    public struct Day: Codable, Sendable, Equatable, Identifiable {
+        public var date: String
+        public var messages: Int
+        public var correctionRate: Double?
+        public var interruptRate: Double?
+        public var frustrationRate: Double?
+        public var refusalRate: Double?
+        public var id: String { date }
+    }
+    public var days: Int
+    public var current: Rates
+    public var previous: Rates
+    public var daily: [Day]
+}
+
 /// Run health over the last 30 days (the viewer's Run health page) and the fixes that would raise it.
 public struct Insights: Codable, Sendable, Equatable {
     public struct Component: Codable, Sendable, Equatable, Identifiable {
@@ -438,7 +469,38 @@ public struct Insights: Codable, Sendable, Equatable {
         public var sessions: Int
         public var evidence: [String]
         public var applicable: Bool
+        public var hook: HookCause?
     }
+    /// For a failing hook: the commands configured for its event, and why it fails, as a fixed phrase.
+    public struct HookCause: Codable, Sendable, Equatable {
+        public var commands: [String]
+        public var settingsFiles: [String]
+        public var cause: String?
+    }
+    /// A change AgentPlay wrote (a fix applied by button, approval or Autotune), which can be undone.
+    public struct Applied: Codable, Sendable, Equatable, Identifiable {
+        public var id: String
+        public var fixId: String?
+        public var repo: String?
+        public var file: String?
+        public var at: String?
+        public var source: String?
+        public var title: String?
+    }
+    public struct Autotune: Codable, Sendable, Equatable {
+        public struct Pending: Codable, Sendable, Equatable, Identifiable {
+            public var fixId: String
+            public var title: String
+            public var repo: String?
+            public var points: Double?
+            public var id: String { fixId }
+        }
+        public var enabled: Bool
+        public var lastRun: String?
+        public var pending: [Pending]
+    }
+    public var applied: [Applied]?
+    public var autotune: Autotune?
     public var days: Int
     public var sessions: Int
     public var minSessions: Int

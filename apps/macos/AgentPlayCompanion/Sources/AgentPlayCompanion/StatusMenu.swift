@@ -271,8 +271,45 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let m = NSMenu()
             m.autoenablesItems = false
             m.addItem(hosted(HealthCard(insights: ins)))
+            if let applied = ins.applied, !applied.isEmpty {
+                m.addItem(.separator())
+                m.addItem(.sectionHeader(title: "Applied by AgentPlay"))
+                for e in applied {
+                    let ai = item("Undo \(Plain.text(e.title ?? "this change"))") { [model] in model.undoApplied(e) }
+                    setSubtitle([e.repo, e.file, e.source == "autotune" ? "by Autotune" : nil].compactMap { $0 }.joined(separator: " · "), on: ai)
+                    ai.image = symbol("arrow.uturn.backward")
+                    m.addItem(ai)
+                }
+            }
+            if let pending = ins.autotune?.pending, !pending.isEmpty {
+                m.addItem(.separator())
+                m.addItem(.sectionHeader(title: "Autotune Is Holding"))
+                for p in pending {
+                    let pi = NSMenuItem(title: Plain.text(p.title), action: nil, keyEquivalent: "")
+                    setSubtitle([p.points.map { "+\(Format.points($0)) points" }, p.repo].compactMap { $0 }.joined(separator: " · "), on: pi)
+                    let pm = NSMenu()
+                    pm.addItem(item("Approve and Apply") { [model] in model.autotune("approve", p) })
+                    pm.addItem(item("Dismiss") { [model] in model.autotune("dismiss", p) })
+                    pi.submenu = pm
+                    m.addItem(pi)
+                }
+            }
             m.addItem(.separator())
             m.addItem(item("Open Run Health in AgentPlay…") { [model] in model.openInsights() })
+            i.submenu = m
+            menu.addItem(i)
+
+        case .signals(let sig):
+            let c = sig.current
+            let i = NSMenuItem(title: "Steering", action: nil, keyEquivalent: "")
+            var bits: [String] = []
+            if let r = c.correctionRate { bits.append("\(Format.percent(r)) corrections") }
+            if let r = c.frustrationRate { bits.append("\(Format.percent(r)) frustrated") }
+            setSubtitle(bits.joined(separator: " · "), on: i)
+            i.image = symbol("steeringwheel")
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(SignalsCard(signals: sig)))
             i.submenu = m
             menu.addItem(i)
 
@@ -286,7 +323,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             m.autoenablesItems = false
             m.addItem(hosted(FixDetail(fix: f)))
             m.addItem(.separator())
-            m.addItem(item(f.applicable ? "Preview and Apply in AgentPlay…" : "See It in AgentPlay…") { [model] in model.openInsights() })
+            if f.applicable {
+                let ap = item("Apply…") { [model] in model.applyFix(f) }
+                setSubtitle("Shows the exact change first; undo any time", on: ap)
+                ap.image = symbol("checkmark.circle")
+                m.addItem(ap)
+            }
+            if let file = f.hook?.settingsFiles.first {
+                m.addItem(item("Show \((file as NSString).lastPathComponent) in Finder") { [model] in model.reveal(file) })
+            }
+            m.addItem(item("See It in AgentPlay…") { [model] in model.openInsights() })
             if let first = f.evidence.first {
                 m.addItem(item("Open an Example Session") { [model] in model.openViewer(sessionId: first) })
             }
@@ -607,6 +653,59 @@ struct HealthCard: View {
     }
 }
 
+/// Blume's signal rates, from the user's own messages: each against the 30 days before, with its trend.
+struct SignalsCard: View {
+    var signals: Signals
+
+    var body: some View {
+        let c = signals.current, p = signals.previous
+        VStack(alignment: .leading, spacing: 8) {
+            Text("How often you steer").font(.headline).foregroundStyle(Ink.primary)
+            Text("\(c.messages) messages you typed in the last \(signals.days) days").font(.subheadline).foregroundStyle(Ink.secondary)
+            row("Corrections", "of your messages turn the agent around", c.correctionRate, p.correctionRate, \.correctionRate)
+            row("Frustration", "of your messages swear or pile up ! and ?", c.frustrationRate, p.frustrationRate, \.frustrationRate)
+            row("Interruptions", "of your messages stop the agent mid-step", c.interruptRate, p.interruptRate, \.interruptRate)
+            row("Refusals", "of tool calls you said no to", c.refusalRate, p.refusalRate, \.refusalRate)
+            Text("Counted from what you type in Claude Code; prompts a program sends don't count. No message text is kept.")
+                .font(.footnote).foregroundStyle(Ink.tertiary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 8)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+
+    /// Under 1%, one decimal: refusals are rare, and "0%" would hide them.
+    func small(_ v: Double) -> String { v < 1 && v > 0 ? String(format: "%.1f%%", v) : Format.percent(v) }
+
+    func row(_ name: String, _ what: String, _ now: Double?, _ before: Double?, _ key: KeyPath<Signals.Day, Double?>) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(name).font(.body.weight(.medium)).foregroundStyle(Ink.primary)
+                    Text(now.map { small($0) } ?? "–").font(.body.monospacedDigit()).foregroundStyle(Ink.primary)
+                    if let now, let before {
+                        let d = now - before
+                        // Each of these is better lower: up is orange.
+                        Text(abs(d) < 0.05 ? "same" : "\(d > 0 ? "↑" : "↓") from \(small(before))")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(d >= 0.5 ? Color(nsColor: .systemOrange) : Ink.secondary)
+                    }
+                }
+                Text(what).font(.caption).foregroundStyle(Ink.secondary)
+            }
+            Spacer(minLength: 4)
+            Chart(signals.daily.filter { $0.messages > 0 }) { d in
+                LineMark(x: .value("Day", d.date), y: .value("Rate", d[keyPath: key] ?? 0))
+                    .foregroundStyle(Color(nsColor: .controlAccentColor))
+                    .interpolationMethod(.monotone)
+            }
+            .chartXAxis(.hidden).chartYAxis(.hidden)
+            .frame(width: 70, height: 22)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 /// A fix in full: what was seen, what fixing it changes, where, and what it's worth.
 struct FixDetail: View {
     var fix: Insights.Fix
@@ -615,6 +714,15 @@ struct FixDetail: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(Plain.text(fix.title)).font(.headline).foregroundStyle(Ink.primary)
             Text(Plain.text(fix.pattern)).font(.body).foregroundStyle(Ink.primary)
+            if let h = fix.hook {
+                if let cause = h.cause { Text(cause).font(.body).foregroundStyle(Color(nsColor: .systemOrange)) }
+                if !h.commands.isEmpty {
+                    Text("Configured for it:").font(.subheadline).foregroundStyle(Ink.secondary)
+                    ForEach(h.commands, id: \.self) { c in
+                        Text(c).font(.system(.caption, design: .monospaced)).foregroundStyle(Ink.primary).lineLimit(2)
+                    }
+                }
+            }
             Text(Plain.text(fix.effect)).font(.body).foregroundStyle(Ink.secondary)
             Text([fix.points.map { "+\(Format.points($0)) points" }, Insights.componentName(fix.component),
                   fix.repo, "\(fix.sessions) session\(fix.sessions == 1 ? "" : "s")"].compactMap { $0 }.joined(separator: " · "))

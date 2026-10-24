@@ -675,6 +675,82 @@ final class CompanionModel: ObservableObject {
 
     // MARK: actions
 
+    // MARK: fixes and Autotune, from the menu
+
+    private var storeHome: URL {
+        ProcessInfo.processInfo.environment["AGENTPLAY_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".agentplay")
+    }
+
+    private func command(_ args: [String]) async -> CompanionCommand.Reply {
+        guard let runtime else { return .init(ok: false, message: "The AgentPlay runtime is missing.", fields: [:]) }
+        return await CompanionCommand.run(runtime, args, extraEnv: envBox.value)
+    }
+
+    /// A write changed what the insights should show: drop their 15-minute cache and look again.
+    private func afterWrite() {
+        try? FileManager.default.removeItem(at: storeHome.appendingPathComponent("cache/companion-insights.json"))
+        Task { await refresh(.read) }
+    }
+
+    /// Preview the exact change, ask once per repo, then write it through the guarded, journaled writer.
+    func applyFix(_ f: Insights.Fix) {
+        Task {
+            let p = await command(["fix", "preview", f.id])
+            guard p.ok else { toast = p.message ?? "Couldn't preview that fix."; return }
+            let repo = p.fields["repo"] ?? "this repo", file = p.fields["file"] ?? "a file"
+            let granted = p.fields["granted"] == "true"
+            let before = Set((p.fields["before"] ?? "").components(separatedBy: "\n"))
+            let added = (p.fields["after"] ?? "").components(separatedBy: "\n").filter { !$0.isEmpty && !before.contains($0) }
+            NSApp.activate()
+            let a = NSAlert()
+            a.messageText = "Apply \u{201C}\(Plain.text(f.title))\u{201D}?"
+            var info = "Writes to \(file) in \(repo)."
+            if !granted {
+                info += "\n\nAgentPlay hasn't written to \(repo) before. Applying lets it edit CLAUDE.md and .claude/settings there"
+                    + (p.fields["root"].map { " (\($0))" } ?? "") + ". Every change is journaled and can be undone from Run Health."
+            }
+            a.informativeText = info
+            if !added.isEmpty {
+                let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 120))
+                text.string = added.map { "+ " + $0 }.joined(separator: "\n")
+                text.isEditable = false
+                text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+                let scroll = NSScrollView(frame: text.frame)
+                scroll.documentView = text
+                scroll.hasVerticalScroller = true
+                a.accessoryView = scroll
+            }
+            a.addButton(withTitle: "Apply")
+            a.addButton(withTitle: "Cancel")
+            guard a.runModal() == .alertFirstButtonReturn else { return }
+            let r = await command(["fix", "apply", f.id] + (granted ? [] : ["--grant"]))
+            toast = r.ok ? "Applied to \(r.fields["file"] ?? file). Undo it from Run Health any time." : (r.message ?? "Couldn't apply it.")
+            if r.ok { afterWrite() }
+        }
+    }
+
+    func undoApplied(_ e: Insights.Applied) {
+        Task {
+            let r = await command(["fix", "undo", e.id])
+            toast = r.ok ? "Undone in \(e.file ?? "the file")." : (r.message ?? "Couldn't undo it.")
+            if r.ok { afterWrite() }
+        }
+    }
+
+    func autotune(_ action: String, _ p: Insights.Autotune.Pending) {
+        Task {
+            let r = await command(["autotune", action, p.fixId])
+            toast = r.ok ? (action == "approve" ? "Approved and applied." : "Dismissed.") : (r.message ?? "That didn't work.")
+            if r.ok { afterWrite() }
+        }
+    }
+
+    func reveal(_ path: String) {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     /// The viewer's Run health page, where fixes are previewed, applied and undone.
     func openInsights(page: String = "health") {
         guard !isSample, let viewer else { openViewer(); return }

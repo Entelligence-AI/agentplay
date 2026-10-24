@@ -740,3 +740,43 @@ def test_insights_report_is_cached_and_private(store, empty_homes):
     raw = json.dumps(_snap(store, empty_homes)["insights"])
     for secret in ("SECRET-TITLE", "SECRET-TASK", "SECRET-USER-DIR", "SECRET-REMOTE"):
         assert secret not in raw
+
+
+def _user_line(ts, uid, text, entrypoint="cli", origin=None):
+    d = {"type": "user", "timestamp": ts, "uuid": uid, "entrypoint": entrypoint, "message": {"role": "user", "content": text}}
+    if origin:
+        d["origin"] = {"kind": origin}
+    return json.dumps(d) + "\n"
+
+
+def test_steering_signals_count_people_not_programs(store, tmp_path):
+    from agentplay import usage
+
+    home = tmp_path / ".claude"
+    proj = home / "projects" / "-Users-me-app"
+    proj.mkdir(parents=True)
+    ts = (NOW - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    (proj / "a.jsonl").write_text(
+        _user_line(ts, "u1", "no, wait: build the SECRET-FEATURE first")  # a first message is never a correction
+        + _user_line(ts, "u2", "why is it still not showing???")          # correction and frustration
+        + _user_line(ts, "u3", "[Request interrupted by user]")
+        + _user_line(ts, "u4", "nice, ship it")
+        + json.dumps({"type": "user", "timestamp": ts, "uuid": "u5", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "The user doesn't want to proceed with this tool use."}]}}) + "\n")
+    # A resumed copy of the same lines, and a pipeline driving the SDK: neither is the user talking twice.
+    (proj / "b.jsonl").write_text(_user_line(ts, "u2", "why is it still not showing???"))
+    (proj / "c.jsonl").write_text(_user_line(ts, "p1", "summarize this file", entrypoint="sdk-ts"))
+    (proj / "d.jsonl").write_text(_user_line(ts, "z1", "make the button bigger", entrypoint="sdk-ts", origin="human"))
+    s = usage.report(store, NOW, claude_homes=[home])["signals"]["current"]
+    assert (s["messages"], s["corrections"], s["frustrated"], s["interrupts"], s["refusals"]) == (4, 1, 1, 1, 1)
+    assert s["correctionRate"] == 25.0
+    assert "SECRET-FEATURE" not in (store.base / "cache" / "companion-claude-usage.json").read_text()
+
+
+def test_companion_fix_commands_refuse_cleanly(store, empty_homes):
+    from agentplay import fixes
+
+    with pytest.raises(fixes.FixError):
+        companion.fix_action(store, "preview", "no-such-fix")
+    with pytest.raises(fixes.FixError):
+        companion.fix_action(store, "undo", "no-such-entry")

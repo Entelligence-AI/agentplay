@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -858,7 +859,7 @@ def _health_rows(store: Store, lo: str, hi: str) -> list[dict[str, Any]]:
     return out
 
 
-def insights(store: Store, now: datetime) -> dict[str, Any] | None:
+def insights(store: Store, now: datetime, homes: discover.Homes | None = None) -> dict[str, Any] | None:
     """Run health over the last 30 days, against the 30 before, and the fixes that would raise it.
 
     The same report as the viewer's Run health page (``health.py``): five components and fixes that name
@@ -888,10 +889,16 @@ def insights(store: Store, now: datetime) -> dict[str, Any] | None:
         "prevScore": rep["prevScore"],
         "components": [{"key": c["key"], "name": c["name"], "points": c["points"], "prevPoints": c.get("prevPoints")}
                        for c in rep["components"]],
+        "applied": [{"id": e["id"], "fixId": e.get("fixId"), "repo": e.get("repo"), "file": e.get("file"),
+                     "at": e.get("at"), "source": e.get("source"), "title": e.get("title")}
+                    for e in _applied(store)][:8],
+        "autotune": _autotune_summary(store),
         "fixes": [{"id": f["id"], "rule": f["rule"], "repo": f.get("repo") or None, "subject": f.get("subject"),
                    "component": f["component"], "title": f["title"], "pattern": f["pattern"], "effect": f["effect"],
                    "points": f.get("points"), "sessions": len(f.get("sessions") or []),
-                   "evidence": list(f.get("sessions") or [])[:5], "applicable": bool(f.get("actions"))}
+                   "evidence": list(f.get("sessions") or [])[:5], "applicable": bool(f.get("actions")),
+                   **({"hook": hook_cause(homes, str(f.get("subject") or ""))}
+                      if f["rule"] == "broken_hook" and homes is not None else {})}
                   for f in rep["fixes"][:6]],
     }
     try:
@@ -901,6 +908,92 @@ def insights(store: Store, now: datetime) -> dict[str, Any] | None:
     return out
 
 
+_WRONG_EVENT = re.compile(r"expected '(\w+)' but got '(\w+)'")
+
+
+def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
+    """For a failing hook ("SessionStart:startup"): the commands configured for its event, and why the newest
+    failure happened, as a fixed phrase. Claude Code records the error with the hook's output; that output is
+    read to classify it and dropped, like every error text in AgentPlay."""
+    event = hook_name.split(":")[0]
+    commands: list[str] = []
+    files: list[str] = []
+    for home in homes.claude_code:
+        for name in ("settings.json", "settings.local.json"):
+            p = Path(home) / name
+            try:
+                groups = (json.loads(p.read_text(encoding="utf-8")).get("hooks") or {}).get(event) or []
+            except (OSError, ValueError, AttributeError):
+                continue
+            for g in groups if isinstance(groups, list) else []:
+                for h in (g.get("hooks") or []) if isinstance(g, dict) else []:
+                    if isinstance(h, dict) and isinstance(h.get("command"), str):
+                        commands.append(h["command"][:160])
+                        files.append(_home_label(p))
+    cause = None
+    newest = 0.0
+    for home in homes.claude_code:
+        try:
+            recent = sorted((Path(home) / "projects").glob("*/*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)[:30]
+        except OSError:
+            continue
+        for f in recent:
+            try:
+                with open(f, "rb") as fh:
+                    head = fh.read(256 * 1024)
+            except OSError:
+                continue
+            for line in head.split(b"\n"):
+                if hook_name.encode() not in line or b"hook_" not in line:
+                    continue
+                try:
+                    a = (json.loads(line).get("attachment") or {})
+                except ValueError:
+                    continue
+                if a.get("hookName") != hook_name or f.stat().st_mtime <= newest:
+                    continue
+                newest = f.stat().st_mtime
+                err = str(a.get("stderr") or "")
+                m = _WRONG_EVENT.search(err)
+                if m:
+                    cause = (f"It answers as {m.group(2)}, but Claude Code ran it for {m.group(1)}, so every run is "
+                             f"rejected. Register it under {m.group(2)}, or have it answer {m.group(1)} here.")
+                elif "not found" in err or "No such file" in err:
+                    cause = "Its command can't be found."
+                elif "timed out" in err.lower() or "timeout" in err.lower():
+                    cause = "It runs past Claude Code's time limit."
+                elif re.search(r"exit(ed)? (with )?(code|status) \d+", err):
+                    cause = "It exits with an error."
+                else:
+                    cause = "It fails when it runs."
+                break
+    return {"commands": commands[:4], "settingsFiles": sorted(set(files)), "cause": cause}
+
+
+def _applied(store: Store) -> list[dict[str, Any]]:
+    from . import fixes
+
+    try:
+        return list(reversed(fixes.active(store.base)))
+    except Exception:  # noqa: BLE001 - a broken journal must not cost the insights
+        return []
+
+
+def _autotune_summary(store: Store) -> dict[str, Any] | None:
+    from . import autotune
+
+    try:
+        st = autotune.status(store)
+    except Exception:  # noqa: BLE001
+        return None
+    return {"enabled": any(r.get("enabled") for r in st["repos"]), "lastRun": st.get("lastRun"),
+            "pending": [{"fixId": p["fixId"], "title": p["title"], "repo": p["repo"], "points": p.get("points")}
+                        for p in st["pending"]][:5],
+            "active": [{"id": a["id"], "fixId": a.get("fixId"), "repo": a.get("repo"), "file": a.get("file"),
+                        "sessionsSince": a.get("sessionsSince"), "current": a.get("current"),
+                        "baseline": a.get("baseline")} for a in st["active"]][:5]}
+
+
 def _atomic_write_text(path: Path, text: str) -> None:
     from .store import _atomic_write
 
@@ -908,9 +1001,9 @@ def _atomic_write_text(path: Path, text: str) -> None:
     _atomic_write(path, text.encode("utf-8"))
 
 
-def _insights(store: Store, now: datetime) -> dict[str, Any] | None:
+def _insights(store: Store, now: datetime, homes: discover.Homes) -> dict[str, Any] | None:
     try:
-        return insights(store, now)
+        return insights(store, now, homes)
     except Exception:  # noqa: BLE001 - insights are extra; a bad map must not cost the whole snapshot
         return None
 
@@ -1008,12 +1101,76 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         "live": [{**r, "inStore": r["sessionId"] in store.index} for r in live_sessions],
         "learn": learn_card(store, by_activity, now),
         "usage": _usage(store, now, homes),
-        "insights": _insights(store, now),
+        "insights": _insights(store, now, homes),
         "timing": {"snapshotMs": round(1000 * (time.monotonic() - t_start))},
     }
 
 
+def _find_fix(store: Store, fix_id: str) -> dict[str, Any]:
+    from . import fixes, health
+
+    day = datetime.now(UTC).astimezone().date()
+    rows = _health_rows(store, (day - timedelta(days=INSIGHTS_DAYS - 1)).isoformat(), day.isoformat())
+    fx = next((f for f in health.fixes(rows) if f["id"] == fix_id), None)
+    if fx is None:
+        raise fixes.FixError("not_found", "That fix no longer applies to your recent sessions.")
+    return fx
+
+
+def fix_action(store: Store, action: str, ident: str, *, grant: bool = False) -> dict[str, Any]:
+    """The menu's Apply, Preview and Undo, through the same guarded writer as the viewer (fixes.py)."""
+    from . import fixes
+
+    if action == "undo":
+        e = fixes.undo(store.base, ident)
+        return {"undone": e["id"], "file": e.get("file"), "repo": e.get("repo")}
+    fx = _find_fix(store, ident)
+    if not fx.get("actions"):
+        raise fixes.FixError("no_action", "This one has no file change to make; it needs a look in AgentPlay.")
+    act = fx["actions"][0]
+    repo = str(fx.get("repo") or "")
+    granted = repo in fixes.grants(store.base)
+    root = fixes.grants(store.base).get(repo) or fixes.known_roots(store.base).get(repo)
+    if action == "preview":
+        out = {"fixId": fx["id"], "title": fx["title"], "repo": repo, "granted": granted, "root": root,
+               "kind": act.get("kind")}
+        if granted:
+            out.update(fixes.preview(store.base, repo, fx, act))
+        else:
+            out["file"] = act.get("file")
+        return out
+    if not granted:
+        if not grant:
+            raise fixes.FixError("not_granted", f"AgentPlay may not write to {repo} yet.")
+        fixes.grant(store.base, repo, root)
+    e = fixes.apply(store.base, fx, act, source="button")
+    return {"entryId": e["id"], "file": e.get("file"), "repo": repo}
+
+
+def autotune_action(store: Store, action: str, fix_id: str) -> dict[str, Any]:
+    from . import autotune
+
+    if action == "approve":
+        e = autotune.approve(store, fix_id)
+        return {"entryId": e["id"], "file": e.get("file"), "repo": e.get("repo")}
+    autotune.dismiss(store, fix_id)
+    return {"dismissed": fix_id}
+
+
 def main(args: Any) -> int:
+    cmd = getattr(args, "companion_cmd", "snapshot")
+    if cmd in ("fix", "autotune"):
+        from . import fixes
+
+        try:
+            st = Store()
+            out = (fix_action(st, args.action, args.id, grant=getattr(args, "grant", False)) if cmd == "fix"
+                   else autotune_action(st, args.action, args.id))
+            print(json.dumps({"ok": True, **out}))
+            return 0
+        except fixes.FixError as e:
+            print(json.dumps({"ok": False, "code": getattr(e, "code", "error"), "message": str(e)}))
+            return 1
     if getattr(args, "refresh", False):
         from . import pipeline
 

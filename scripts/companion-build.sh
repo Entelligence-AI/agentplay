@@ -97,6 +97,9 @@ rsync -a --exclude '__pycache__' "$ROOT/python/src/agentplay" "$STDLIB/site-pack
 # Precompile, so nothing is ever written inside the signed bundle at run time.
 "$PYDEST/bin/python$PYV" -I -m compileall -q -j 0 "$STDLIB" >/dev/null || true
 AFTER_KB=$(du -sk "$PYDEST" | cut -f1)
+# The bundled runtime must start and import AgentPlay: a copy made on a full disk can leave empty files
+# (a 0-byte libpython) that only fail when the app runs.
+"$PYDEST/bin/python$PYV" -I -c "import agentplay, json, sqlite3" || { echo "The bundled Python doesn't start; is the disk full?" >&2; exit 1; }
 
 # --- 5. Sign, inside out ---------------------------------------------------------------------------
 say "Signing (identity: $IDENTITY)"

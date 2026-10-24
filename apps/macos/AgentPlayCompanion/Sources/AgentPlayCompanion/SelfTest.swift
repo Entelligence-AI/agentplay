@@ -133,6 +133,12 @@ extension Renderer {
             if let e = MenuBuilder.errorLines(snap, prefs: real, now: snap.generatedAt).first {
                 write(AnyView(ErrorDetail(line: e, now: snap.generatedAt)), to: dir.appendingPathComponent("live-error-detail.png"), dark: true, material: true)
             }
+            if let sig = snap.usage?.signals {
+                write(AnyView(SignalsCard(signals: sig)), to: dir.appendingPathComponent("live-signals.png"), dark: true, material: true)
+            }
+            if let ins = snap.insights {
+                write(AnyView(HealthCard(insights: ins)), to: dir.appendingPathComponent("live-health.png"), dark: true, material: true)
+            }
             if let u = snap.usage {
                 write(AnyView(UsageDetail(report: u)), to: dir.appendingPathComponent("live-usage-details.png"), dark: true, material: true)
             }

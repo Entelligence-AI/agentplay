@@ -15,7 +15,8 @@ enum MenuEntry: Equatable {
     case usage(UsageReport)                      // hosted two-line summary
     case usageDetails(UsageReport)               // submenu: chart, 7 and 30 days, by model, by project
     case errors([ErrorLine])                     // each error, its details one level down
-    case health(Insights)                        // hosted: run health score and components
+    case health(Insights)                        // run health, its parts, what was applied and what Autotune holds
+    case signals(Signals)                        // corrections, interruptions, frustration, refusals
     case fix(Insights.Fix)                       // a fix, its details one level down
     case action(MenuAction)
     case separator
@@ -139,13 +140,12 @@ enum MenuBuilder {
         // 4. Insights: run health, the fixes that would raise it, and what keeps failing, details one level down.
         let errs = errorLines(s, prefs: prefs, now: now)
         let ins = s.insights.flatMap { $0.score == nil ? nil : $0 }
-        if ins != nil || !errs.isEmpty {
+        if ins != nil || !errs.isEmpty || (s.usage?.signals?.current.messages ?? 0) >= 20 {
             out.append(.separator)
             out.append(.header("Insights · Last \(s.insights?.days ?? 30) Days"))
-            if let ins {
-                out.append(.health(ins))
-                out += ins.fixes.prefix(3).map(MenuEntry.fix)
-            }
+            if let ins { out.append(.health(ins)) }
+            if let sig = s.usage?.signals, sig.current.messages >= 20 { out.append(.signals(sig)) }
+            if let ins { out += ins.fixes.prefix(3).map(MenuEntry.fix) }
             if !errs.isEmpty { out.append(.errors(Array(errs.prefix(3)))) }
         }
 

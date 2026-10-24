@@ -17,6 +17,7 @@ Nothing beyond counts, model names and repo folder names leaves this module.
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
@@ -26,7 +27,7 @@ from typing import Any
 from .store import Store, _atomic_write
 
 CACHE_VERSION = 3
-RAW_CACHE_VERSION = 1
+RAW_CACHE_VERSION = 5
 BLOCK_HOURS = 5
 WINDOW_DAYS = 30
 DUP_SECONDS = 5
@@ -91,6 +92,132 @@ def _claude_lines(data: bytes) -> list[list[Any]]:
     return out
 
 
+# A reply that opens by turning the agent around: the signal behind "Corrections".
+_CORRECTION = re.compile(
+    r"^\W*(no\b|nope\b|wrong\b|wait\b|stop\b|don'?t\b|do not\b|undo\b|revert\b|actually\b|instead\b"
+    r"|that'?s not\b|that is not\b|not what\b|why did you\b|you didn'?t\b|you broke\b|you missed\b)",
+    re.IGNORECASE)
+# The same, said later in the message: "why is it still not showing", "this doesn't work".
+_CORRECTION_ANYWHERE = re.compile(
+    r"\b(still (not|broken|wrong|the same|failing)|(doesn'?t|does not|didn'?t|did not|isn'?t|is not|not) "
+    r"(work|working|showing|show|fixed|right)|why (is|isn'?t|it'?s|does|doesn'?t|did|didn'?t|are|aren'?t)\b)",
+    re.IGNORECASE)
+# Frustration, Blume's third rate: swearing, or a pile of ! or ?. Counted, never kept.
+_FRUSTRATION = re.compile(r"\b(fuck\w*|wtf|shit\w*|damn\w*|ffs|goddamn|crap|stupid|useless|retard\w*)\b|[!?]{3,}",
+                          re.IGNORECASE)
+
+
+def _user_text(content: Any) -> str | None:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = [b.get("text") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+        if texts and not any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+            return "\n".join(t for t in texts if isinstance(t, str))
+    return None
+
+
+_USER_LINE = re.compile(rb'"type"\s*:\s*"user"')
+
+
+def _signal_lines(data: bytes, seen_user: bool) -> tuple[list[list[Any]], bool]:
+    """``[sec, kind, key]`` steering signals (``key`` dedupes the copies a resumed session makes): ``msg`` (a message from the user), ``cor`` (one that corrects),
+    ``int`` (an interruption), ``ref`` (a refused tool call), ``call`` (a tool call). Read to classify, then
+    dropped: no text is kept. ``seen_user`` carries over between reads, so a session's first message is
+    never counted as a correction."""
+    out: list[list[Any]] = []
+    for line in data.split(b"\n"):
+        if not _USER_LINE.search(line) and b'"tool_use"' not in line:
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        at = _parse(d.get("timestamp")) if isinstance(d, dict) else None
+        if at is None or d.get("isSidechain"):
+            continue
+        sec = round(at.timestamp())
+        uid = str(d.get("uuid") or "")
+        m = d.get("message") if isinstance(d.get("message"), dict) else {}
+        content = m.get("content")
+        if d.get("type") == "assistant":
+            if isinstance(content, list):
+                out += [[sec, "call", str(b.get("id") or uid)] for b in content
+                        if isinstance(b, dict) and b.get("type") == "tool_use"]
+            continue
+        if d.get("type") != "user" or d.get("isMeta") or d.get("isCompactSummary"):
+            continue
+        if isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    body = b.get("content")
+                    body = body if isinstance(body, str) else json.dumps(body)[:400]
+                    if "doesn't want to proceed" in body or "user rejected" in body.lower():
+                        out.append([sec, "ref", str(b.get("tool_use_id") or uid)])
+        text = _user_text(content)
+        if text is None:
+            continue
+        t = text.lstrip()
+        if t.startswith("[Request interrupted"):
+            out.append([sec, "int", uid])
+            continue
+        if not t or t.startswith("<") or "[SYSTEM NOTIFICATION" in t:
+            continue  # harness turns, command output, notifications: not the user talking
+        # A program driving the Agent SDK (a pipeline, a test harness) sends prompts too. Editor panels mark
+        # what the user typed with origin.kind "human"; terminal sessions are typed unless marked otherwise.
+        origin = d.get("origin") if isinstance(d.get("origin"), dict) else {}
+        sdk = str(d.get("entrypoint") or "").startswith("sdk")
+        if origin.get("kind", "human" if not sdk else None) != "human":
+            continue
+        out.append([sec, "msg", uid])
+        if seen_user and (_CORRECTION.match(t) or _CORRECTION_ANYWHERE.search(t[:160])):
+            out.append([sec, "cor", uid])
+        if _FRUSTRATION.search(t):
+            out.append([sec, "fru", uid])
+        seen_user = True
+    return out, seen_user
+
+
+def signals(entries: list[list[Any]], now: datetime, days: int = WINDOW_DAYS) -> dict[str, Any]:
+    """Corrections and interruptions per message from you, refusals per 100 tool calls: the last
+    ``days`` against the ``days`` before, and per day for the trend."""
+    unique: dict[tuple[str, str], int] = {}
+    for e in entries:
+        sec, kind = e[0], e[1]
+        key = (kind, e[2] if len(e) > 2 and e[2] else f"{sec}")
+        unique.setdefault(key, sec)  # a resumed session's copy of a line counts once
+
+    def count(lo: float, hi: float) -> dict[str, int]:
+        c: dict[str, int] = defaultdict(int)
+        for (kind, _), sec in unique.items():
+            if lo <= sec < hi:
+                c[kind] += 1
+        return c
+
+    def rates(c: dict[str, int]) -> dict[str, Any]:
+        msgs, calls = c.get("msg", 0), c.get("call", 0)
+        return {"messages": msgs, "calls": calls, "corrections": c.get("cor", 0), "interrupts": c.get("int", 0),
+                "refusals": c.get("ref", 0), "frustrated": c.get("fru", 0),
+                "correctionRate": round(100 * c.get("cor", 0) / msgs, 1) if msgs else None,
+                "frustrationRate": round(100 * c.get("fru", 0) / msgs, 1) if msgs else None,
+                "interruptRate": round(100 * c.get("int", 0) / msgs, 1) if msgs else None,
+                "refusalRate": round(100 * c.get("ref", 0) / calls, 2) if calls else None}
+
+    end = now.timestamp() + 60
+    start = end - days * 86400
+    local_midnight = datetime.fromtimestamp(now.timestamp()).replace(hour=0, minute=0, second=0, microsecond=0)
+    daily = []
+    for d in range(days - 1, -1, -1):
+        s = (local_midnight - timedelta(days=d)).timestamp()
+        r = rates(count(s, s + 86400))
+        daily.append({"date": datetime.fromtimestamp(s).strftime("%Y-%m-%d"), "messages": r["messages"],
+                      "correctionRate": r["correctionRate"], "interruptRate": r["interruptRate"],
+                      "frustrationRate": r["frustrationRate"],
+                      "refusalRate": r["refusalRate"]})
+    return {"days": days, "current": rates(count(start, end)), "previous": rates(count(start - days * 86400, start)),
+            "daily": daily}
+
+
 def _session_of(path: Path) -> str:
     parts = path.parts
     if "subagents" in parts:
@@ -98,9 +225,14 @@ def _session_of(path: Path) -> str:
     return f"local:claude-code:{path.stem}"
 
 
-def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = WINDOW_DAYS) -> list[Request]:
-    """Every Claude Code request in the last ``days``, each once, from the raw transcripts."""
+def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = WINDOW_DAYS,
+                    signals_out: list[list[Any]] | None = None) -> list[Request]:
+    """Every Claude Code request in the last ``days``, each once, from the raw transcripts.
+
+    ``signals_out``: if given, extended with the steering signals of the last ``2 × days`` (``_signal_lines``),
+    from the user's own sessions only (subagent transcripts are prompts the agent wrote)."""
     since = (now - timedelta(days=days + 1)).timestamp()
+    sig_since = (now - timedelta(days=2 * days + 1)).timestamp()
     cache_path = store.base / "cache" / "companion-claude-usage.json"
     try:
         raw = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -117,17 +249,20 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
                 st = f.stat()
             except OSError:
                 continue
-            if st.st_mtime < since:
+            if st.st_mtime < sig_since:
                 continue
             p = str(f)
             hit = cached.get(p)
             start = 0
             reqs: list[list[Any]] = []
+            sigs: list[list[Any]] = []
+            seen_user = False
             if hit and hit.get("size") == st.st_size and hit.get("mtime") == st.st_mtime:
                 files[p] = hit
                 continue
             if hit and st.st_size >= hit.get("offset", 0):
                 start, reqs = hit.get("offset", 0), list(hit.get("reqs", []))  # appended since: read the tail
+                sigs, seen_user = list(hit.get("sig", [])), bool(hit.get("seenUser"))
             try:
                 with open(f, "rb") as fh:
                     fh.seek(start)
@@ -136,8 +271,12 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
                 continue
             end = data.rfind(b"\n") + 1  # a line still being written waits for the next look
             reqs += _claude_lines(data[:end])
+            if "subagents" not in f.parts:
+                new_sigs, seen_user = _signal_lines(data[:end], seen_user)
+                sigs += new_sigs
             files[p] = {"size": st.st_size, "mtime": st.st_mtime, "offset": start + end,
-                        "reqs": [r for r in reqs if r[1] >= since]}
+                        "reqs": [r for r in reqs if r[1] >= since],
+                        "sig": [s for s in sigs if s[0] >= sig_since], "seenUser": seen_user}
     if files != cached:
         try:
             body = json.dumps({"version": RAW_CACHE_VERSION, "files": files}, separators=(",", ":"))
@@ -158,6 +297,9 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
             keep[1] = min(keep[1], r[1])
             if r[6] > keep[6]:
                 keep[2:7] = r[2:7]
+    if signals_out is not None:
+        for p in files:
+            signals_out += files[p].get("sig", [])
     out: list[Request] = []
     for (_key, sec, model, i, cw, cr, o, repo), session in best.values():
         out.append((sec, model, i, cw, cr, o, _price(model, i, cw, cr, o), "claude-code", repo, session))
@@ -317,7 +459,8 @@ def report(store: Store, now: datetime | None = None, claude_homes: list[Path] |
     """``claude_homes``: Claude Code homes to read raw transcripts from. None reads none (maps only)."""
     t_start = time.monotonic()
     now = now or datetime.now(UTC)
-    raw = claude_requests(claude_homes, store, now) if claude_homes else []
+    sig: list[list[Any]] = []
+    raw = claude_requests(claude_homes, store, now, signals_out=sig) if claude_homes else []
     reqs = merge(raw, map_requests(store, now))
     local_midnight = datetime.fromtimestamp(now.timestamp()).replace(hour=0, minute=0, second=0, microsecond=0)
     today = local_midnight.astimezone(UTC)
@@ -339,6 +482,7 @@ def report(store: Store, now: datetime | None = None, claude_homes: list[Path] |
         "last30Days": _period(reqs, now - timedelta(days=30), now + timedelta(minutes=1)),
         "daily": daily,
         "claudeBlock": claude_block(reqs, now),
+        "signals": signals(sig, now) if claude_homes else None,
         "timingMs": round(1000 * (time.monotonic() - t_start)),
     }
 

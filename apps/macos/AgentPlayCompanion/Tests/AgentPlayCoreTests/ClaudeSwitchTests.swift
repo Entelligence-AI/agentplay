@@ -93,3 +93,13 @@ import Testing
         #expect(!s.contains("logout"))
     }
 }
+
+@Suite struct CompanionCommandTests {
+    @Test func readsOkAndFailureReplies() {
+        let ok = CompanionCommand.parse(Data(#"{"ok": true, "entryId": "abc", "file": "CLAUDE.md", "granted": false}"#.utf8))
+        #expect(ok.ok && ok.fields["entryId"] == "abc" && ok.fields["granted"] == "false")
+        let bad = CompanionCommand.parse(Data(#"{"ok": false, "code": "not_granted", "message": "AgentPlay may not write to x yet."}"#.utf8))
+        #expect(!bad.ok && bad.message == "AgentPlay may not write to x yet.")
+        #expect(!CompanionCommand.parse(Data("oops".utf8)).ok)
+    }
+}
