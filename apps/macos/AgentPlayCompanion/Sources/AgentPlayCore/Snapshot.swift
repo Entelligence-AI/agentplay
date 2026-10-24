@@ -416,9 +416,47 @@ public struct ProviderLimitWindow: Codable, Sendable, Equatable, Identifiable {
     public var providerLabel: String { AgentNames.label(provider) }
 }
 
+/// Run health over the last 30 days (the viewer's Run health page) and the fixes that would raise it.
+public struct Insights: Codable, Sendable, Equatable {
+    public struct Component: Codable, Sendable, Equatable, Identifiable {
+        public var key: String
+        public var name: String
+        public var points: Double?
+        public var prevPoints: Double?
+        public var id: String { key }
+    }
+    public struct Fix: Codable, Sendable, Equatable, Identifiable {
+        public var id: String
+        public var rule: String
+        public var repo: String?
+        public var subject: String?
+        public var component: String
+        public var title: String      // "Fix the `SessionStart:startup` hook"
+        public var pattern: String    // what was seen
+        public var effect: String     // what fixing it changes
+        public var points: Double?
+        public var sessions: Int
+        public var evidence: [String]
+        public var applicable: Bool
+    }
+    public var days: Int
+    public var sessions: Int
+    public var minSessions: Int
+    public var score: Double?
+    public var prevScore: Double?
+    public var components: [Component]
+    public var fixes: [Fix]
+
+    public static func componentName(_ key: String) -> String? {
+        ["shipping": "Shipping", "verification": "Verification", "efficiency": "Efficiency",
+         "context": "Context hygiene", "environment": "Environment health"][key]
+    }
+}
+
 public struct LearnEvidence: Codable, Sendable, Equatable, Identifiable {
     public var sessionId: String
     public var agentTool: String?
+    public var repo: String?
     public var seq: Int
     public var at: Date?
     public var id: String { "\(sessionId)#\(seq)" }
@@ -483,6 +521,7 @@ public struct Snapshot: Codable, Sendable, Equatable {
     public var learn: LearnCard?
     public var live: [LiveSession]?
     public var usage: UsageReport?
+    public var insights: Insights?
 
     public var isSample: Bool { sample == true }
     public var foundSources: [SourceCapability] { sources.filter { $0.status == .found } }

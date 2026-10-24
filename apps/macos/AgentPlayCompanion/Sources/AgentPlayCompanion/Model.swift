@@ -675,6 +675,27 @@ final class CompanionModel: ObservableObject {
 
     // MARK: actions
 
+    /// The viewer's Run health page, where fixes are previewed, applied and undone.
+    func openInsights(page: String = "health") {
+        guard !isSample, let viewer else { openViewer(); return }
+        Task {
+            guard let base = try? await viewer.ensure() else { toast = "Couldn't start the local viewer."; return }
+            let url = ViewerLink.insights(base: base, page: page)
+            if ViewerLink.isLocalViewer(url) { NSWorkspace.shared.open(url) }
+        }
+    }
+
+    func copyText(_ s: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(s, forType: .string)
+        toast = "Copied"
+    }
+
+    func hideLearn(_ key: String) {
+        prefs.dismissedLearn[key] = Date()
+        toast = "Hidden for two weeks."
+    }
+
     func openViewer(sessionId: String? = nil, seq: Int? = nil, errorsTab: Bool = false) {
         playClick()
         if isSample {

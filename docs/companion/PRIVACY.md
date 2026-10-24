@@ -19,6 +19,7 @@ Otherwise the app makes no requests of its own: no update check, no telemetry SD
 | `~/.agentplay/index.json` and `maps/` | Everything on Now and Learn |
 | The agents' transcript folders (`~/.claude`, `~/.codex`, `~/.cursor`, `~/.copilot`, VS Code's user storage, OpenCode's data folder, `~/.kiro`, and folders the user adds) | The same incremental build `agentplay build` runs |
 | Repo folders those sessions worked in | The builder checks paths and git settings to tell which repo a file belongs to. For repos under Documents, Desktop or Downloads, macOS asks once |
+| Session facts and the Run health report (`facts.py`, `health.py`) | The Insights rows: a score, five parts, and fixes that name a command, tool, hook or MCP server, with counts and session ids. Computed locally from the maps, cached 15 minutes in `~/.agentplay/cache/companion-insights.json`; no titles, paths or arguments (`test_insights_report_is_cached_and_private`) |
 | Claude Code transcripts, for usage | Only lines that carry `usage`: message id, request id, model, timestamp, token counts, and the folder name of `cwd`. Cached in `~/.agentplay/cache/companion-claude-usage.json` with nothing else; message text is never kept (`test_usage_reads_claude_transcripts_once_per_request`) |
 | The tail of Codex transcripts | Only the numeric `token_count` record: context window and plan windows |
 | `lsof` output for recent transcripts | Which agent processes are live |

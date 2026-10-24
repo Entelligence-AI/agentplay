@@ -12,6 +12,15 @@ public enum ViewerLink {
         s.addingPercentEncoding(withAllowedCharacters: unreserved) ?? ""
     }
 
+    /// The viewer's Insights pages: "overview", "health" (Run health and its fixes) or "autotune".
+    public static func insights(base: URL, page: String = "health") -> URL {
+        var c = URLComponents(url: base, resolvingAgainstBaseURL: false) ?? URLComponents()
+        c.path = "/"
+        c.percentEncodedQuery = "tab=insights&ipage=\(encode(page))"
+        c.fragment = nil
+        return c.url ?? base
+    }
+
     public static func url(base: URL, sessionId: String, seq: Int? = nil, errorsTab: Bool = false) -> URL {
         var q = "session=\(encode(sessionId))"
         if let seq, seq >= 0 { q += "&at=\(seq)" }
@@ -66,6 +75,11 @@ public enum Format {
         if n >= 10_000 { return "\(n / 1000)k" }
         if n >= 1000 { return String(format: "%.1fk", Double(n) / 1000) }
         return "\(n)"
+    }
+
+    /// Run health points: one decimal below 10, whole numbers above.
+    public static func points(_ p: Double) -> String {
+        p < 10 ? String(format: "%.1f", p) : String(Int(p.rounded()))
     }
 
     public static func percent(_ p: Double) -> String {

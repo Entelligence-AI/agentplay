@@ -73,7 +73,7 @@ Notifications for "Session needs you" carry Go to Terminal, Snooze 15 Minutes an
 | Conflicting plan reports | "Recent sessions reported Plus and Pro. They may be different accounts." | [conflicting](screens/state-conflicting-plans-light.png) |
 | Usage | Today and Last 30 Days, cost then tokens. Costs are estimates at API list prices; unpriced models say "unpriced", never $0 | [menu](screens/menu-light.png) |
 | Usage details | Submenu with the chart and breakdowns | [usage details](screens/submenu-usage-details-light.png) |
-| Recent errors | Submenu row with a count; each error names the command, agent, project, reason and time | [partial](screens/state-partial-light.png) |
+| Insights | "Insights · Last 30 Days": Run Health "72 / 100", with "Down 4 · weakest: Verification"; its submenu has the five 20-point parts as bars and Open Run Health in AgentPlay. Then up to three fixes from the Run health report ("Fix the PreToolUse hook", "+3 points · Environment health"), each with what was seen, what fixing it changes and where, and Preview and Apply in AgentPlay, Open an Example Session, Copy as Text. Then up to three errors, each with its details: for a single run, the agent, project, count, reason, start and whether it passed later, and Open Replay at the Failure; for a pattern, its denominator, whether it passed later, and every run it failed in, each opening the replay at the failing step | (real data only) |
 | Many sessions | Five rows, then "Show All Sessions…" | [many](screens/state-many-light.png) |
 | Core too old / runtime missing | "Can't Read Your Sessions" and the reason | [error](screens/state-error-light.png) |
 | Last refresh failed | The last good data stays, with "Last Refresh Failed" and the reason on top | (inline) |

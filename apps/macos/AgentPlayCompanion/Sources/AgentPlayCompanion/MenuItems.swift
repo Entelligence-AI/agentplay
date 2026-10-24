@@ -14,7 +14,9 @@ enum MenuEntry: Equatable {
     case session(SessionLine)
     case usage(UsageReport)                      // hosted two-line summary
     case usageDetails(UsageReport)               // submenu: chart, 7 and 30 days, by model, by project
-    case errors([ErrorLine])                     // submenu of recent errors
+    case errors([ErrorLine])                     // each error, its details one level down
+    case health(Insights)                        // hosted: run health score and components
+    case fix(Insights.Fix)                       // a fix, its details one level down
     case action(MenuAction)
     case separator
 }
@@ -66,6 +68,9 @@ struct ErrorLine: Equatable, Identifiable {
     var patternKey: String?
     var resolved: Bool
     var isPattern: Bool
+    var alert: AlertCandidate? = nil
+    var learn: LearnCard? = nil
+    var repo: String? = nil
 }
 
 enum MenuBuilder {
@@ -102,8 +107,9 @@ enum MenuBuilder {
         }
 
         // 2. Plan limits, most constrained provider first; only agents this Mac uses.
+        // Claude always (its card carries the account and the switcher); others only with numbers to show.
         let providers = ProviderSummary.build(s.limits).filter { p in
-            s.sources.contains { $0.agent == p.provider && $0.status == .found } || !p.windows.isEmpty
+            !p.windows.isEmpty || (p.provider == "claude-code" && s.sources.contains { $0.agent == p.provider && $0.status == .found })
         }
         for p in providers {
             out.append(.provider(p))
@@ -126,20 +132,29 @@ enum MenuBuilder {
                 out.append(.message(title: "No Sessions Indexed Yet", detail: "Refresh to scan \(s.foundSources.map(\.label).joined(separator: ", "))."))
             }
         }
-        out += rest.prefix(5).map(MenuEntry.session)
+        // Four when insights follow, so the menu still fits a laptop screen.
+        out += rest.prefix(s.insights?.score != nil ? 4 : 5).map(MenuEntry.session)
         if s.store.available { out.append(.action(.showAllSessions)) }
 
-        // 4. Estimated usage: two lines here, the rest one level down.
+        // 4. Insights: run health, the fixes that would raise it, and what keeps failing, details one level down.
         let errs = errorLines(s, prefs: prefs, now: now)
+        let ins = s.insights.flatMap { $0.score == nil ? nil : $0 }
+        if ins != nil || !errs.isEmpty {
+            out.append(.separator)
+            out.append(.header("Insights · Last \(s.insights?.days ?? 30) Days"))
+            if let ins {
+                out.append(.health(ins))
+                out += ins.fixes.prefix(3).map(MenuEntry.fix)
+            }
+            if !errs.isEmpty { out.append(.errors(Array(errs.prefix(3)))) }
+        }
+
+        // 5. Estimated usage: two lines here, the rest one level down.
         if let u = s.usage, u.last30Days.requests > 0 {
             out.append(.separator)
             out.append(.header("Usage"))
             out.append(.usage(u))
             out.append(.usageDetails(u))
-            if !errs.isEmpty { out.append(.errors(errs)) }
-        } else if !errs.isEmpty {
-            out.append(.separator)
-            out.append(.errors(errs))
         }
         return out + footer()
     }
@@ -229,13 +244,13 @@ enum MenuBuilder {
                 return ErrorLine(id: a.signature, title: title, detail: d.filter { !$0.isEmpty }.joined(separator: " · "),
                                  sessionId: a.sessionId,
                                  seq: a.firstSeq ?? a.triggerSeq, patternKey: a.patternKey, resolved: a.isResolved,
-                                 isPattern: false)
+                                 isPattern: false, alert: a, repo: repo[a.sessionId] ?? nil)
             }
         if let l = s.learn, !prefs.isLearnDismissed(l.patternKey, now: now) {
             out.append(ErrorLine(id: "learn", title: "\(l.command ?? "A command") failed \(l.failures.value ?? 0)× in \(l.runs) runs",
-                                 detail: "Pattern across \(l.sessions) recent sessions · passed later in some",
+                                 detail: "A pattern across \(l.sessions) recent sessions",
                                  sessionId: l.evidence.first?.sessionId, seq: l.evidence.first?.seq,
-                                 patternKey: l.patternKey, resolved: false, isPattern: true))
+                                 patternKey: l.patternKey, resolved: false, isPattern: true, learn: l))
         }
         return out
     }

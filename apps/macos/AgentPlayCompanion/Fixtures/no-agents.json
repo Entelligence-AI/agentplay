@@ -277,6 +277,46 @@
     "claudeBlock": null,
     "timingMs": 0
   },
+  "insights": {
+    "days": 30,
+    "sessions": 0,
+    "minSessions": 10,
+    "score": null,
+    "prevScore": null,
+    "components": [
+      {
+        "key": "shipping",
+        "name": "Shipping",
+        "points": null,
+        "prevPoints": null
+      },
+      {
+        "key": "verification",
+        "name": "Verification",
+        "points": null,
+        "prevPoints": null
+      },
+      {
+        "key": "efficiency",
+        "name": "Efficiency",
+        "points": null,
+        "prevPoints": null
+      },
+      {
+        "key": "context",
+        "name": "Context hygiene",
+        "points": null,
+        "prevPoints": null
+      },
+      {
+        "key": "environment",
+        "name": "Environment health",
+        "points": null,
+        "prevPoints": null
+      }
+    ],
+    "fixes": []
+  },
   "timing": {
     "snapshotMs": 0
   },

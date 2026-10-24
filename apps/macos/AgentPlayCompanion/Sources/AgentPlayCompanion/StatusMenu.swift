@@ -255,23 +255,77 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             i.submenu = sub
             menu.addItem(i)
 
-        case .errors(let errs):
-            let i = NSMenuItem(title: "Recent Errors", action: nil, keyEquivalent: "")
-            setSubtitle(errs.count == 1 ? "1 in the last day" : "\(errs.count) in the last day", on: i)
-            i.image = symbol("exclamationmark.triangle")
-            let sub = NSMenu()
-            sub.autoenablesItems = false
-            for err in errs.prefix(8) {
-                let ei = item(err.title) { [model] in
-                    model.openViewer(sessionId: err.sessionId, seq: err.seq, errorsTab: !err.isPattern)
-                }
-                setSubtitle(err.detail, on: ei)
-                ei.image = symbol(err.isPattern ? "arrow.triangle.2.circlepath" : err.resolved ? "checkmark.circle" : "xmark.octagon")
-                ei.isEnabled = err.sessionId != nil
-                sub.addItem(ei)
+        case .health(let ins):
+            // One row; the five parts are one level down.
+            let score = Int((ins.score ?? 0).rounded())
+            let i = NSMenuItem(title: "Run Health  \(score) / 100", action: nil, keyEquivalent: "")
+            var bits: [String] = []
+            if let prev = ins.prevScore, abs((ins.score ?? 0) - prev) >= 0.5 {
+                let d = (ins.score ?? 0) - prev
+                bits.append("\(d > 0 ? "Up" : "Down") \(Format.points(abs(d)))")
             }
-            i.submenu = sub
+            let weak = ins.components.filter { ($0.points ?? 20) < 10 }.map(\.name)
+            if !weak.isEmpty { bits.append("weakest: " + weak.prefix(2).joined(separator: ", ")) }
+            setSubtitle(bits.isEmpty ? "Last \(ins.days) days" : bits.joined(separator: " · "), on: i)
+            i.image = symbol("heart.text.square")
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(HealthCard(insights: ins)))
+            m.addItem(.separator())
+            m.addItem(item("Open Run Health in AgentPlay…") { [model] in model.openInsights() })
+            i.submenu = m
             menu.addItem(i)
+
+        case .fix(let f):
+            let i = NSMenuItem(title: Plain.text(f.title), action: nil, keyEquivalent: "")
+            // One line: what it's worth and where. The pattern is one level down.
+            let sub = [f.points.map { "+\(Format.points($0)) points" }, Insights.componentName(f.component), f.repo].compactMap { $0 }
+            setSubtitle(sub.joined(separator: " · "), on: i)
+            i.image = symbol("wrench.and.screwdriver")
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(FixDetail(fix: f)))
+            m.addItem(.separator())
+            m.addItem(item(f.applicable ? "Preview and Apply in AgentPlay…" : "See It in AgentPlay…") { [model] in model.openInsights() })
+            if let first = f.evidence.first {
+                m.addItem(item("Open an Example Session") { [model] in model.openViewer(sessionId: first) })
+            }
+            m.addItem(item("Copy as Text") { [model] in
+                model.copyText("\(Plain.text(f.title))\n\(Plain.text(f.pattern))\n\(Plain.text(f.effect))")
+            })
+            i.submenu = m
+            menu.addItem(i)
+
+        case .errors(let errs):
+            for err in errs {
+                let i = NSMenuItem(title: err.title, action: nil, keyEquivalent: "")
+                setSubtitle(err.detail, on: i)
+                i.image = symbol(err.isPattern ? "arrow.triangle.2.circlepath" : err.resolved ? "checkmark.circle" : "xmark.octagon")
+                let m = NSMenu()
+                m.autoenablesItems = false
+                m.addItem(hosted(ErrorDetail(line: err, now: now)))
+                m.addItem(.separator())
+                if let l = err.learn {
+                    // Every run it failed in, straight to the failing step.
+                    for e in l.evidence.prefix(6) {
+                        let ei = item(e.repo ?? "Session") { [model] in model.openViewer(sessionId: e.sessionId, seq: e.seq, errorsTab: true) }
+                        setSubtitle("\(AgentNames.label(e.agentTool)) · \(Format.relative(e.at, now: now)) · step \(e.seq)", on: ei)
+                        ei.image = symbol("play.circle")
+                        m.addItem(ei)
+                    }
+                    m.addItem(.separator())
+                    m.addItem(item("Hide This Pattern for Two Weeks") { [model] in model.hideLearn(l.patternKey) })
+                } else {
+                    let open = item("Open Replay at the Failure") { [model] in
+                        model.openViewer(sessionId: err.sessionId, seq: err.seq, errorsTab: true)
+                    }
+                    open.isEnabled = err.sessionId != nil
+                    m.addItem(open)
+                    if let k = err.patternKey { m.addItem(item("Mute This Pattern") { [model] in model.mutePattern(k) }) }
+                }
+                i.submenu = m
+                menu.addItem(i)
+            }
 
         case .action(let a):
             let i = item(a.title, key: a.key) { [weak self] in self?.perform(a) }
@@ -497,6 +551,114 @@ struct PipHeader: View {
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 6)
         .frame(minWidth: Menu.width, maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Insights
+
+/// Strips the Markdown code ticks the health report uses around names.
+enum Plain {
+    static func text(_ s: String) -> String { s.replacingOccurrences(of: "`", with: "") }
+}
+
+/// Run health out of 100, its change from the 30 days before, and the five 20-point parts as short bars.
+struct HealthCard: View {
+    var insights: Insights
+
+    var body: some View {
+        let score = insights.score ?? 0
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Run health").font(.headline).foregroundStyle(Ink.primary)
+                Spacer()
+                Text("\(Int(score.rounded()))").font(.title3.weight(.semibold).monospacedDigit()).foregroundStyle(Ink.primary)
+                Text("/ 100").font(.subheadline).foregroundStyle(Ink.secondary)
+            }
+            if let prev = insights.prevScore {
+                let d = score - prev
+                Text(abs(d) < 0.5 ? "Same as the 30 days before" : "\(d > 0 ? "Up" : "Down") \(Format.points(abs(d))) from \(Int(prev.rounded())) the 30 days before")
+                    .font(.subheadline)
+                    .foregroundStyle(d <= -3 ? Color(nsColor: .systemOrange) : Ink.secondary)
+            }
+            ForEach(insights.components) { c in
+                HStack(spacing: 8) {
+                    Text(c.name).font(.subheadline).foregroundStyle(Ink.primary).frame(width: 118, alignment: .leading)
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color(nsColor: .quaternaryLabelColor))
+                            Capsule().fill(tint(c)).frame(width: max(3, g.size.width * min(1, (c.points ?? 0) / 20)))
+                        }
+                    }
+                    .frame(height: 4)
+                    Text(c.points.map { Format.points($0) } ?? "–").font(.subheadline.monospacedDigit())
+                        .foregroundStyle(Ink.secondary).frame(width: 30, alignment: .trailing)
+                }
+            }
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 8)
+        .frame(width: Menu.width, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Weak parts stand out: under half their 20 points is orange.
+    func tint(_ c: Insights.Component) -> Color {
+        (c.points ?? 0) < 10 ? Color(nsColor: .systemOrange) : Color(nsColor: .controlAccentColor)
+    }
+}
+
+/// A fix in full: what was seen, what fixing it changes, where, and what it's worth.
+struct FixDetail: View {
+    var fix: Insights.Fix
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(Plain.text(fix.title)).font(.headline).foregroundStyle(Ink.primary)
+            Text(Plain.text(fix.pattern)).font(.body).foregroundStyle(Ink.primary)
+            Text(Plain.text(fix.effect)).font(.body).foregroundStyle(Ink.secondary)
+            Text([fix.points.map { "+\(Format.points($0)) points" }, Insights.componentName(fix.component),
+                  fix.repo, "\(fix.sessions) session\(fix.sessions == 1 ? "" : "s")"].compactMap { $0 }.joined(separator: " · "))
+                .font(.subheadline).foregroundStyle(Ink.secondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 8)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+}
+
+/// An error in full: what failed, where, when, why, and whether it later passed.
+struct ErrorDetail: View {
+    var line: ErrorLine
+    var now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let l = line.learn {
+                Text(Plain.text(l.title)).font(.headline).foregroundStyle(Ink.primary)
+                Text(l.denominator).font(.subheadline).foregroundStyle(Ink.secondary)
+                Text(l.detail).font(.body).foregroundStyle(Ink.primary)
+                Text("The runs it failed in:").font(.subheadline).foregroundStyle(Ink.secondary)
+            } else if let a = line.alert {
+                Text(line.title).font(.headline).foregroundStyle(Ink.primary)
+                Text(rows(a).joined(separator: "\n")).font(.body).foregroundStyle(Ink.primary)
+                Text(a.isResolved ? "It passed later in the same run." : "It hasn't passed since in that run.")
+                    .font(.subheadline).foregroundStyle(a.isResolved ? Ink.secondary : Color(nsColor: .systemOrange))
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 8)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+
+    func rows(_ a: AlertCandidate) -> [String] {
+        var r = ["\(AgentNames.label(a.agentTool))" + (line.repo.map { " in \($0)" } ?? "")]
+        if let n = a.count { r.append("\(n) failures in a row") }
+        r.append("Why: \(Format.errClass(a.errClass))")
+        let first = a.firstAt ?? a.triggerAt
+        r.append("Started \(Format.clock(first)), \(Format.relative(first, now: now))")
+        return r
     }
 }
 

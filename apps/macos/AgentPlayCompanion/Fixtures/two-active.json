@@ -1014,24 +1014,28 @@
       {
         "sessionId": "local:claude-code:sample-7f3a",
         "agentTool": "claude-code",
+        "repo": "payments-api",
         "seq": 5,
         "at": "2026-10-23T10:42:48Z"
       },
       {
         "sessionId": "local:claude-code:sample-old0",
         "agentTool": "claude-code",
+        "repo": "payments-api",
         "seq": 0,
         "at": "2026-10-22T10:46:00Z"
       },
       {
         "sessionId": "local:claude-code:sample-old1",
         "agentTool": "claude-code",
+        "repo": "payments-api",
         "seq": 0,
         "at": "2026-10-21T10:46:00Z"
       },
       {
         "sessionId": "local:claude-code:sample-old2",
         "agentTool": "claude-code",
+        "repo": "payments-api",
         "seq": 0,
         "at": "2026-10-20T10:46:00Z"
       }
@@ -1345,6 +1349,46 @@
       "projectedCostUsd": 0.6574
     },
     "timingMs": 1
+  },
+  "insights": {
+    "days": 30,
+    "sessions": 5,
+    "minSessions": 10,
+    "score": null,
+    "prevScore": null,
+    "components": [
+      {
+        "key": "shipping",
+        "name": "Shipping",
+        "points": 0.0,
+        "prevPoints": null
+      },
+      {
+        "key": "verification",
+        "name": "Verification",
+        "points": 12.0,
+        "prevPoints": null
+      },
+      {
+        "key": "efficiency",
+        "name": "Efficiency",
+        "points": 0.0,
+        "prevPoints": null
+      },
+      {
+        "key": "context",
+        "name": "Context hygiene",
+        "points": 20.0,
+        "prevPoints": null
+      },
+      {
+        "key": "environment",
+        "name": "Environment health",
+        "points": 20.0,
+        "prevPoints": null
+      }
+    ],
+    "fixes": []
   },
   "timing": {
     "snapshotMs": 0

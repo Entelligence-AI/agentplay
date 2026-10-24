@@ -1970,30 +1970,35 @@
       {
         "sessionId": "local:claude-code:sample-m00",
         "agentTool": "claude-code",
+        "repo": "frontend",
         "seq": 3,
         "at": "2026-10-23T09:46:40Z"
       },
       {
         "sessionId": "local:opencode:sample-m03",
         "agentTool": "opencode",
+        "repo": "payments-api",
         "seq": 3,
         "at": "2026-10-23T03:46:40Z"
       },
       {
         "sessionId": "local:claude-code:sample-m06",
         "agentTool": "claude-code",
+        "repo": "frontend",
         "seq": 3,
         "at": "2026-10-22T21:46:40Z"
       },
       {
         "sessionId": "local:codex:sample-m09",
         "agentTool": "codex",
+        "repo": "payments-api",
         "seq": 3,
         "at": "2026-10-22T15:46:40Z"
       },
       {
         "sessionId": "local:claude-code:sample-m12",
         "agentTool": "claude-code",
+        "repo": "frontend",
         "seq": 3,
         "at": "2026-10-22T09:46:40Z"
       }
@@ -2139,6 +2144,46 @@
     ],
     "claudeBlock": null,
     "timingMs": 0
+  },
+  "insights": {
+    "days": 30,
+    "sessions": 14,
+    "minSessions": 10,
+    "score": 72.9,
+    "prevScore": null,
+    "components": [
+      {
+        "key": "shipping",
+        "name": "Shipping",
+        "points": 0.0,
+        "prevPoints": null
+      },
+      {
+        "key": "verification",
+        "name": "Verification",
+        "points": 20.0,
+        "prevPoints": null
+      },
+      {
+        "key": "efficiency",
+        "name": "Efficiency",
+        "points": 12.9,
+        "prevPoints": null
+      },
+      {
+        "key": "context",
+        "name": "Context hygiene",
+        "points": 20.0,
+        "prevPoints": null
+      },
+      {
+        "key": "environment",
+        "name": "Environment health",
+        "points": 20.0,
+        "prevPoints": null
+      }
+    ],
+    "fixes": []
   },
   "timing": {
     "snapshotMs": 0

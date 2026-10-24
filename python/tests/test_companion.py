@@ -724,3 +724,19 @@ def test_claude_limit_hits_from_refusals(tmp_path):
     assert rows[0]["resetsAt"] == companion.iso(NOW + timedelta(hours=2))
     assert "SECRET-ERROR-TEXT" not in json.dumps(rows)
     assert companion.claude_limit_hits(homes, NOW + timedelta(days=3)) == []  # both reopened
+
+
+def test_insights_report_is_cached_and_private(store, empty_homes):
+    for i in range(12):
+        _put(store, _doc(f"local:claude-code:h{i}", [LS, _llm(0)], started=NOW - timedelta(days=1, minutes=i)))
+    ins = companion.insights(store, NOW)
+    assert ins["days"] == 30 and ins["sessions"] == 12 and len(ins["components"]) == 5
+    assert {c["key"] for c in ins["components"]} == {"shipping", "verification", "efficiency", "context", "environment"}
+    assert (store.base / "cache" / "companion-insights.json").exists()
+    # Within the cache window the same report comes back without recomputing.
+    _put(store, _doc("local:claude-code:late", [LS, _llm(0)], started=NOW - timedelta(hours=1)))
+    assert companion.insights(store, NOW + timedelta(minutes=5))["sessions"] == 12
+    assert companion.insights(store, NOW + timedelta(minutes=20))["sessions"] == 13
+    raw = json.dumps(_snap(store, empty_homes)["insights"])
+    for secret in ("SECRET-TITLE", "SECRET-TASK", "SECRET-USER-DIR", "SECRET-REMOTE"):
+        assert secret not in raw

@@ -670,6 +670,7 @@ def learn_card(store: Store, rows: list[dict[str, Any]], now: datetime) -> dict[
                 fails[fam] += 1
                 if fam not in failed_here:
                     evidence[fam].append({"sessionId": r["sessionId"], "agentTool": r.get("agentTool"),
+                                          "repo": (r.get("repos") or [None])[0],
                                           "seq": e.get("seq"), "at": session_event(e, [], t0)["at"]})
                 failed_here.add(fam)
                 runs[fam].add(r["sessionId"])
@@ -835,6 +836,85 @@ def _sources(homes: discover.Homes, rows: list[dict[str, Any]], index_error: str
     return out
 
 
+INSIGHTS_DAYS = 30
+INSIGHTS_TTL_S = 900
+
+
+def _health_rows(store: Store, lo: str, hi: str) -> list[dict[str, Any]]:
+    """Root sessions dated ``lo``..``hi`` with their facts (stored, else computed from the map)."""
+    from . import facts
+
+    out = []
+    for r in store.rows():
+        day = r.get("sessionDate") or ""
+        if r.get("role") in ("subagent", "helper") or not day or day < lo or day > hi:
+            continue
+        f = r.get("facts") if r.get("factsVersion") == facts.FACTS_VERSION else None
+        if f is None:
+            doc = store.get(r["sessionId"])
+            f = facts.stamp(doc)["facts"] if doc else None
+        if f is not None:
+            out.append({**r, "facts": f})
+    return out
+
+
+def insights(store: Store, now: datetime) -> dict[str, Any] | None:
+    """Run health over the last 30 days, against the 30 before, and the fixes that would raise it.
+
+    The same report as the viewer's Run health page (``health.py``): five components and fixes that name
+    the command, tool, hook or server behind them, with their evidence sessions. Cached for 15 minutes in
+    ``<store>/cache/companion-insights.json``, since facts for an unstamped store take a second to compute.
+    """
+    from . import health
+
+    cache = store.base / "cache" / "companion-insights.json"
+    try:
+        hit = json.loads(cache.read_text(encoding="utf-8"))
+        made = _parse_iso(hit.get("generatedAt"))
+        if made and 0 <= (now - made).total_seconds() < INSIGHTS_TTL_S:
+            return hit.get("insights")
+    except (OSError, ValueError, AttributeError):
+        pass
+    day = now.astimezone().date()
+    lo = (day - timedelta(days=INSIGHTS_DAYS - 1)).isoformat()
+    plo = (day - timedelta(days=2 * INSIGHTS_DAYS - 1)).isoformat()
+    phi = (day - timedelta(days=INSIGHTS_DAYS)).isoformat()
+    rep = health.report(_health_rows(store, lo, day.isoformat()), _health_rows(store, plo, phi))
+    out = {
+        "days": INSIGHTS_DAYS,
+        "sessions": rep["sessions"],
+        "minSessions": rep["minSessions"],
+        "score": rep["score"],
+        "prevScore": rep["prevScore"],
+        "components": [{"key": c["key"], "name": c["name"], "points": c["points"], "prevPoints": c.get("prevPoints")}
+                       for c in rep["components"]],
+        "fixes": [{"id": f["id"], "rule": f["rule"], "repo": f.get("repo") or None, "subject": f.get("subject"),
+                   "component": f["component"], "title": f["title"], "pattern": f["pattern"], "effect": f["effect"],
+                   "points": f.get("points"), "sessions": len(f.get("sessions") or []),
+                   "evidence": list(f.get("sessions") or [])[:5], "applicable": bool(f.get("actions"))}
+                  for f in rep["fixes"][:6]],
+    }
+    try:
+        _atomic_write_text(cache, json.dumps({"generatedAt": iso(now), "insights": out}, separators=(",", ":")))
+    except OSError:
+        pass  # a cache that can't be written only costs speed
+    return out
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    from .store import _atomic_write
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(path, text.encode("utf-8"))
+
+
+def _insights(store: Store, now: datetime) -> dict[str, Any] | None:
+    try:
+        return insights(store, now)
+    except Exception:  # noqa: BLE001 - insights are extra; a bad map must not cost the whole snapshot
+        return None
+
+
 def _usage(store: Store, now: datetime, homes: discover.Homes) -> dict[str, Any] | None:
     from . import usage
 
@@ -928,6 +1008,7 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         "live": [{**r, "inStore": r["sessionId"] in store.index} for r in live_sessions],
         "learn": learn_card(store, by_activity, now),
         "usage": _usage(store, now, homes),
+        "insights": _insights(store, now),
         "timing": {"snapshotMs": round(1000 * (time.monotonic() - t_start))},
     }
 
