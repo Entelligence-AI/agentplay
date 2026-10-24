@@ -178,5 +178,11 @@ struct CompanionApp: App {
     // The status item and windows are AppKit (AppDelegate); SwiftUI needs one scene.
     var body: some Scene {
         Settings { EmptyView() }
+            .commands {
+                // Without this, ⌘, in our own windows opens SwiftUI's empty Settings scene.
+                CommandGroup(replacing: .appSettings) {
+                    Button("Settings…") { Windows.show(.settings) }.keyboardShortcut(",")
+                }
+            }
     }
 }

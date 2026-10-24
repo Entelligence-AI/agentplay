@@ -156,7 +156,7 @@ enum MenuBuilder {
             let run = runs[l.sessionId]
             seen.insert(l.sessionId)
             let repo = run?.repo ?? l.project
-            var d = [AgentNames.label(l.agentTool), Format.truncate(detail(run, status: l.status, since: l.statusSince, now: now), max: 30)]
+            var d = [AgentNames.label(l.agentTool), Format.truncate(detail(run, status: l.status, since: l.statusSince, now: now), max: 26)]
             out.append(SessionLine(
                 id: l.sessionId, title: Format.truncate(repo ?? "Session", max: 32),
                 detail: d.filter { !$0.isEmpty }.joined(separator: " · "),
@@ -173,7 +173,7 @@ enum MenuBuilder {
             let dot: SessionLine.Dot = r.liveStatus == .idle ? .idle : r.state == .active ? .working
                 : r.state == .recent ? .recent : .ended
             let pid = (s.live ?? []).first { $0.sessionId == r.sessionId }?.pid
-            let d = [r.agentLabel, Format.truncate(detail(r, status: r.liveStatus, since: nil, now: now), max: 30), Format.relative(r.latestAt, now: now)]
+            let d = [r.agentLabel, Format.truncate(detail(r, status: r.liveStatus, since: nil, now: now), max: 26), Format.relative(r.latestAt, now: now)]
             out.append(SessionLine(
                 id: r.sessionId, title: Format.truncate(r.repo ?? "Outside a repo", max: 32),
                 detail: d.filter { !$0.isEmpty }.joined(separator: " · "),

@@ -57,7 +57,8 @@ struct SettingsPaneView: View {
 @MainActor
 enum SettingsWindow {
     static func make(model: CompanionModel) -> NSWindow {
-        let tabs = NSTabViewController()
+        let tabs = SettingsTabs()
+        tabs.model = model
         tabs.tabStyle = .toolbar
         tabs.transitionOptions = []
         for pane in SettingsView.Pane.allCases {
@@ -75,6 +76,17 @@ enum SettingsWindow {
         w.styleMask = [.titled, .closable]
         w.toolbarStyle = .preference
         return w
+    }
+
+    /// Keeps the model's pane in step with the tab the user picked, so reopening lands there.
+    final class SettingsTabs: NSTabViewController {
+        weak var model: CompanionModel?
+        override func tabView(_ tabView: NSTabView, didSelect item: NSTabViewItem?) {
+            super.tabView(tabView, didSelect: item)
+            if let item, let i = tabView.tabViewItems.firstIndex(of: item), i < SettingsView.Pane.allCases.count {
+                MainActor.assumeIsolated { model?.settingsPane = SettingsView.Pane.allCases[i] }
+            }
+        }
     }
 
     static func select(_ pane: SettingsView.Pane, in w: NSWindow) {

@@ -114,7 +114,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(sessionItem(s))
             // Option swaps in the replay, like the system menus' alternate items.
             if s.pid != nil, s.openable {
-                let alt = item("Open Replay of \(s.title)") { [model] in model.openViewer(sessionId: s.sessionId, seq: s.seq) }
+                let alt = item("Open Replay") { [model] in model.openViewer(sessionId: s.sessionId, seq: s.seq) }
                 alt.isAlternate = true
                 alt.keyEquivalentModifierMask = [.option]
                 alt.image = dot(s.dot)
@@ -127,6 +127,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         case .usageDetails(let u):
             let i = NSMenuItem(title: "Usage Details", action: nil, keyEquivalent: "")
+            i.image = symbol("chart.bar.xaxis")
             let sub = NSMenu()
             sub.autoenablesItems = false
             sub.addItem(hosted(UsageDetail(report: u)))
@@ -486,7 +487,7 @@ enum TerminalFocus {
         var p = pid
         for _ in 0..<16 {
             if let app = NSRunningApplication(processIdentifier: p), app.activationPolicy == .regular {
-                return app.activate()
+                return app.activate(from: .current, options: [])  // cooperative activation, macOS 14
             }
             guard let parent = parent(of: p), parent > 1 else { return false }
             p = parent
