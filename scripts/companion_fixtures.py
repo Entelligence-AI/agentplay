@@ -149,6 +149,8 @@ def build(name: str, fn) -> None:
                     s["sessionCount"] = 0
         snap["sample"] = True
         snap["timing"] = {"snapshotMs": 0}
+        if snap.get("usage"):
+            snap["usage"]["timingMs"] = 0  # wall time: varies run to run
         for r in snap.get("live") or []:
             r["pid"] = None  # this script's own pid: varies per run, and a sample has no terminal to focus
         raw = json.dumps(snap, indent=2).replace(tmp, "/tmp/sample")
