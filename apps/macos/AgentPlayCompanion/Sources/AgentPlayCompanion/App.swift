@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifier.register(delegate: self)
+        MainActor.assumeIsolated { NSApp.mainMenu = Self.mainMenu() }
         MainActor.assumeIsolated {
             let m = CompanionModel(isDevBuild: LaunchOptions.isDev)
             model = m
@@ -74,6 +75,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             m.start(fixture: LaunchOptions.fixture)
             if !m.prefs.onboardingDone, LaunchOptions.fixture == nil { Windows.show(.welcome) }
         }
+    }
+
+    /// Opening the app again while it runs (Finder, Spotlight, `open`) shows nothing new: it lives in the menu bar.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { false }
+
+    /// Hidden for a menu-bar app, but its key equivalents make ⌘, ⌘W, ⌘Q and copy and paste work in our windows.
+    @MainActor static func mainMenu() -> NSMenu {
+        let main = NSMenu()
+        func sub(_ title: String, _ items: [NSMenuItem]) {
+            let host = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let m = NSMenu(title: title)
+            items.forEach(m.addItem)
+            host.submenu = m
+            main.addItem(host)
+        }
+        func std(_ title: String, _ sel: Selector, _ key: String, _ mods: NSEvent.ModifierFlags = .command) -> NSMenuItem {
+            let i = NSMenuItem(title: title, action: sel, keyEquivalent: key)
+            i.keyEquivalentModifierMask = mods
+            return i
+        }
+        sub("AgentPlay", [ClosureMenuItem(title: "Settings…", keyEquivalent: ",") { Windows.show(.settings) },
+                          .separator(), std("Quit AgentPlay", #selector(NSApplication.terminate(_:)), "q")])
+        sub("Edit", [std("Undo", Selector(("undo:")), "z"), std("Redo", Selector(("redo:")), "z", [.command, .shift]), .separator(),
+                     std("Cut", #selector(NSText.cut(_:)), "x"), std("Copy", #selector(NSText.copy(_:)), "c"),
+                     std("Paste", #selector(NSText.paste(_:)), "v"), std("Select All", #selector(NSText.selectAll(_:)), "a")])
+        sub("Window", [std("Close", #selector(NSWindow.performClose(_:)), "w"),
+                       std("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m")])
+        return main
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -147,11 +176,11 @@ enum LaunchOptions {
     static var renderDir: String? { isDev ? value("--render") : nil }
 }
 
+/// A plain AppKit app: the status item, Settings and the welcome window are all AppKit, so there is no SwiftUI
+/// scene to open by itself (a placeholder Settings scene showed up as an empty window on relaunch).
 @main
-struct CompanionApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-
-    init() {
+enum CompanionMain {
+    static func main() {
         if let dir = LaunchOptions.isDev ? LaunchOptions.value("--render-icon") : nil {
             MainActor.assumeIsolated { Renderer.renderIcon(to: dir) }
             exit(0)
@@ -174,16 +203,11 @@ struct CompanionApp: App {
             MainActor.assumeIsolated { Renderer.renderAll(to: dir) }
             exit(0)
         }
-    }
-
-    // The status item and windows are AppKit (AppDelegate); SwiftUI needs one scene.
-    var body: some Scene {
-        Settings { EmptyView() }
-            .commands {
-                // Without this, ⌘, in our own windows opens SwiftUI's empty Settings scene.
-                CommandGroup(replacing: .appSettings) {
-                    Button("Settings…") { Windows.show(.settings) }.keyboardShortcut(",")
-                }
-            }
+        MainActor.assumeIsolated {
+            let app = NSApplication.shared
+            let delegate = AppDelegate()
+            app.delegate = delegate
+            withExtendedLifetime(delegate) { app.run() }
+        }
     }
 }
