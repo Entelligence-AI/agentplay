@@ -535,6 +535,30 @@ def test_codex_code_mode_outputs_status_ok_is_not_trusted(tmp_path):
     assert [t["n"] for t in doc["tasks"]] == [1, 2]
 
 
+@pytest.mark.parametrize(
+    ("status", "output", "commits"),
+    [
+        ("OK", "Process exited with code 0\nOutput:\n", 1),
+        ("UNSET", None, 0),
+        ("OK", "Process running with session ID 7\nOutput:\n", 0),
+        ("OK", '{"output": "", "session_id": 7, "exit_code": null}', 0),
+    ],
+)
+def test_span_quiet_commit_needs_a_finished_call(tmp_path, status, output, commits):
+    repo = _repo(tmp_path, "backend", "acme/backend")
+    commit = {"tool.name": "exec_command", "cwd": str(repo)}
+    commit["input.value"] = json.dumps({"cmd": "git commit -q -m x"})
+    if output is not None:
+        commit["output.value"] = output
+    spans = [
+        _span("root", "Session", _at(0), **{"harness.agent_session_id": "c1"}),
+        _span("t1", "Turn 1", _at(0), _at(60), parent="root", **{"input.value": "ship it"}),
+        _span("a", "exec_command", _at(1), _at(2), parent="t1", status=status, **commit),
+    ]
+    doc = sm.build_map_from_spans(spans, session_id="local:codex:x", agent_tool="codex")
+    assert len(_kinds(doc, "commit")) == doc["totals"]["commits"] == commits
+
+
 def test_cursor_default_model_mcp_names_and_truncated_input(tmp_path):
     repo = _repo(tmp_path)
     spans = [
