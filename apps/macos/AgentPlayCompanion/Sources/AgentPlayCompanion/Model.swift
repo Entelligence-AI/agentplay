@@ -34,7 +34,9 @@ final class CompanionModel: ObservableObject {
     @Published var settingsPane: SettingsView.Pane = .general
     @Published private(set) var claudeBridgeOn = false
     let claudeBridge = ClaudeBridge()
-    @Published var popoverOpen = false { didSet { if popoverOpen { scheduleRefresh(reason: .popoverOpened) } } }
+    @Published var popoverOpen = false {
+        didSet { if popoverOpen { scheduleRefresh(reason: .popoverOpened); refreshAccount(force: false) } }
+    }
     @Published private(set) var notificationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var loginItemEnabled = false
     @Published var toast: String?
@@ -100,6 +102,8 @@ final class CompanionModel: ObservableObject {
             startWatching()
         }
         startLiveWatch()
+        startAccountTimer()
+        refreshAccount(force: true)
         observeSystem()
     }
 
@@ -167,12 +171,84 @@ final class CompanionModel: ObservableObject {
     }
 
     private func apply(_ s: Snapshot) {
+        var s = s
+        if accountIsFresh { s.limits = ClaudeAccount.merge(s.limits, account: accountLimits) }
         snapshot = s
         lastUpdated = Date()
         lastError = nil
         phase = .ready
         refreshLive()  // the records may be newer than the snapshot
         deliverAlerts(s)
+    }
+
+    // MARK: Claude account usage (opt-in)
+
+    @Published private(set) var accountLimits: [ProviderLimitWindow] = []
+    @Published private(set) var accountFailure: ClaudeAccount.Failure?
+    private var lastAccountFetch = Date.distantPast
+    private var accountBackoffUntil = Date.distantPast
+    private var accountTimer: Timer?
+    private var accountFetching = false
+
+    private var accountIsFresh: Bool {
+        prefs.usesClaudeAccount && !accountLimits.isEmpty && Date().timeIntervalSince(lastAccountFetch) < 15 * 60
+    }
+
+    func setClaudeAccount(_ on: Bool) {
+        prefs.claudeAccountUsage = on
+        accountTimer?.invalidate()
+        accountTimer = nil
+        if on {
+            startAccountTimer()
+            refreshAccount(force: true)
+        } else {
+            accountLimits = []
+            accountFailure = nil
+            Task { await refresh(.read) }  // put back what the snapshot says about Claude
+        }
+    }
+
+    private func startAccountTimer() {
+        guard prefs.usesClaudeAccount, accountTimer == nil else { return }
+        accountTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshAccount(force: false) }
+        }
+    }
+
+    /// At most every few minutes, never while Anthropic has asked us to wait, never for sample data.
+    func refreshAccount(force: Bool) {
+        let now = Date()
+        guard prefs.usesClaudeAccount, !isSample, !accountFetching, now >= accountBackoffUntil else { return }
+        guard force || now.timeIntervalSince(lastAccountFetch) >= 120 else { return }
+        accountFetching = true
+        let version = Self.claudeVersion()
+        Task {
+            let result = await Task.detached { await ClaudeAccount.fetch(claudeVersion: version) }.value
+            accountFetching = false
+            lastAccountFetch = Date()
+            switch result {
+            case .success(let rows):
+                accountLimits = rows
+                accountFailure = nil
+            case .failure(let f):
+                accountFailure = f
+                if case .rateLimited(let until) = f { accountBackoffUntil = until ?? Date().addingTimeInterval(600) }
+                if case .keychainDenied = f { prefs.claudeAccountUsage = false; accountTimer?.invalidate(); accountTimer = nil }
+            }
+            if var s = snapshot {
+                let base = s.limits.filter { $0.used.source != .officialProviderAPI }
+                s.limits = accountIsFresh ? ClaudeAccount.merge(base, account: accountLimits) : base
+                if s.limits != snapshot?.limits { snapshot = s }
+            }
+        }
+    }
+
+    /// Claude Code's version, from its own live records, for the request's User-Agent.
+    static func claudeVersion() -> String? {
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/sessions")
+        guard let f = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil).first(where: { $0.pathExtension == "json" }),
+              let d = try? Data(contentsOf: f), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+        return o["version"] as? String
     }
 
     // MARK: live sessions

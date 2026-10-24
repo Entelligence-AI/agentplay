@@ -42,6 +42,9 @@ Two template bars: the 5-hour window on top and the weekly window below. A dot s
 | Plan limits | Card per provider: name, plan, "Updated just now · on pace for the week", then each window as "34% · resets in 2h 18m" over a bar. Tint follows pace: accent on pace, orange ahead, red over | [menu](screens/menu-light.png) |
 | Pace warning | Orange line in the card: "Session runs out in 1h 12m at this pace", only when that comes before the reset | (no fixture is over pace) |
 | Claude limits off | Card says "Live limits are off", then "Turn On Live Limits…" | (Settings preview not in the docs: it shows your home path) |
+| Claude from an editor panel | Every live Claude session started from an editor (entrypoint `sdk-ts`): the card says "Your sessions run in Zed's agent panel, which doesn't report plan usage", and the menu offers "Show Usage from My Claude Account…" | (real data only) |
+| Claude account usage | Opt-in in Settings → Live Limits; the card fills from the account. Failures say what to do: no login, Keychain denied, login expired, Anthropic busy | (Settings → Live Limits; not in the docs, it shows your home path) |
+| Claude limit reached | Claude Code was refused for a window: that window shows full with its reset time, read from the transcript, no network | (real data only) |
 | Stale plan snapshot | Grey bar, "88% · stale, updates when Codex runs" | [stale](screens/state-stale-quota-light.png) |
 | Conflicting plan reports | "Recent sessions reported Plus and Pro. They may be different accounts." | [conflicting](screens/state-conflicting-plans-light.png) |
 | Usage | Today and Last 30 Days, cost then tokens. Costs are estimates at API list prices; unpriced models say "unpriced", never $0 | [menu](screens/menu-light.png) |

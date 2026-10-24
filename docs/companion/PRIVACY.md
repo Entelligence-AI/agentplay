@@ -4,7 +4,9 @@ AgentPlay Companion is local only. It has no account, sends nothing anywhere, an
 
 ## Network
 
-None. The app makes no requests of its own: no update check, no telemetry SDK, no remote fonts, icons or scripts (all assets are drawn in code or bundled). Every child process gets `AGENTPLAY_NO_NETWORK=1` and `DO_NOT_TRACK=1`, whatever the parent environment says (`Redaction.childEnvironmentIsMinimal`), so the viewer it opens hides the newsletter card and can't send an email. The only things that open a web page are links the user clicks (provider usage pages, "See supported agents"), and they open in the browser.
+None by default. One opt-in exception, Settings → Live Limits → "Show Claude usage from my account", off until the user turns it on: it reads the login Claude Code saved in the Keychain item "Claude Code-credentials" through `/usr/bin/security` (macOS asks once), and sends one `GET https://api.anthropic.com/api/oauth/usage` with that token, every 5 minutes and when the menu opens, backing off when Anthropic asks. It keeps only the percentages and reset times it gets back; the token is never stored, logged or renewed by AgentPlay (renewing would rotate Claude Code's own login). This exists because Claude Code started from an editor's agent panel (Zed's claude-acp, other Agent SDK hosts) has no statusline and so never reports plan usage on the Mac; it is how CodexBar and the other usage menus read it. Tests: `ClaudeAccountTests`.
+
+Otherwise the app makes no requests of its own: no update check, no telemetry SDK, no remote fonts, icons or scripts (all assets are drawn in code or bundled). Every child process gets `AGENTPLAY_NO_NETWORK=1` and `DO_NOT_TRACK=1`, whatever the parent environment says (`Redaction.childEnvironmentIsMinimal`), so the viewer it opens hides the newsletter card and can't send an email. The only things that open a web page are links the user clicks (provider usage pages, "See supported agents"), and they open in the browser.
 
 `test_snapshot_makes_no_network_calls` builds a snapshot with `socket.connect` raising.
 
@@ -21,7 +23,7 @@ None. The app makes no requests of its own: no update check, no telemetry SDK, n
 | Claude Code's live-process records, `~/.claude/sessions/<pid>.json` | Which sessions are working, idle or waiting on you. The app re-reads them the moment the folder changes, so "needs you" shows in about a second. Only `pid`, `sessionId`, `status`, the start and status times, and the folder name of `cwd` are kept; the full path, the session name and the socket path are never read in (`LiveRecordsTests.parsesAndKeepsOnlyTheFolderName`) |
 | The parent processes of a live session's `pid` | To find the terminal app a click should bring forward. Process ids only, through `sysctl` |
 
-Not requested: Full Disk Access, Accessibility, Screen Recording, Contacts, Keychain, browser data. The app is not sandboxed, so it can read the agent folders the user already owns; it uses no entitlement beyond the hardened runtime.
+Not requested: Full Disk Access, Accessibility, Screen Recording, Contacts, browser data. Keychain only with the opt-in above, for that one item. The app is not sandboxed, so it can read the agent folders the user already owns; it uses no entitlement beyond the hardened runtime.
 
 ## What it never shows, stores or sends
 

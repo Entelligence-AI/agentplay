@@ -104,7 +104,7 @@ enum MenuBuilder {
         }
         for p in providers {
             out.append(.provider(p))
-            if p.windows.isEmpty, p.provider == "claude-code", !bridgeOn { out.append(.enableLimits(provider: p.provider)) }
+            if p.windows.isEmpty, p.provider == "claude-code" { out.append(.enableLimits(provider: p.provider)) }
         }
         if !providers.isEmpty { out.append(.separator) }
 

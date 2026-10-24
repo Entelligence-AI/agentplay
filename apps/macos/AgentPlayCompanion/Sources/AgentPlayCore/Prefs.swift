@@ -13,6 +13,9 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
     public var dismissedLearn: [String: Date] = [:]
     /// Extra transcript folders the user chose, by agent (passed as `AGENTPLAY_<AGENT>_HOMES`).
     public var customFolders: [String: [String]] = [:]
+    /// Opt-in Claude usage from the user's Claude account (ClaudeAccount). Optional so older saved prefs decode.
+    public var claudeAccountUsage: Bool? = nil
+    public var usesClaudeAccount: Bool { claudeAccountUsage == true }
 
     public init(now: Date = Date()) { history = AlertHistory(watermark: now) }
 

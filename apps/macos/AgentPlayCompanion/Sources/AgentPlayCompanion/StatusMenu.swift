@@ -102,12 +102,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(hosted(ProviderCard(provider: p.provider, fallback: p, model: model, now: now)))
 
         case .enableLimits:
-            guard model.claudeEditorOnly == nil else { return }  // the card already says why it can't help
-            let i = item("Turn On Live Limits…") { [model] in
+            guard !model.prefs.usesClaudeAccount else { return }  // the card says what's wrong with it
+            let editor = model.claudeEditorOnly != nil
+            guard editor || !model.claudeBridgeOn else { return }  // bridge on, a terminal reply will fill it
+            let i = item(editor ? "Show Usage from My Claude Account…" : "Turn On Live Limits…") { [model] in
                 model.settingsPane = .claude
                 Windows.show(.settings)
             }
-            setSubtitle("Show Claude's 5-hour and weekly usage", on: i)
+            setSubtitle(editor ? "Your 5-hour and weekly usage, as claude.ai shows it" : "Show Claude's 5-hour and weekly usage", on: i)
             i.image = symbol("gauge.with.dots.needle.33percent")
             menu.addItem(i)
 
@@ -312,6 +314,9 @@ struct ProviderCard: View {
 
     func status(_ p: ProviderSummary) -> String {
         if p.windows.isEmpty {
+            if p.provider == "claude-code", model.prefs.usesClaudeAccount {
+                return model.accountFailure?.message ?? "Asking your Claude account…"
+            }
             if p.provider == "claude-code", let editor = model.claudeEditorOnly {
                 // The statusline is the only local report of plan usage, and editor panels don't have one.
                 return "Your sessions run in \(editor)'s agent panel, which doesn't report plan usage. "

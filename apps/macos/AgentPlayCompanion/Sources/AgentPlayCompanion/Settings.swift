@@ -326,8 +326,23 @@ struct LiveLimitsPane: View {
     @State private var error: String?
 
     var body: some View {
-        Section {
-            LabeledContent("Claude Code") {
+        Section("From your Claude account") {
+            Toggle(isOn: Binding(get: { model.prefs.usesClaudeAccount }, set: { model.setClaudeAccount($0) })) {
+                Text("Show Claude usage from my account")
+                Text("Works however you run Claude Code, editor agent panels included.")
+            }
+            Text("Reads the login Claude Code saved in your Keychain (macOS asks once; choose Always Allow) and asks api.anthropic.com for your 5-hour and weekly usage, the numbers claude.ai shows. Every 5 minutes while AgentPlay runs, and when you open the menu. Nothing else is sent, and the login is never stored or renewed by AgentPlay.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if model.prefs.usesClaudeAccount {
+                if let f = model.accountFailure {
+                    Text(f.message).foregroundStyle(.red)
+                } else if let w = model.accountLimits.first(where: { $0.window == "five_hour" }), let v = w.used.value {
+                    LabeledContent("Now", value: "Session \(Format.percent(v.usedPercent)) used")
+                }
+            }
+        }
+        Section("From Claude Code's status line") {
+            LabeledContent("Terminal Claude Code") {
                 Text(model.claudeBridgeOn ? "On" : "Off").foregroundStyle(model.claudeBridgeOn ? .green : .secondary)
             }
             Text("Claude Code sends your 5-hour and weekly usage, and each session's context, to its status line (documented by Anthropic for Pro and Max). Turning this on points that status line at a small script that saves the report in ~/.agentplay/live and then runs your previous status line, so it looks the same.")
