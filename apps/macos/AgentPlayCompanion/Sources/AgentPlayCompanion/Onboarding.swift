@@ -65,7 +65,7 @@ struct OnboardingView: View {
             if let s = model.snapshot, !scanning {
                 Form {
                     ForEach(s.sources.filter { $0.status != .notFound }) { src in
-                        LabeledContent(src.label, value: src.status == .found ? "\(src.sessionCount) sessions" : "Can't read")
+                        LabeledContent(src.label, value: src.status == .found ? "\(src.sessionCount) session\(src.sessionCount == 1 ? "" : "s")" : "Can't read")
                     }
                     if s.foundSources.isEmpty { Text("No agents found yet").foregroundStyle(.secondary) }
                 }
@@ -73,7 +73,7 @@ struct OnboardingView: View {
             } else {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    if case .scanning(let n?) = model.phase { Text("\(n) sessions so far").foregroundStyle(.secondary) }
+                    if case .scanning(let n?) = model.phase { Text("\(n) session\(n == 1 ? "" : "s") so far").foregroundStyle(.secondary) }
                     Button("Cancel") { model.cancelScan(); scanning = false }
                 }
             }
@@ -99,6 +99,11 @@ struct OnboardingView: View {
             Form {
                 Toggle("Show session % next to the icon", isOn: $model.prefs.showActivityInMenuBar)
                 Toggle("Launch at login", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
+                Toggle(isOn: Binding(get: { model.prefs.alerts.enabled.contains(.needsYou) },
+                                     set: { model.setPreset(.needsYou, on: $0) })) {
+                    Text("Notify me when a session needs me")
+                    Text("Skipped when its terminal is already in front.")
+                }
                 Toggle("Notify me when a command fails 3 times", isOn: Binding(
                     get: { model.prefs.alerts.enabled.contains(.repeatedFailure) },
                     set: { model.setPreset(.repeatedFailure, on: $0) }))

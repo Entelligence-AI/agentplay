@@ -18,7 +18,7 @@ Order follows attention:
 
 | Input | Does |
 |---|---|
-| Click a session | Brings its terminal app forward (Terminal, iTerm, Ghostty, VS Code, Cursor), found by walking up from the agent's process. Opens the replay when there is no terminal app to find: an ended run, tmux, ssh |
+| Click a session | Brings its terminal app forward (the tooltip names it) (Terminal, iTerm, Ghostty, VS Code, Cursor), found by walking up from the agent's process. Opens the replay when there is no terminal app to find: an ended run, tmux, ssh |
 | Option-click a session | Opens its replay instead |
 | Usage Details › | Submenu: 14-day chart, 7 and 30 days, by model, by project |
 | Recent Errors › | Submenu: each error or pattern; click opens the replay at that step |
@@ -35,7 +35,8 @@ Two template bars: the 5-hour window on top and the weekly window below. A dot s
 | Scanning | "Finding Your Sessions…", count indexed so far | [scanning](screens/state-scanning-light.png) |
 | No agents found | "No Agents Found", "Start Claude Code or Codex, then reopen." | [no agents](screens/state-no-agents-light.png) |
 | Agents found, nothing indexed | "No Sessions Indexed Yet", "Refresh to scan Claude Code, Codex." | (same view) |
-| Needs you | "Needs You" section first, orange dot, "Claude Code · Waiting 40s", and a dot on the icon | [menu](screens/menu-light.png) |
+| Needs you | "Needs You" section first, orange dot, "Claude Code · Waiting 40s", and a dot on the icon. Read straight from Claude Code's live records when they change, so it shows in about a second rather than at the next scan | [menu](screens/menu-light.png) |
+| Needs you, notification | Opt-in ("Session needs you", offered in onboarding). "Claude Code needs you", with the project only if repo names are allowed. Not sent when the session's terminal is in front; cleared once the session moves on. Click brings the terminal forward; Mute This Session silences that session | (system banner) |
 | Working | Accent dot, what it did last, context % when known | [menu](screens/menu-light.png) |
 | Idle or ended | Grey dot (idle process) or hollow dot (no process) and how long ago | [idle](screens/state-detected-idle-light.png) |
 | Plan limits | Card per provider: name, plan, "Updated just now · on pace for the week", then each window as "34% · resets in 2h 18m" over a bar. Tint follows pace: accent on pace, orange ahead, red over | [menu](screens/menu-light.png) |

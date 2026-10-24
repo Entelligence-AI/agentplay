@@ -126,7 +126,7 @@ struct SourcesPane: View {
                         HStack {
                             Text(src.label)
                             Spacer()
-                            Text(src.status == .found ? "\(src.sessionCount) sessions" : src.status == .error ? "Can't read" : "Not found")
+                            Text(src.status == .found ? "\(src.sessionCount) session\(src.sessionCount == 1 ? "" : "s")" : src.status == .error ? "Can't read" : "Not found")
                                 .foregroundStyle(src.status == .error ? .red : .secondary)
                             Button("Add folder…") { model.chooseFolder(for: src.agent) }
                         }

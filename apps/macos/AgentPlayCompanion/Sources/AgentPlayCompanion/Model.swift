@@ -35,9 +35,6 @@ final class CompanionModel: ObservableObject {
     @Published private(set) var claudeBridgeOn = false
     let claudeBridge = ClaudeBridge()
     @Published var popoverOpen = false { didSet { if popoverOpen { scheduleRefresh(reason: .popoverOpened) } } }
-    /// True briefly after new recorded events arrive for an active run: drives the two-frame menu-bar pulse.
-    @Published private(set) var heartbeat = false
-    @Published private(set) var justCompleted: Set<String> = []
     @Published private(set) var notificationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var loginItemEnabled = false
     @Published var toast: String?
@@ -56,9 +53,6 @@ final class CompanionModel: ObservableObject {
     private var lastRefreshStarted = Date.distantPast
     private var refreshQueued = false
     private var lastRefreshDuration: TimeInterval = 0
-    private var lastEventSeen: [String: Date] = [:]
-    private var lastStates: [String: ActivityState] = [:]
-    private var heartbeatTask: Task<Void, Never>?
     private var sampleMode = false
     private var started = false
 
@@ -104,6 +98,7 @@ final class CompanionModel: ObservableObject {
             Task { await refresh(.read); await refresh(.refresh) }
             startWatching()
         }
+        startLiveWatch()
         observeSystem()
     }
 
@@ -171,41 +166,68 @@ final class CompanionModel: ObservableObject {
     }
 
     private func apply(_ s: Snapshot) {
-        let now = Date()
-        // Recorded activity heartbeat: only when an active run gained events since the last look.
-        var fresh = false
-        for r in s.runs {
-            if let at = r.latestAt, r.state == .active {
-                if let prev = lastEventSeen[r.sessionId], at > prev { fresh = true }
-                lastEventSeen[r.sessionId] = at
-            }
-            // A run that was active and now is not: one quiet flourish on its replay button.
-            if lastStates[r.sessionId] == .active, r.state != .active {
-                justCompleted.insert(r.sessionId)
-                let id = r.sessionId
-                Task { try? await Task.sleep(for: .seconds(4)); await MainActor.run { _ = self.justCompleted.remove(id) } }
-            }
-            lastStates[r.sessionId] = r.state
-        }
         snapshot = s
-        lastUpdated = now
+        lastUpdated = Date()
         lastError = nil
         phase = .ready
-        if fresh { beat() }
+        refreshLive()  // the records may be newer than the snapshot
         deliverAlerts(s)
     }
 
-    private func beat() {
-        heartbeatTask?.cancel()
-        heartbeatTask = Task {
-            // A few low-frequency frames, then stop. No constant bouncing.
-            for _ in 0..<3 {
-                heartbeat = true
-                try? await Task.sleep(for: .milliseconds(700))
-                heartbeat = false
-                try? await Task.sleep(for: .milliseconds(900))
-            }
+    // MARK: live sessions
+
+    private var sessionsWatcher: FileWatcher?
+    /// The live list as last shown; nil until the first look, so a session already waiting at launch isn't news.
+    private var lastLive: [LiveSession]?
+    private var claudeSessionsDir: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/sessions")
+    }
+
+    /// Claude Code rewrites `~/.claude/sessions/<pid>.json` when a session starts or stops waiting. Watching that
+    /// folder alone, with a short latency, is what makes "needs you" arrive in about a second.
+    private func startLiveWatch() {
+        let dir = claudeSessionsDir
+        guard FileManager.default.fileExists(atPath: dir.path) else { return }
+        sessionsWatcher = FileWatcher(paths: [dir.path], latency: 0.3) { [weak self] in
+            Task { @MainActor in self?.refreshLive() }
         }
+        sessionsWatcher?.start()
+    }
+
+    func refreshLive() {
+        guard var s = snapshot, !isSample else { return }
+        let merged = LiveRecords.merge(snapshot: s.live, records: LiveRecords.read(dir: claudeSessionsDir))
+        let news = LiveRecords.newlyWaiting(before: lastLive, after: merged)
+        let stillWaiting = Set(merged.filter { $0.status == .waiting }.map(\.sessionId))
+        for old in lastLive ?? [] where old.status == .waiting && !stillWaiting.contains(old.sessionId) {
+            Notifier.clearNeedsYou(sessionId: old.sessionId)  // answered: the banner shouldn't linger
+        }
+        lastLive = merged
+        if merged != (s.live ?? []) {
+            s.live = merged
+            snapshot = s
+        }
+        notifyNeedsYou(news)
+    }
+
+    private func notifyNeedsYou(_ sessions: [LiveSession]) {
+        let a = prefs.alerts
+        guard a.enabled.contains(.needsYou), !sessions.isEmpty else { return }
+        let now = Date()
+        if let until = a.snoozeUntil, until > now { return }
+        if let q = a.quietHours, q.contains(now, timeZone: .current) { return }
+        if Self.isPresenting() { return }
+        for l in sessions where !a.mutedSessions.contains(l.sessionId) {
+            // Already looking at it: its terminal is the frontmost app.
+            if let pid = l.pid, let app = TerminalFocus.app(for: pid), app.isActive { continue }
+            Notifier.postNeedsYou(l, includeRepo: a.includeRepoInNotifications)
+        }
+    }
+
+    /// From a notification or a menu row: the session's terminal if there is one, else its replay.
+    func goToSession(sessionId: String, pid: Int32?, seq: Int?) {
+        if let pid, TerminalFocus.bringForward(pid: pid) { return }
+        openViewer(sessionId: sessionId, seq: seq)
     }
 
     func loadSample(named name: String = "two-active") {
@@ -220,7 +242,6 @@ final class CompanionModel: ObservableObject {
         snapshot = rebased
         lastUpdated = Date()
         phase = .ready
-        for r in rebased.runs { lastStates[r.sessionId] = r.state }
     }
 
     func installSampleForRender(_ s: Snapshot) {
@@ -313,7 +334,7 @@ final class CompanionModel: ObservableObject {
         let ws = NSWorkspace.shared.notificationCenter
         ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             // After sleep, file times say nothing about what is running now: re-check processes at once.
-            Task { @MainActor in self?.lastEventSeen = [:]; self?.scheduleRefresh(reason: .wake) }
+            Task { @MainActor in self?.scheduleRefresh(reason: .wake) }
         }
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.debounce?.cancel(); self?.refreshQueued = false }
@@ -357,46 +378,15 @@ final class CompanionModel: ObservableObject {
         }
     }
 
-    func replayLink(for run: RunActivity) async -> URL? {
-        guard let viewer, let base = try? await viewer.ensure() else { return nil }
-        return ViewerLink.url(base: base, sessionId: run.sessionId, seq: run.lastEvent?.seq)
-    }
-
-    func copySummary(_ run: RunActivity) {
-        copy(Redacted.runSummary(run, now: Date()))
-        toast = "Copied a redacted summary"
-    }
-
-    func copyLink(_ run: RunActivity) {
-        Task {
-            guard let url = await replayLink(for: run) else { toast = "Couldn't start the local viewer."; return }
-            copy(url.absoluteString)
-            toast = "Copied. The link works on this Mac only, while AgentPlay is open."
-        }
-    }
-
-    private func copy(_ s: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(s, forType: .string)
-        playClick()
-    }
-
     func muteRun(_ id: String) {
         prefs.alerts.mutedSessions.insert(id)
-        toast = "Alerts muted for this run"
+        toast = "Alerts muted for this session"
     }
 
     func mutePattern(_ key: String) {
         prefs.alerts.mutedPatterns.insert(key)
         toast = "Muted. Unmute in Settings → Notifications."
     }
-
-    func togglePin(_ id: String) {
-        if let i = prefs.pinnedSessions.firstIndex(of: id) { prefs.pinnedSessions.remove(at: i) }
-        else { prefs.pinnedSessions.insert(id, at: 0); prefs.pinnedSessions = Array(prefs.pinnedSessions.prefix(5)) }
-    }
-
-    func dismissLearn(_ key: String) { prefs.dismissedLearn[key] = Date() }
 
     func snooze(_ seconds: TimeInterval?) {
         if let seconds { prefs.alerts.snoozeUntil = Date().addingTimeInterval(seconds) }
@@ -468,8 +458,10 @@ final class CompanionModel: ObservableObject {
         return ids.contains { CGDisplayMirrorsDisplay($0) != kCGNullDirectDisplay || CGDisplayIsInMirrorSet($0) != 0 }
     }
 
-    func handleNotificationTap(sessionId: String?, seq: Int?, action: String, patternKey: String?) {
+    func handleNotificationTap(sessionId: String?, seq: Int?, action: String, patternKey: String?, pid: Int32? = nil) {
         if action == Notifier.muteAction, let patternKey { mutePattern(patternKey); return }
+        if action == Notifier.muteSessionAction, let sessionId { muteRun(sessionId); return }
+        if let sessionId, pid != nil { goToSession(sessionId: sessionId, pid: pid, seq: seq); return }
         openViewer(sessionId: sessionId, seq: seq)
     }
 
@@ -551,47 +543,6 @@ final class CompanionModel: ObservableObject {
     }
 
     var hasWaiting: Bool { snapshot?.live?.contains { $0.status == .waiting } == true }
-
-    // MARK: derived
-
-    /// Runs in display order: pinned first, then by latest activity.
-    var orderedRuns: [RunActivity] {
-        guard let runs = snapshot?.runs else { return [] }
-        let pinned = prefs.pinnedSessions
-        return runs.sorted { a, b in
-            let pa = pinned.firstIndex(of: a.sessionId), pb = pinned.firstIndex(of: b.sessionId)
-            if let pa, let pb { return pa < pb }
-            if pa != nil { return true }
-            if pb != nil { return false }
-            return (a.latestAt ?? .distantPast) > (b.latestAt ?? .distantPast)
-        }
-    }
-
-    var worthALook: AlertCandidate? {
-        guard let s = snapshot else { return nil }
-        let recent = Date().addingTimeInterval(-24 * 3600)
-        return s.alerts
-            .filter { !prefs.alerts.mutedPatterns.contains($0.patternKey) && !prefs.alerts.mutedSessions.contains($0.sessionId) }
-            .filter { ($0.triggerAt ?? .distantPast) > recent }
-            .sorted { ($0.isResolved ? 1 : 0, -( $0.triggerAt?.timeIntervalSince1970 ?? 0)) < ($1.isResolved ? 1 : 0, -($1.triggerAt?.timeIntervalSince1970 ?? 0)) }
-            .first
-    }
-
-    var learnCard: LearnCard? {
-        guard let l = snapshot?.learn, !prefs.isLearnDismissed(l.patternKey, now: Date()) else { return nil }
-        return l
-    }
-
-    /// The one value the menu bar may show next to the mark, when the user allows it.
-    var menuBarText: String? {
-        guard prefs.showActivityInMenuBar, let s = snapshot, !isSample else { return nil }
-        let unresolved = s.alerts.filter { !$0.isResolved && $0.rule == .repeatedFailure
-            && ($0.triggerAt ?? .distantPast) > Date().addingTimeInterval(-3600)
-            && !prefs.alerts.mutedPatterns.contains($0.patternKey) }.count
-        if unresolved > 0 { return unresolved == 1 ? "1 needs a look" : "\(unresolved) need a look" }
-        let working = (s.live ?? []).filter { $0.status == .busy }.count
-        return working > 0 ? "\(working) working" : nil
-    }
 
     func run(_ id: String) -> RunActivity? { snapshot?.runs.first { $0.sessionId == id } }
 }

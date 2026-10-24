@@ -51,7 +51,16 @@ enum Renderer {
             shots.append(("submenu-usage-details", AnyView(UsageDetail(report: u))))
         }
         for step in 1...5 {
-            shots.append(("onboarding-\(step)", AnyView(OnboardingView(step: step).environmentObject(fixtureModel("two-active")))))
+            let view = AnyView(OnboardingView(step: step).environmentObject(fixtureModel("two-active")))
+            for dark in [false, true] {
+                // As the real welcome window: its background, title bar and all.
+                NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                let w = NSWindow(contentViewController: NSHostingController(rootView: view))
+                w.styleMask = [.titled, .closable, .fullSizeContentView]
+                w.titleVisibility = .hidden
+                w.titlebarAppearsTransparent = true
+                captureWindow(w, to: dir.appendingPathComponent("onboarding-\(step)-\(dark ? "dark" : "light").png"))
+            }
         }
         for (name, view) in shots {
             let isMenu = name.hasPrefix("submenu")
@@ -65,16 +74,8 @@ enum Renderer {
             m.settingsPane = pane
             for dark in [false, true] {
                 NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-                let w = SettingsWindow.make(model: m)
-                w.setFrameOrigin(NSPoint(x: -10000, y: -10000))
-                w.orderFrontRegardless()
-                RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-                if let v = w.contentView?.superview, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
-                    v.cacheDisplay(in: v.bounds, to: rep)
-                    let name = "settings-\(pane.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))-\(dark ? "dark" : "light").png"
-                    try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent(name))
-                }
-                w.orderOut(nil)
+                let name = "settings-\(pane.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))-\(dark ? "dark" : "light").png"
+                captureWindow(SettingsWindow.make(model: m), to: dir.appendingPathComponent(name))
             }
         }
         NSApp.appearance = nil
@@ -121,8 +122,21 @@ enum Renderer {
         NSStatusBar.system.removeStatusItem(controller.statusItem)
     }
 
+    /// A real window, offscreen, captured with its frame (title bar, toolbar, background).
+    static func captureWindow(_ w: NSWindow, to url: URL) {
+        w.setFrameOrigin(NSPoint(x: -10000, y: -10000))
+        w.orderFrontRegardless()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        if let v = w.contentView?.superview, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+            v.cacheDisplay(in: v.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: url)
+        }
+        w.orderOut(nil)
+    }
+
     static func write(_ view: AnyView, to url: URL, dark: Bool, material: Bool) {
         let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        NSApp.appearance = appearance  // the menu captures leave the app in whichever mode they drew last
         let hosting = NSHostingView(rootView: view)
         hosting.appearance = appearance
         let size = hosting.fittingSize

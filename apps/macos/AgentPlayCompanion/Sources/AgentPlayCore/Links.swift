@@ -156,6 +156,15 @@ public enum Redacted {
         public var body: String
     }
 
+    /// "docs-site needs you" only when the user allows repo names in notifications.
+    public static func needsYou(_ l: LiveSession, includeRepo: Bool) -> Note {
+        let agent = AgentNames.label(l.agentTool)
+        if includeRepo, let p = l.project {
+            return Note(title: "\(Format.truncate(p, max: 32)) needs you", body: "\(agent) is waiting for your input.")
+        }
+        return Note(title: "\(agent) needs you", body: "A session is waiting for your input.")
+    }
+
     public static func notification(for a: AlertCandidate, repo: String?, includeRepo: Bool) -> Note {
         let agent = AgentNames.label(a.agentTool)
         let place = includeRepo && repo != nil ? " in \(Format.truncate(repo, max: 24))" : ""

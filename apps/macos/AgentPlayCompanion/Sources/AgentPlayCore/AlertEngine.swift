@@ -2,11 +2,12 @@ import Foundation
 
 /// Alert presets. All off by default; the user turns each on in Settings.
 public enum AlertPreset: String, Codable, Sendable, CaseIterable, Identifiable {
-    case repeatedFailure, contextNearFull, allowanceLow, longRunningTool, unresolvedEnd, recurringPattern
+    case needsYou, repeatedFailure, contextNearFull, allowanceLow, longRunningTool, unresolvedEnd, recurringPattern
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
+        case .needsYou: "Session needs you"
         case .repeatedFailure: "Repeated failure"
         case .contextNearFull: "Context near full"
         case .allowanceLow: "Allowance running low"
@@ -18,6 +19,7 @@ public enum AlertPreset: String, Codable, Sendable, CaseIterable, Identifiable {
 
     public var detail: String {
         switch self {
+        case .needsYou: "A Claude Code session is waiting for your input or permission. Not sent when its terminal is already in front."
         case .repeatedFailure: "The same command failed three times in a row in one run, with no pass in between."
         case .contextNearFull: "Only where the agent reports its context window (Codex today). Claude Code records tokens but no limit."
         case .allowanceLow: "Only where the provider itself reported plan usage with a reset time (Codex session files). Never estimated from tokens."
@@ -180,6 +182,8 @@ public enum AlertEngine {
             return s.limits.first { "plan|\($0.provider)|\($0.window)" == p.patternKey }?.used.observedAt
         case .recurringPattern:
             return s.learn?.failures.observedAt
+        case .needsYou:
+            return nil  // sent by the app the moment a live record changes, not from snapshots
         }
     }
 

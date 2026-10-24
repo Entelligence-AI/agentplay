@@ -17,6 +17,8 @@ None. The app makes no requests of its own: no update check, no telemetry SDK, n
 | Repo folders those sessions worked in | The builder checks paths and git settings to tell which repo a file belongs to. For repos under Documents, Desktop or Downloads, macOS asks once |
 | The tail of Codex transcripts | Only the numeric `token_count` record: context window and plan windows |
 | `lsof` output for recent transcripts | Which agent processes are live |
+| Claude Code's live-process records, `~/.claude/sessions/<pid>.json` | Which sessions are working, idle or waiting on you. The app re-reads them the moment the folder changes, so "needs you" shows in about a second. Only `pid`, `sessionId`, `status`, the start and status times, and the folder name of `cwd` are kept; the full path, the session name and the socket path are never read in (`LiveRecordsTests.parsesAndKeepsOnlyTheFolderName`) |
+| The parent processes of a live session's `pid` | To find the terminal app a click should bring forward. Process ids only, through `sysctl` |
 
 Not requested: Full Disk Access, Accessibility, Screen Recording, Contacts, Keychain, browser data. The app is not sandboxed, so it can read the agent folders the user already owns; it uses no entitlement beyond the hardened runtime.
 
@@ -36,7 +38,7 @@ What the popover does show is what the viewer shows from the same maps: agent, r
 
 ## Notifications
 
-Off by default. macOS is asked for permission only when the user switches on an alert. A notification carries the agent, the command family and a count, for example "pnpm test failed 3 times in a row." Repo names only if the user turns that on. The payload holds the session id and event `seq` so a click can open the moment; nothing else. History records alert ids and times only; Settings → Notifications → Forget alert history clears it, and the watermark moves forward so nothing old fires afterwards.
+Off by default. macOS is asked for permission only when the user switches on an alert. A notification carries the agent, the command family and a count, for example "pnpm test failed 3 times in a row." "Session needs you" says "Claude Code needs you" and is skipped when that session's terminal is already the frontmost app. Repo names, in either, only if the user turns that on (`needsYouNamesTheProjectOnlyWhenAllowed`). The payload holds the session id and event `seq` so a click can open the moment; nothing else. History records alert ids and times only; Settings → Notifications → Forget alert history clears it, and the watermark moves forward so nothing old fires afterwards.
 
 ## What it writes
 

@@ -22,6 +22,11 @@ enum SelfTest {
             report["alerts"] = s.alerts.count
             report["sources"] = s.foundSources.map(\.agent)
             report["contextKinds"] = Array(Set(s.runs.map { $0.context.kind.rawValue })).sorted()
+            // Live records read directly (the fast path), and the app a click on each would bring forward.
+            let live = LiveRecords.read(dir: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/sessions"))
+            report["liveRecords"] = live.map { l in
+                "\(l.status.rawValue) → \(l.pid.flatMap { TerminalFocus.app(for: $0)?.localizedName } ?? "no app (tmux, ssh or ended)")"
+            }
             report["planKinds"] = s.limits.map { "\($0.provider):\($0.window):\($0.used.kind.rawValue):\($0.used.freshness.rawValue)" }
             let viewer = ViewerManager(runtime: rt)
             let v0 = Date()

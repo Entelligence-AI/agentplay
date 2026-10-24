@@ -168,9 +168,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             if s.openable { model.openViewer(sessionId: s.sessionId, seq: s.seq) }
             else { model.toast = "Its replay appears after the next refresh." }
         }
+        if let pid = s.pid, let app = TerminalFocus.app(for: pid)?.localizedName {
+            i.toolTip = "Click to go to \(app). Option-click for the replay."
+        }
         i.image = dot(s.dot)
         setSubtitle(s.detail, on: i)
-        i.toolTip = s.pid != nil ? "Click to go to its terminal. Option-click for the replay." : "Click to open the replay."
+        if i.toolTip == nil { i.toolTip = s.pid != nil ? "Option-click for the replay." : "Click to open the replay." }
         i.setAccessibilityLabel("\(s.title), \(dotLabel(s.dot))")
         return i
     }
@@ -484,15 +487,18 @@ struct UsageDetail: View {
 enum TerminalFocus {
     @MainActor
     static func bringForward(pid: Int32) -> Bool {
+        guard let app = app(for: pid) else { return false }
+        return app.activate(from: .current, options: [])  // cooperative activation, macOS 14
+    }
+
+    static func app(for pid: Int32) -> NSRunningApplication? {
         var p = pid
         for _ in 0..<16 {
-            if let app = NSRunningApplication(processIdentifier: p), app.activationPolicy == .regular {
-                return app.activate(from: .current, options: [])  // cooperative activation, macOS 14
-            }
-            guard let parent = parent(of: p), parent > 1 else { return false }
+            if let app = NSRunningApplication(processIdentifier: p), app.activationPolicy == .regular { return app }
+            guard let parent = parent(of: p), parent > 1 else { return nil }
             p = parent
         }
-        return false
+        return nil
     }
 
     static func parent(of pid: Int32) -> Int32? {

@@ -86,8 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let sid = info["sessionId"] as? String
         let seq = info["seq"] as? Int
         let key = info["patternKey"] as? String
+        let pid = (info["pid"] as? Int).map { Int32(truncatingIfNeeded: $0) }
         let action = response.actionIdentifier
-        await MainActor.run { model?.handleNotificationTap(sessionId: sid, seq: seq, action: action, patternKey: key) }
+        await MainActor.run { model?.handleNotificationTap(sessionId: sid, seq: seq, action: action, patternKey: key, pid: pid) }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async

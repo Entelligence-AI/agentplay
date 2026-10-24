@@ -10,8 +10,11 @@ final class FileWatcher: @unchecked Sendable {
     private let onChange: @Sendable () -> Void
     private let queue = DispatchQueue(label: "ai.entelligence.agentplay.companion.fsevents", qos: .utility)
 
-    init(paths: [String], onChange: @escaping @Sendable () -> Void) {
+    private let latency: CFTimeInterval
+
+    init(paths: [String], latency: CFTimeInterval = 2.0, onChange: @escaping @Sendable () -> Void) {
         self.paths = paths
+        self.latency = latency
         self.onChange = onChange
     }
 
@@ -24,7 +27,7 @@ final class FileWatcher: @unchecked Sendable {
             Unmanaged<FileWatcher>.fromOpaque(info).takeUnretainedValue().onChange()
         }
         guard let s = FSEventStreamCreate(nil, cb, &ctx, paths as CFArray,
-                                          FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 2.0,
+                                          FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency,
                                           FSEventStreamCreateFlags(kFSEventStreamCreateFlagNoDefer)) else { return }
         FSEventStreamSetDispatchQueue(s, queue)
         FSEventStreamStart(s)
@@ -59,7 +62,11 @@ enum Notifier {
             identifier: category,
             actions: [UNNotificationAction(identifier: openAction, title: "See sequence", options: [.foreground]),
                       UNNotificationAction(identifier: muteAction, title: "Mute this pattern", options: [])],
-            intentIdentifiers: [])])
+            intentIdentifiers: []),
+            UNNotificationCategory(
+                identifier: needsYouCategory,
+                actions: [UNNotificationAction(identifier: muteSessionAction, title: "Mute This Session", options: [])],
+                intentIdentifiers: [])])
     }
 
     static func status() async -> UNAuthorizationStatus {
@@ -86,6 +93,38 @@ enum Notifier {
         content.userInfo = info
         let req = UNNotificationRequest(identifier: a.id, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
+    }
+
+    static let needsYouThread = "needsYou"
+    static let needsYouCategory = "agentplay.needsYou"
+    static let muteSessionAction = "agentplay.muteSession"
+
+    /// The agent, and the project only if the user allows repo names; nothing from the conversation.
+    static func postNeedsYou(_ l: LiveSession, includeRepo: Bool) {
+        guard available else { return }
+        let note = Redacted.needsYou(l, includeRepo: includeRepo)
+        let content = UNMutableNotificationContent()
+        content.title = note.title
+        content.body = note.body
+        content.threadIdentifier = needsYouThread
+        content.categoryIdentifier = needsYouCategory
+        content.sound = .default
+        var info: [String: Any] = ["sessionId": l.sessionId, "kind": "needsYou"]
+        if let pid = l.pid { info["pid"] = Int(pid) }
+        content.userInfo = info
+        let id = "needs|\(l.sessionId)|\(Int(l.statusSince?.timeIntervalSince1970 ?? Date().timeIntervalSince1970))"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+
+    static func clearNeedsYou(sessionId: String) {
+        guard available else { return }
+        let c = UNUserNotificationCenter.current()
+        c.getDeliveredNotifications { delivered in
+            let ids = delivered.map(\.request).filter {
+                $0.content.threadIdentifier == needsYouThread && ($0.content.userInfo["sessionId"] as? String) == sessionId
+            }.map(\.identifier)
+            if !ids.isEmpty { c.removeDeliveredNotifications(withIdentifiers: ids) }
+        }
     }
 
     static func clearDelivered() {
