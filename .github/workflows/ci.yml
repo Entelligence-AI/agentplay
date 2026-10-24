@@ -54,6 +54,22 @@ jobs:
       - run: pnpm run build
         working-directory: viewer
 
+  companion:
+    # The macOS companion (apps/macos/AgentPlayCompanion): its fixtures come from the Python core and must
+    # not drift, and its Swift core has its own tests. The CLI jobs above already run test_companion.py.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e "python[dev]"
+      - run: python scripts/companion_fixtures.py && git diff --exit-code -- apps/macos/AgentPlayCompanion/Fixtures
+      - run: swift test
+        working-directory: apps/macos/AgentPlayCompanion
+
   hygiene:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
+	<key>CFBundleDisplayName</key><string>AgentPlay Companion</string>
+	<key>CFBundleExecutable</key><string>AgentPlayCompanion</string>
+	<key>CFBundleIconFile</key><string>AppIcon</string>
+	<key>CFBundleIdentifier</key><string>ai.entelligence.agentplay.companion</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleName</key><string>AgentPlay Companion</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>__VERSION__</string>
+	<key>CFBundleVersion</key><string>__BUILD__</string>
+	<key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+	<key>LSMinimumSystemVersion</key><string>14.0</string>
+	<!-- Menu-bar only: no Dock icon, no main menu. -->
+	<key>LSUIElement</key><true/>
+	<key>NSHumanReadableCopyright</key><string>Copyright 2026 Entelligence AI. Apache-2.0.</string>
+	<key>NSSupportsAutomaticTermination</key><false/>
+</dict>
+</plist>

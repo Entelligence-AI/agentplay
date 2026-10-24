@@ -48,8 +48,11 @@ AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "openco
           "antigravity-cli")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
-# applies anyway; this keeps one pathological file from stalling a run).
-MAX_SOURCE_BYTES = 512 * 1024 * 1024
+# applies anyway; this keeps one pathological file from stalling a run). The size
+# counts a session's subagent transcripts too, and long agent-heavy sessions pass
+# 512 MB. The reader streams, so one just past that builds in about 10 s with a small
+# memory peak. Past the cap a map stops updating, so it is set well above real sessions.
+MAX_SOURCE_BYTES = 4 * 1024 * 1024 * 1024
 
 
 def _homes_from_env(var: str, defaults: Iterable[str | Path]) -> list[Path]:

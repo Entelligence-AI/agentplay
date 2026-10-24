@@ -325,6 +325,12 @@ def cmd_agents(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_companion(args: argparse.Namespace) -> int:
+    from . import companion
+
+    return companion.main(args)
+
+
 # --------------------------------------------------------------------------- parser
 def _health_fixes(st: Store, days: int = 30) -> list[dict]:
     from . import autotune, health
@@ -535,6 +541,27 @@ def parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("agents", parents=[common], help="show which agents were found on this machine")
     a.set_defaults(fn=cmd_agents)
+
+    c = sub.add_parser("companion", parents=[common], help="read-only data for the macOS companion app")
+    csub = c.add_subparsers(dest="companion_cmd", required=True)
+    snap = csub.add_parser("snapshot", help="print one JSON snapshot (no prompt text, paths or arguments)")
+    snap.add_argument("--json", action="store_true", help="JSON output (the only format)")
+    snap.add_argument("--pretty", action="store_true")
+    snap.add_argument("--refresh", action="store_true", help="build recently changed sessions first")
+    snap.add_argument("--agents", help="with --refresh: only these agents (comma-separated)")
+    snap.add_argument("--refresh-days", type=int, default=2,
+                      help="with --refresh: sessions changed in the last N days (0: every session)")
+    snap.add_argument("--max-runs", type=int)
+    snap.set_defaults(fn=cmd_companion)
+    cfx = csub.add_parser("fix", help="preview, apply or undo a Run health fix (JSON)")
+    cfx.add_argument("action", choices=["preview", "apply", "undo"])
+    cfx.add_argument("id", help="fix id (preview, apply) or journal entry id (undo)")
+    cfx.add_argument("--grant", action="store_true", help="with apply: allow writes to the fix's repo first")
+    cfx.set_defaults(fn=cmd_companion)
+    cat = csub.add_parser("autotune", help="approve or dismiss a change Autotune is holding (JSON)")
+    cat.add_argument("action", choices=["approve", "dismiss"])
+    cat.add_argument("id", help="fix id")
+    cat.set_defaults(fn=cmd_companion)
 
     fx = sub.add_parser("fix", parents=[common], help="list, apply or undo Run health fixes")
     fx.add_argument("action", choices=["list", "apply", "undo"])
