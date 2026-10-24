@@ -51,7 +51,190 @@
      "state": "open"
     }
    ],
-   "file": "claude-code-rate-limit.json"
+   "file": "claude-code-rate-limit.json",
+   "facts": {
+    "outcome": "pr_created",
+    "edited": true,
+    "prsCreated": 1,
+    "prsMerged": 0,
+    "costUsd": 1.9251,
+    "hasCost": true,
+    "tokens": {
+     "in": 44660,
+     "cw": 178648,
+     "cr": 1005692,
+     "out": 10680
+    },
+    "costByModel": {
+     "claude-opus-4-5": 1.78135,
+     "claude-haiku-4-5": 0.02666,
+     "claude-sonnet-4-5": 0.11706
+    },
+    "calls": 26,
+    "errors": 2,
+    "retries": 1,
+    "cmd": {
+     "npm test": {
+      "calls": 2,
+      "fails": 1,
+      "retries": 1,
+      "byClass": {
+       "exit_code": 1
+      },
+      "verify": true,
+      "outBytes": 0
+     },
+     "tsc": {
+      "calls": 1,
+      "fails": 0,
+      "retries": 0,
+      "byClass": {},
+      "verify": false,
+      "outBytes": 0
+     },
+     "git status": {
+      "calls": 1,
+      "fails": 0,
+      "retries": 0,
+      "byClass": {},
+      "verify": false,
+      "outBytes": 0
+     },
+     "git diff": {
+      "calls": 1,
+      "fails": 0,
+      "retries": 0,
+      "byClass": {},
+      "verify": false,
+      "outBytes": 0
+     },
+     "git commit": {
+      "calls": 1,
+      "fails": 0,
+      "retries": 0,
+      "byClass": {},
+      "verify": false,
+      "outBytes": 0
+     },
+     "git push": {
+      "calls": 1,
+      "fails": 0,
+      "retries": 0,
+      "byClass": {},
+      "verify": false,
+      "outBytes": 0
+     },
+     "gh pr_create": {
+      "calls": 1,
+      "fails": 0,
+      "retries": 0,
+      "byClass": {},
+      "verify": false,
+      "outBytes": 0
+     }
+    },
+    "errorsByClass": {
+     "exit_code": 1,
+     "overloaded": 1
+    },
+    "errorsBySource": {
+     "tool": {
+      "exit_code": 1
+     },
+     "llm": {
+      "overloaded": 1
+     }
+    },
+    "files": {
+     "acme/api:README.md": {
+      "hits": 0,
+      "reads": 1,
+      "edits": 0
+     },
+     "acme/api:src/middleware/index.ts": {
+      "hits": 1,
+      "reads": 1,
+      "edits": 1
+     },
+     "acme/api:src/middleware/auth.ts": {
+      "hits": 1,
+      "reads": 1,
+      "edits": 0
+     },
+     "acme/api:src/server.ts": {
+      "hits": 1,
+      "reads": 1,
+      "edits": 0
+     },
+     "acme/api:src/config/env.ts": {
+      "hits": 0,
+      "reads": 1,
+      "edits": 1
+     },
+     "acme/api:src/routes/orders.ts": {
+      "hits": 0,
+      "reads": 1,
+      "edits": 1
+     },
+     "acme/api:package.json": {
+      "hits": 0,
+      "reads": 1,
+      "edits": 0
+     },
+     "acme/api:src/middleware/rateLimit.ts": {
+      "hits": 0,
+      "reads": 1,
+      "edits": 2
+     },
+     "acme/api:test/rateLimit.test.ts": {
+      "hits": 0,
+      "reads": 0,
+      "edits": 1
+     },
+     "acme/api:docs/rate-limits.md": {
+      "hits": 0,
+      "reads": 0,
+      "edits": 1
+     }
+    },
+    "compactions": 1,
+    "preTokens": [
+     168400
+    ],
+    "maxContext": 161000,
+    "rereadsAfterCompaction": 0,
+    "verifyAfterLastEdit": false,
+    "waste": {
+     "retry": 0.34456,
+     "abandoned": 0.0,
+     "cacheMiss": 0.154807,
+     "reread": 0.0,
+     "deadSubagent": 0.0
+    },
+    "stallMs": 0,
+    "firstPromptChars": 1180,
+    "userTurns": 3,
+    "mcp": {
+     "docs": {
+      "calls": 1,
+      "fails": 0
+     }
+    },
+    "hookFails": {},
+    "subagents": {
+     "Explore": {
+      "launches": 1,
+      "noResult": 0
+     }
+    },
+    "explore": 4,
+    "act": 15,
+    "editedFiles": 6,
+    "blindEdits": 2,
+    "reworkEdits": 0,
+    "stepsToFirstEdit": 5
+   },
+   "factsVersion": 6
   },
   {
    "sessionId": "local:codex:0199a3b2-demo-4f0c-8e55-000000000002",
@@ -93,7 +276,120 @@
     "commit": 1
    },
    "prs": [],
-   "file": "codex-flaky-test.json"
+   "file": "codex-flaky-test.json",
+   "facts": {
+    "outcome": "verified",
+    "edited": true,
+    "prsCreated": 0,
+    "prsMerged": 0,
+    "costUsd": 0.0851,
+    "hasCost": true,
+    "tokens": {
+     "in": 9136,
+     "cw": 36540,
+     "cr": 264324,
+     "out": 4060
+    },
+    "costByModel": {
+     "gpt-5-codex": 0.08508
+    },
+    "calls": 12,
+    "errors": 2,
+    "retries": 1,
+    "cmd": {
+     "pnpm vitest": {
+      "calls": 2,
+      "fails": 1,
+      "retries": 1,
+      "byClass": {
+       "exit_code": 1
+      },
+      "verify": true,
+      "outBytes": 0
+     },
+     "pnpm": {
+      "calls": 1,
+      "fails": 1,
+      "retries": 0,
+      "byClass": {
+       "exit_code": 1
+      },
+      "verify": false,
+      "outBytes": 0
+     },
+     "pnpm lint": {
+      "calls": 1,
+      "fails": 0,
+      "retries": 0,
+      "byClass": {},
+      "verify": true,
+      "outBytes": 0
+     },
+     "git commit": {
+      "calls": 1,
+      "fails": 0,
+      "retries": 0,
+      "byClass": {},
+      "verify": false,
+      "outBytes": 0
+     }
+    },
+    "errorsByClass": {
+     "exit_code": 2
+    },
+    "errorsBySource": {
+     "tool": {
+      "exit_code": 2
+     }
+    },
+    "files": {
+     "acme/web:src/lib/formatDate.ts": {
+      "hits": 1,
+      "reads": 1,
+      "edits": 1
+     },
+     "acme/web:src/lib/formatDate.test.ts": {
+      "hits": 1,
+      "reads": 1,
+      "edits": 1
+     },
+     "acme/web:src/components/OrderRow.tsx": {
+      "hits": 1,
+      "reads": 0,
+      "edits": 0
+     },
+     "acme/ui-kit:src/date/index.ts": {
+      "hits": 0,
+      "reads": 1,
+      "edits": 0
+     }
+    },
+    "compactions": 0,
+    "preTokens": [],
+    "maxContext": 38000,
+    "rereadsAfterCompaction": 0,
+    "verifyAfterLastEdit": true,
+    "waste": {
+     "retry": 0.02233,
+     "abandoned": 0.0,
+     "cacheMiss": 0.006602,
+     "reread": 0.0,
+     "deadSubagent": 0.0
+    },
+    "stallMs": 0,
+    "firstPromptChars": 640,
+    "userTurns": 2,
+    "mcp": {},
+    "hookFails": {},
+    "subagents": {},
+    "explore": 4,
+    "act": 7,
+    "editedFiles": 2,
+    "blindEdits": 0,
+    "reworkEdits": 0,
+    "stepsToFirstEdit": 7
+   },
+   "factsVersion": 6
   },
   {
    "sessionId": "local:cursor:c1d2e3f4-demo-4a5b-9c8d-000000000003",
@@ -130,7 +426,67 @@
    "tasks": 1,
    "outputs": {},
    "prs": [],
-   "file": "cursor-copy-tweak.json"
+   "file": "cursor-copy-tweak.json",
+   "facts": {
+    "outcome": "completed",
+    "edited": true,
+    "prsCreated": 0,
+    "prsMerged": 0,
+    "costUsd": 0.0,
+    "hasCost": false,
+    "tokens": {
+     "in": 0,
+     "cw": 0,
+     "cr": 0,
+     "out": 0
+    },
+    "costByModel": {
+     "cursor-auto": 0.0
+    },
+    "calls": 4,
+    "errors": 0,
+    "retries": 0,
+    "cmd": {},
+    "errorsByClass": {},
+    "errorsBySource": {},
+    "files": {
+     "acme/web:src/pages/cart.tsx": {
+      "hits": 1,
+      "reads": 0,
+      "edits": 1
+     },
+     "acme/web:src/i18n/en.json": {
+      "hits": 1,
+      "reads": 1,
+      "edits": 1
+     }
+    },
+    "compactions": 0,
+    "preTokens": [],
+    "maxContext": 0,
+    "rereadsAfterCompaction": 0,
+    "verifyAfterLastEdit": false,
+    "waste": {
+     "retry": 0.0,
+     "abandoned": 0.0,
+     "cacheMiss": 0.0,
+     "reread": 0.0,
+     "deadSubagent": 0.0
+    },
+    "stallMs": 0,
+    "firstPromptChars": 180,
+    "userTurns": 1,
+    "mcp": {},
+    "hookFails": {},
+    "subagents": {},
+    "explore": 2,
+    "act": 2,
+    "editedFiles": 2,
+    "blindEdits": 1,
+    "reworkEdits": 0,
+    "stepsToFirstEdit": 2
+   },
+   "factsVersion": 6
   }
  ]
 }

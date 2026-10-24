@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentplay"
-version = "0.2.3"
+version = "0.2.4"
 description = "Replay your coding-agent sessions (Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro) as a map and a timeline. Local only."
 readme = "README.md"
 license = "Apache-2.0"

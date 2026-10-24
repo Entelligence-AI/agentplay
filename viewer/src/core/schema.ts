@@ -97,6 +97,25 @@ export const sessionExplorerSessionSchema = z
       )
       .optional()
       .catch(undefined),
+    // Present when the list was searched and this session matched on what it
+    // touched (files, commands, MCP servers...), not only on its title.
+    search: z
+      .object({
+        count: z.number().default(0),
+        seqs: z.array(z.number()).default([]),
+        chips: z
+          .array(
+            z.object({
+              label: z.string(),
+              touch: z.string(),
+              seq: z.number().nullable().default(null),
+              n: z.number().default(1),
+            })
+          )
+          .default([]),
+      })
+      .optional()
+      .catch(undefined),
   })
   .passthrough();
 export type SessionExplorerSession = z.infer<
@@ -109,6 +128,13 @@ export const sessionExplorerSessionsSchema = z
     sessions: z.array(sessionExplorerSessionSchema).default([]),
     nextCursor: z.string().nullable().default(null),
     hasMore: z.boolean().default(false),
+    // Set when a search named command arguments, which are never stored, and
+    // the results are for the command alone.
+    searchNote: z
+      .object({ code: z.string(), command: z.string().optional() })
+      .nullable()
+      .optional()
+      .catch(undefined),
   })
   .passthrough();
 export type SessionExplorerSessionsPage = z.infer<

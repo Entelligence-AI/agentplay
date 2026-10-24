@@ -52,6 +52,10 @@ interface Props {
   header?: ReactNode;
   /** extra controls under the search (the window range select) */
   toolbar?: ReactNode;
+  /** open a session at one event (a search match chip) */
+  onJump?: (sessionId: string, seq: number) => void;
+  /** a note about the search itself, under the box */
+  searchNote?: ReactNode;
 }
 
 /**
@@ -81,6 +85,8 @@ export function SessionList({
   unavailable,
   header,
   toolbar,
+  onJump,
+  searchNote,
 }: Props) {
   const [tool, setTool] = useState<string>('all');
   const main = sessions.filter(isMainSession);
@@ -131,11 +137,12 @@ export function SessionList({
         <Input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
-          placeholder="Filter by title or repo"
-          aria-label="Filter sessions"
+          placeholder="Search titles, files, commands, MCP…"
+          aria-label="Search sessions"
           className="h-8 pl-8"
         />
       </div>
+      {searchNote}
       {toolbar}
       {tools.length > 1 ? (
         <ToolFilter tools={tools} tool={tool} onTool={setTool} />
@@ -170,6 +177,7 @@ export function SessionList({
                 rowRef={s.sessionId === selectedId ? selectedRef : undefined}
                 onSelect={() => onSelect(s.sessionId)}
                 onOpen={() => onOpen(s.sessionId)}
+                onJump={onJump ? (seq) => onJump(s.sessionId, seq) : undefined}
               />
             ))}
           </div>
@@ -240,6 +248,7 @@ function SessionRow({
   unavailable,
   onSelect,
   onOpen,
+  onJump,
   rowRef,
 }: {
   s: SessionExplorerSession;
@@ -247,6 +256,7 @@ function SessionRow({
   unavailable: boolean;
   onSelect: () => void;
   onOpen: () => void;
+  onJump?: (seq: number) => void;
   rowRef?: React.Ref<HTMLDivElement>;
 }) {
   return (
@@ -275,6 +285,9 @@ function SessionRow({
         </span>
         <SessionRowBadges s={s} unavailable={unavailable} />
       </button>
+      {s.search && onJump ? (
+        <SearchMatches key={s.search.seqs.join(',')} search={s.search} selected={selected} onJump={onJump} />
+      ) : null}
       {/* Always there for the selected row -- you just clicked it, so that
        * is where the next step belongs. Quiet on the rest until pointed at
        * or tabbed to, so a long list does not grow a button per row. */}
@@ -339,5 +352,65 @@ function SessionRowBadges({
         <Badge variant="secondary">map not available</Badge>
       ) : null}
     </span>
+  );
+}
+
+const TOUCH_DOT: Record<string, string> = {
+  hit: 'bg-ds-gray-subtler',
+  read: 'bg-ds-brand-subtler',
+  edit: 'bg-ds-brand-default',
+  fail: 'bg-ds-danger-default',
+};
+
+/**
+ * What a searched session matched on, as chips that open it at that event,
+ * and on the selected row a stepper through every matching event. Callers
+ * key it on the match list so the stepper restarts when the matches change.
+ */
+function SearchMatches({
+  search,
+  selected,
+  onJump,
+}: {
+  search: NonNullable<SessionExplorerSession['search']>;
+  selected: boolean;
+  onJump: (seq: number) => void;
+}) {
+  const [i, setI] = useState(0);
+  const seqs = search.seqs;
+  const go = (next: number) => {
+    const k = (next + seqs.length) % seqs.length;
+    setI(k);
+    onJump(seqs[k]);
+  };
+  return (
+    <div className="flex flex-col gap-1.5 px-2 pb-2">
+      <div className="flex flex-wrap gap-1">
+        {search.chips.map((c) => (
+          <button
+            key={`${c.label}:${c.touch}`}
+            type="button"
+            disabled={c.seq == null}
+            onClick={() => c.seq != null && onJump(c.seq)}
+            aria-label={c.seq != null ? `${c.label}: open at that event` : c.label}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ds-border-subtlest bg-ds-surface-white px-2 py-0.5 ds-text-body-xs-medium text-ds-text-default hover:border-ds-brand-subtler disabled:cursor-default"
+          >
+            <span aria-hidden className={cn('size-2 rounded-full', TOUCH_DOT[c.touch] ?? TOUCH_DOT.hit)} />
+            {c.label}
+          </button>
+        ))}
+      </div>
+      {selected && seqs.length > 1 ? (
+        <div className="flex items-center gap-1 ds-text-body-xs-medium text-ds-text-subtle">
+          <Button variant="ghost" size="iconSm" className="size-6" aria-label="Previous match" onClick={() => go(i - 1)}>
+            ‹
+          </Button>
+          Match {i + 1} of {seqs.length}
+          <Button variant="ghost" size="iconSm" className="size-6" aria-label="Next match" onClick={() => go(i + 1)}>
+            ›
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

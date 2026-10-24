@@ -1,4 +1,4 @@
-"""Local filesystem source — walks ~/.claude / ~/.codex / Copilot dirs.
+"""Local filesystem source — walks ~/.claude / ~/.codex / ~/.gemini / Copilot dirs.
 
 Indexes JSONL session files under per-agent homes, detects the agent
 from the file head, and emits the universal `SpanData` shape via the
@@ -24,6 +24,11 @@ from agentplay._core.ingestion.coding_agent._sources._base import (
     MAX_SESSION_BYTES,
     OversizedSessionError,
 )
+from agentplay.discover import MAX_SOURCE_BYTES
+from agentplay._core.ingestion.coding_agent._sources.local.antigravity_index import (
+    TRANSCRIPT_GLOB as ANTIGRAVITY_TRANSCRIPT_GLOB,
+    index_antigravity_home,
+)
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
@@ -33,8 +38,13 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_copilot_vscode,
     parse_cursor_agent_transcript,
     parse_cursor_store,
+    parse_antigravity,
+    parse_gemini,
     parse_kiro,
     parse_opencode,
+)
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.gemini import (
+    _user_prompt as _gemini_user_prompt,
 )
 from agentplay._core.ingestion.coding_agent.spans import DiscoveredSession, SpanData
 
@@ -1117,6 +1127,76 @@ def _copilot_vscode_json_session_id(head: bytes) -> tuple[str | None, bool]:
     return session_id, isinstance(requests, list) and len(requests) > 0
 
 
+def _gemini_header(head: bytes) -> dict | None:
+    """The Gemini CLI session header: the first record with `sessionId` and no `type`."""
+    for line in head.split(b"\n"):
+        try:
+            obj = json.loads(line)
+        except ValueError:  # blank, truncated, or split mid-character
+            continue
+        if isinstance(obj, dict) and "type" not in obj and isinstance(obj.get("sessionId"), str):
+            return obj
+    return None
+
+
+def _gemini_has_messages(path: Path) -> bool:
+    """True when the file holds a real prompt or a `gemini` message.
+
+    Streams one line at a time and stops at the first qualifying record, so a
+    prompt that sits past `_read_head` is still found. Reads at most
+    ``MAX_SOURCE_BYTES``. A file of only the header or user content
+    ``_user_prompt`` rejects is skipped at EOF. A ``RecursionError`` from a
+    deeply nested record skips that line instead of aborting the index.
+    """
+    remaining = MAX_SOURCE_BYTES
+    with path.open("rb") as handle:
+        while remaining > 0:
+            line = handle.readline(remaining)
+            if not line:
+                break
+            remaining -= len(line)
+            # `readline(n)` also returns this when the file ends on a full
+            # record with no trailing newline, exactly at the cap. Parse it;
+            # only a cut that is not JSON is truncated.
+            at_cap = remaining == 0 and not line.endswith(b"\n")
+            try:
+                obj = json.loads(line)
+            except (ValueError, RecursionError):
+                if at_cap:
+                    break
+                continue
+            if not isinstance(obj, dict):
+                continue
+            kind = obj.get("type")
+            if kind == "gemini" or (
+                kind == "user" and _gemini_user_prompt(obj.get("content")) is not None
+            ):
+                return True
+    return False
+
+
+def _cwd_from_gemini_project(jsonl_file: Path, header: dict | None) -> str | None:
+    """The project root of a Gemini CLI session.
+
+    The transcript stores only `projectHash` (sha256 of the project root). The
+    CLI writes the root itself to `.project_root` in the project folder
+    (`<home>/tmp/<slug>/.project_root`, two levels above `chats/<file>`).
+    When the header carries a hash, the root must hash to it, so a stale or
+    copied `.project_root` can't name the wrong project.
+    """
+    try:
+        root = (jsonl_file.parent.parent / ".project_root").read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not root:
+        return None
+    expected = (header or {}).get("projectHash")
+    if isinstance(expected, str) and expected:
+        if hashlib.sha256(root.encode("utf-8")).hexdigest() != expected:
+            return None
+    return root
+
+
 def _project_from_cwd(cwd: str) -> str | None:
     """Project name from the transcript's cwd.
 
@@ -1243,6 +1323,8 @@ class LocalSource:
         kiro_homes: list[Path] | None = None,
         copilot_homes: list[Path] | None = None,
         copilot_vscode_homes: list[Path] | None = None,
+        gemini_homes: list[Path] | None = None,
+        antigravity_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1274,6 +1356,13 @@ class LocalSource:
         # `globalStorage/emptyWindowChatSessions/`), so this also gets the
         # whole-home rglob treatment, over both `.jsonl` and `.json`.
         self.copilot_vscode_homes = copilot_vscode_homes or []
+        # Gemini CLI writes a real per-session JSONL itself:
+        # `<home>/tmp/<project-slug>/chats/session-*.jsonl`. The session id
+        # comes from the header's `sessionId`, the cwd from the project
+        # folder's `.project_root` (see `_cwd_from_gemini_project`).
+        self.gemini_homes = gemini_homes or []
+        # Antigravity CLI step logs; discovery lives in antigravity_index.py.
+        self.antigravity_homes = antigravity_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1297,6 +1386,8 @@ class LocalSource:
             *self.kiro_homes,
             *self.copilot_homes,
             *self.copilot_vscode_homes,
+            *self.gemini_homes,
+            *self.antigravity_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1501,6 +1592,24 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Gemini CLI: `<home>/tmp/<project-slug>/chats/session-*.jsonl`.
+        # `detect_agent` sniffs the header, so a stray `.jsonl` is skipped.
+        for home in self.gemini_homes:
+            tmp_dir = home / "tmp"
+            if not tmp_dir.is_dir():
+                logger.debug("Skipping non-existent path: %s", tmp_dir)
+                continue
+            for jsonl_file in tmp_dir.glob("*/chats/session-*.jsonl"):
+                ref = self._index_gemini_file(jsonl_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+
+        # Antigravity CLI: only `<home>/brain/` is walked (see antigravity_index.py).
+        for home in self.antigravity_homes:
+            transcripts = home.glob(ANTIGRAVITY_TRANSCRIPT_GLOB)
+            for sid, fields in index_antigravity_home(home, transcripts, self._record_discovery):
+                _index_put(index, sid, _FileRef(**fields), newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1512,7 +1621,9 @@ class LocalSource:
             + len(self.cursor_store_homes)
             + len(self.kiro_homes)
             + len(self.copilot_homes)
-            + len(self.copilot_vscode_homes),
+            + len(self.copilot_vscode_homes)
+            + len(self.gemini_homes)
+            + len(self.antigravity_homes),
         )
         return index
 
@@ -1817,6 +1928,74 @@ class LocalSource:
         project_name = _project_from_cwd(cwd) if cwd else None
 
         self._record_discovery("kiro", "indexed")
+        return session_id, _FileRef(
+            path=jsonl_file,
+            agent=agent,
+            mtime=mtime,
+            project_name=project_name,
+            cwd=cwd,
+            home=home,
+        )
+
+    def _index_gemini_file(
+        self,
+        jsonl_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Gemini CLI session JSONL."""
+        if not jsonl_file.is_file():
+            # See _index_cc_file's identical guard: a directory/broken symlink
+            # is never tallied, only a genuinely empty real file is.
+            return None
+        size = jsonl_file.stat().st_size
+        if size == 0:
+            self._record_discovery("gemini-cli", "empty_or_unreadable")
+            return None
+        # `build_map` refuses the same cap with SkipSession("too_large"). Skip
+        # here, before any read, so discovery does not allocate the file.
+        if size > MAX_SOURCE_BYTES:
+            logger.debug("gemini-cli: %s exceeds the source byte cap; session skipped", jsonl_file)
+            self._record_discovery("gemini-cli", "too_large")
+            return None
+        try:
+            head = _read_head(jsonl_file, stop_when=_agent_detected)
+        except OSError:
+            self._record_discovery("gemini-cli", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            logger.warning(
+                "agent detection failed for %s (%d bytes); session skipped",
+                jsonl_file,
+                size,
+            )
+            self._record_discovery("gemini-cli", "detection_failed")
+            return None
+        if agent != AgentType.GEMINI_CLI:
+            self._record_discovery("gemini-cli", "different_agent")
+            return None
+
+        try:
+            has_messages = _gemini_has_messages(jsonl_file)
+        except OSError:
+            self._record_discovery("gemini-cli", "empty_or_unreadable")
+            return None
+        if not has_messages:
+            logger.debug("gemini-cli: %s has no messages; session skipped", jsonl_file)
+            self._record_discovery("gemini-cli", "empty_events")
+            return None
+
+        header = _gemini_header(head)
+        native_id = (header or {}).get("sessionId") or jsonl_file.stem
+        session_id = f"local:{agent}:{native_id}"
+        mtime = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=UTC)
+
+        cwd = _cwd_from_gemini_project(jsonl_file, header)
+        project_name = _project_from_cwd(cwd) if cwd else None
+
+        self._record_discovery("gemini-cli", "indexed")
         return session_id, _FileRef(
             path=jsonl_file,
             agent=agent,
@@ -2237,6 +2416,8 @@ class LocalSource:
             AgentType.OPENCODE: parse_opencode,
             AgentType.CURSOR: parse_cursor_store,
             AgentType.KIRO: parse_kiro,
+            AgentType.GEMINI_CLI: parse_gemini,
+            AgentType.ANTIGRAVITY_CLI: parse_antigravity,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label
@@ -2255,10 +2436,20 @@ class LocalSource:
             user_id=user_id,
             project_name=ref.project_name,
         )
+        if ref.agent in (AgentType.GEMINI_CLI, AgentType.ANTIGRAVITY_CLI) and ref.cwd:
+            # Gemini CLI's transcript records no cwd; the indexer read the
+            # project root from `.project_root`. Every call ran there.
+            # Antigravity CLI's cwd comes from `conversation_summaries.db`.
+            for span in spans:
+                if span.parent_id is not None and not span.attributes.get("cwd"):
+                    span.attributes["cwd"] = ref.cwd
         branch, branches = self._branch_history[session_id]
         root = next((span for span in spans if span.parent_id is None), None)
         if root is not None:
             root.attributes.update({"git.branch": branch, "git.branches": branches})
+            if ref.parent_session_id:  # a subagent stored as its own conversation (Antigravity CLI)
+                root.attributes["harness.session_role"] = "subagent"
+                root.attributes["harness.parent_session_id"] = ref.parent_session_id
             # A cloud-run session stores selected-repository metadata in a sidecar
             # beside the unmodified transcript, whose remote cwd may be absent.
             repo = metadata.get("repo_name") if isinstance(metadata, dict) else None
@@ -2360,7 +2551,7 @@ class LocalSource:
 class _FileRef:
     """Internal pointer: session_id → file path + index-time metadata."""
 
-    __slots__ = ("agent", "branch", "cwd", "home", "mtime", "path", "project_name", "subformat")
+    __slots__ = ("agent", "branch", "cwd", "home", "mtime", "parent_session_id", "path", "project_name", "subformat")
 
     def __init__(
         self,
@@ -2372,6 +2563,7 @@ class _FileRef:
         branch: str | None = None,
         home: Path | None = None,
         subformat: str | None = None,
+        parent_session_id: str | None = None,
     ):
         self.path = path
         self.agent = agent
@@ -2392,6 +2584,8 @@ class _FileRef:
         # The home dir under which this file was discovered — used to
         # look up the manifest identity for that home.
         self.home = home
+        # Session id of the conversation that spawned this one (Antigravity CLI subagents).
+        self.parent_session_id = parent_session_id
 
 
 __all__ = ["LocalSource", "ManifestIdentity"]

@@ -224,8 +224,58 @@ _COPILOT_VSCODE: dict[str, str] = {
     "runSubagent": "Task",
 }
 
+# Gemini CLI's built-in tool names. `read_file`, `replace`, `write_file` and
+# `run_shell_command` were seen in real Gemini CLI 0.65 sessions; the rest are
+# the `*_TOOL_NAME` constants in the same release's bundle. `replace` is an
+# in-place old_string/new_string edit and `write_file` writes the whole file,
+# the same Edit/Write split as Copilot's `edit` vs `create`. Meta tools
+# (`update_topic`, `ask_user`, `enter_plan_mode`, `tracker_*`, `activate_skill`,
+# ...) and MCP tools (`mcp_<server>_<tool>`) pass through unaliased.
+_GEMINI_CLI: dict[str, str] = {
+    "run_shell_command": "Bash",
+    "read_file": "Read",
+    "read_many_files": "Read",
+    "replace": "Edit",
+    "write_file": "Write",
+    "grep_search": "Grep",
+    "glob": "Glob",
+    "list_directory": "ListDir",
+    "web_fetch": "WebFetch",
+    "google_web_search": "WebSearch",
+    "write_todos": "TodoWrite",
+    "invoke_agent": "Task",
+}
+
+# Antigravity CLI (`agy`) built-in tool names. `read_file`, `view_file`,
+# `write_file`, `edit_file`, `run_command` and `invoke_subagent` were seen in
+# real agy 1.4.6 sessions (`view_file` in a subagent); `edit_file` is an
+# in-place Target/Replacement edit and `write_file` writes the whole file.
+# `write_to_file`, `replace_file_content`, `multi_replace_file_content`,
+# `grep_search`, `find_by_name`, `list_dir`, `search_web` and
+# `read_url_content` are names in the 1.4.6 binary that no captured session
+# used. `send_message` (a subagent reporting to its parent) and other meta
+# tools pass through unaliased.
+_ANTIGRAVITY_ALIASES: dict[str, str] = {
+    "run_command": "Bash",
+    "read_file": "Read",
+    "view_file": "Read",
+    "edit_file": "Edit",
+    "replace_file_content": "Edit",
+    "multi_replace_file_content": "Edit",
+    "write_file": "Write",
+    "write_to_file": "Write",
+    "grep_search": "Grep",
+    "find_by_name": "Glob",
+    "list_dir": "ListDir",
+    "search_web": "WebSearch",
+    "read_url_content": "WebFetch",
+    "invoke_subagent": "Task",
+}
+
 TOOL_ALIASES: dict[str, dict[str, str]] = {
+    "antigravity-cli": _ANTIGRAVITY_ALIASES,
     "codex": _CODEX,
+    "gemini-cli": _GEMINI_CLI,
     "cursor": _CURSOR,
     "copilot": _COPILOT,
     "copilot-vscode": _COPILOT_VSCODE,

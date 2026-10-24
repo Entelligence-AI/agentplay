@@ -78,7 +78,7 @@ import {
   scopedModelUsage,
   taskNoun,
 } from '@/core/sessionScope';
-import { sessionWindowRange } from '@/core/sessionWindow';
+import { useWindowRange } from '@/data/windowRange';
 import { useEventCategories } from './useEventCategories';
 import { useExplorerScope, type ExplorerScope } from './useExplorerScope';
 import { useMapModel, usePlaybackWindow } from './usePlaybackWindow';
@@ -91,40 +91,6 @@ interface Props {
   /** optional control under the "No session maps yet" empty state (e.g. an
    * "Open a map file" button) */
   emptyAction?: ReactNode;
-}
-
-/** A cache-busting key that changes at EITHER the viewer's local midnight
- * or UTC midnight, whichever comes first (not a real ISO date). Two
- * different fields of `sessionWindowRange`'s result roll over on two
- * different clocks: `daysThisMonth` derives MTD's `from` from local
- * `getDate()`, but `to` (every window) is `toISOString().slice(0, 10)`,
- * a UTC date. A key on only one clock stays stale across the other
- * boundary for up to the viewer's UTC offset. */
-const dateBoundaryKey = (d: Date) =>
-  `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.toISOString().slice(0, 10)}`;
-
-/** The list's date range for `windowKey`, kept fresh across midnight. */
-function useWindowRange(windowKey: WindowKey) {
-  // `sessionWindowRange` is keyed off `new Date()` at call time, but a memo
-  // keyed only on `windowKey` never re-runs that call once the tab has been
-  // open a while - the range (mtd's start, and every window's `to`) goes
-  // stale after a real calendar day rolls over while the page stays mounted
-  //. A cheap poll refreshes it within a minute of that,
-  // keyed by both clocks it can roll over on (see `dateBoundaryKey`).
-  const [today, setToday] = useState(() => dateBoundaryKey(new Date()));
-  useEffect(() => {
-    const id = setInterval(() => {
-      const next = dateBoundaryKey(new Date());
-      setToday((prev) => (prev === next ? prev : next));
-    }, 60_000);
-    return () => clearInterval(id);
-  }, []);
-  return useMemo(
-    // `today` is not read in the body; it exists purely to invalidate this
-    // memo once the poll above notices the calendar date has moved on.
-    () => sessionWindowRange(windowKey, new Date()),
-    [windowKey, today]
-  );
 }
 
 /** The sessions in the window (search-filtered), the effective selection,
@@ -218,6 +184,8 @@ export function SessionExplorer({
   const { list, sessions, selectedId } = data;
   const scanning = !!useSessionExplorerStatus().data?.scanning;
   const [, setScopeParams] = useQueryStates(SCOPE_PARAMS);
+  // A search chip opens its session at the matching event (`useSeekParam`).
+  const [, setJumpAt] = useQueryState('at', parseAsInteger);
   // One sidebar: the list until a session is picked (or one is linked), then
   // only that session; "All sessions" flips back without touching the URL.
   const [sidebarMode, setSidebarMode] = useState<'list' | 'session'>(() =>
@@ -311,6 +279,20 @@ export function SessionExplorer({
       loadingMore={list.isFetchingNextPage}
       onLoadMore={() => void list.fetchNextPage()}
       unavailable={data.mapQuery.unavailable}
+      onJump={(id, seq) => {
+        // Always clear: a task, model or subagent scope may not contain the hit's event.
+        void setScopeParams(CLEAR_SCOPE_PARAMS);
+        void data.setSelected(id);
+        void setJumpAt(seq);
+      }}
+      searchNote={
+        list.data?.pages[0]?.searchNote?.code === 'arguments' ? (
+          <p role="note" className="rounded-md bg-ds-warning-subtlest px-2 py-1.5 ds-text-body-xs-medium text-ds-warning-darker">
+            Command arguments are never stored, so they can&rsquo;t be searched. Showing sessions that ran{' '}
+            <code className="font-mono">{list.data.pages[0].searchNote.command}</code>.
+          </p>
+        ) : null
+      }
       header={
         <SessionListHeader
           count={sessions.length}

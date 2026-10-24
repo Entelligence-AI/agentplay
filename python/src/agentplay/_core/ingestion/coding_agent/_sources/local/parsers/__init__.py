@@ -14,6 +14,8 @@ returns the agent type by sniffing for marker lines:
   directly.
 - Cursor: synthesized header line with `type="cursor_store_session"`.
 - Kiro: synthesized header line with `type="kiro_session"`.
+- Gemini CLI: header line with `sessionId` + `projectHash` and no `type`, or a
+  `type="gemini"` message (`~/.gemini/tmp/<project>/chats/session-*.jsonl`).
 - opencode: materialized records carrying a `message` object and a `parts` list.
 
 Each parser exposes `parse_X(data, trace_id, user_id=None,
@@ -24,6 +26,7 @@ per-tool tool spans - so downstream code doesn't branch on agent.
 
 from __future__ import annotations
 
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.antigravity import parse_antigravity
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.base import (
     AgentType,
     detect_agent,
@@ -40,18 +43,21 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers.cursor_agent_
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.cursor_store import (
     parse_cursor_store,
 )
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.gemini import parse_gemini
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.kiro import parse_kiro
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.opencode import parse_opencode
 
 __all__ = [
     "AgentType",
     "detect_agent",
+    "parse_antigravity",
     "parse_claude_code",
     "parse_codex",
     "parse_copilot",
     "parse_copilot_vscode",
     "parse_cursor_agent_transcript",
     "parse_cursor_store",
+    "parse_gemini",
     "parse_kiro",
     "parse_opencode",
 ]

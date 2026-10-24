@@ -9,7 +9,7 @@
   <a href="https://github.com/Entelligence-AI/agentplay/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Entelligence-AI/agentplay?style=social"></a>
 </p>
 
-**See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode and Kiro.**
+**See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro, Gemini CLI and Antigravity CLI.**
 
 ```bash
 uvx agentplay
@@ -140,6 +140,8 @@ Every view is a URL, so a link to a moment in a session reopens it for anyone wh
 | **GitHub Copilot in VS Code** | VS Code `User/workspaceStorage/*/chatSessions` | main lane only | per turn, where recorded | Code, Code Insiders, VSCodium |
 | **OpenCode** | `~/.local/share/opencode/opencode.db` | main lane only | per turn | SQLite, decoded locally |
 | **Kiro** | `~/.kiro/sessions/*/*` | main lane only | per turn, where recorded | Sub-executions merged into the session |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl` | main lane only | per turn | The project folder is read from the CLI's `.project_root` file |
+| **Antigravity CLI** (`agy`) | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl` | main lane only | per turn | Project folder and subagent links from `conversation_summaries.db`, copied and read locally, read-only. Subagents are listed as separate subagent sessions. Model not recorded yet |
 
 "Main lane only" means the session's own tool calls are all there, but subagent work is not split out into separate lanes on the map.
 
@@ -273,6 +275,8 @@ All configuration is through environment variables. The examples in this README 
 | `AGENTPLAY_COPILOT_VSCODE_HOMES` | VS Code `User` dirs | Copilot in VS Code |
 | `AGENTPLAY_OPENCODE_HOMES` | `$XDG_DATA_HOME/opencode` | OpenCode data dirs |
 | `AGENTPLAY_KIRO_HOMES` | `~/.kiro` | Kiro homes |
+| `AGENTPLAY_GEMINI_HOMES` | `~/.gemini` | Gemini CLI homes |
+| `AGENTPLAY_ANTIGRAVITY_HOMES` | `~/.gemini/antigravity-cli` | Antigravity CLI homes |
 | `AGENTPLAY_HMAC_KEY` | unset | key for `--path-mode hashed` |
 | `DO_NOT_TRACK`, `AGENTPLAY_NO_NETWORK` | unset | set either to turn off the email signup and its one network call |
 | `AGENTPLAY_SIGNUP_URL` | built in | where the signup sends an email (for testing; see [docs/signup-endpoint.md](docs/signup-endpoint.md)) |
@@ -302,7 +306,7 @@ Test suites:
 
 Contributions are very welcome, and you don't need to know the whole codebase to make one. The most valuable are:
 
-1. **A parser for another agent**: Gemini CLI, Amp, Cline, Roo, Windsurf or Aider. Each is one file plus a few registration lines; [CONTRIBUTING.md](CONTRIBUTING.md#adding-an-agent) walks through it step by step, and [`codex.py`](python/src/agentplay/_core/ingestion/coding_agent/_sources/local/parsers/codex.py) is a good one to copy.
+1. **A parser for another agent**: Amp, Cline, Roo, Windsurf or Aider. Each is one file plus a few registration lines; [CONTRIBUTING.md](CONTRIBUTING.md#adding-an-agent) walks through it step by step, and [`codex.py`](python/src/agentplay/_core/ingestion/coding_agent/_sources/local/parsers/codex.py) is a good one to copy.
 2. **Fixture transcripts** for an agent version that broke parsing, with personal content removed. Open a [parser bug](https://github.com/Entelligence-AI/agentplay/issues/new?template=bug_report.yml) and attach one.
 3. **Viewer improvements** that make a session easier to read. The viewer runs on demo data with `pnpm dev` in `viewer/`, no sessions needed.
 4. **Docs and install fixes**, especially for Windows and WSL.

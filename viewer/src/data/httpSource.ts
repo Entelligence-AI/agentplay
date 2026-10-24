@@ -6,6 +6,8 @@ import {
   sessionExplorerStatusSchema,
   type SessionMap,
 } from '@/core/schema';
+import { insightsStatsSchema } from '@/core/insights';
+import { autotuneStatusSchema, fixPreviewSchema, healthReportSchema } from '@/core/health';
 import { SessionExplorerError } from './errors';
 import { parseMapBytes } from './parse';
 import { SESSION_MAP_BATCH_MAX, type SessionMapSource } from './source';
@@ -96,6 +98,49 @@ export function httpSource(baseUrl: string): SessionMapSource {
       const r = await get(`/api/prompt-images?${qs.toString()}`);
       if (!r.ok) throw await failure(r, 'promptImages');
       return promptImagesResponseSchema.parse(await json(r, 'promptImages'));
+    },
+    async stats(range) {
+      const qs = new URLSearchParams();
+      if (range.from) qs.set('from', range.from);
+      if (range.to) qs.set('to', range.to);
+      const r = await get(`/api/stats?${qs.toString()}`);
+      if (!r.ok) throw await failure(r, 'stats');
+      return insightsStatsSchema.parse(await json(r, 'stats'));
+    },
+    async health(range) {
+      const qs = new URLSearchParams();
+      if (range.from) qs.set('from', range.from);
+      if (range.to) qs.set('to', range.to);
+      const r = await get(`/api/health?${qs.toString()}`);
+      if (!r.ok) throw await failure(r, 'health');
+      return healthReportSchema.parse(await json(r, 'health'));
+    },
+    async fixPreview(p) {
+      const qs = new URLSearchParams({ fix: p.fix, i: String(p.i) });
+      if (p.file) qs.set('file', p.file);
+      if (p.from) qs.set('from', p.from);
+      if (p.to) qs.set('to', p.to);
+      const r = await get(`/api/fix-preview?${qs.toString()}`);
+      if (!r.ok) throw await failure(r, 'fixPreview');
+      return fixPreviewSchema.parse(await json(r, 'fixPreview'));
+    },
+    async autotune() {
+      const r = await get('/api/autotune');
+      if (!r.ok) throw await failure(r, 'autotune');
+      return autotuneStatusSchema.parse(await json(r, 'autotune'));
+    },
+    async write(path, body) {
+      const r = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const out: unknown = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const o = out as { code?: string; error?: string };
+        throw new SessionExplorerError(o.error ?? `write failed: ${r.status}`, o.code ?? 'internal_error');
+      }
+      return out;
     },
     async hookDetail(sessionId, uuid) {
       const qs = new URLSearchParams({ id: sessionId, uuid });

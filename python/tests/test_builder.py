@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from agentplay import builder as sm
+from agentplay import facts, search
 
 SECRET_PROMPT = "please fix the SECRET-PROMPT-TEXT in billing"
 SECRET_ARG = "--token=hunter2-SECRET-ARG"
@@ -228,7 +229,9 @@ def test_acompact_snapshot_is_not_a_subagent_lane(transcript):
 
 
 def test_builder_never_leaks_free_text(transcript):
-    raw = json.dumps(sm.build_claude_code_map(transcript))
+    doc = sm.build_claude_code_map(transcript)
+    # Session facts and search postings are held to the same contract as the map.
+    raw = json.dumps(doc) + json.dumps(facts.compute(doc)) + json.dumps(search.postings(doc))
     for secret in (
         "SECRET-PROMPT-TEXT",
         "hunter2",
@@ -255,7 +258,7 @@ def test_builder_never_leaks_free_text(transcript):
         "SECRET-OPEN",
     ):
         assert secret not in raw, secret
-    verbs = [e.get("verb") for e in json.loads(raw)["events"] if e.get("tool") == "Bash"]
+    verbs = [e.get("verb") for e in doc["events"] if e.get("tool") == "Bash"]
     for _, verb in LEAKY_COMMANDS:
         assert verb in verbs, verb
 

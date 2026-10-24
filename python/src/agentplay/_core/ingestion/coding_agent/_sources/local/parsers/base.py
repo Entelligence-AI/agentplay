@@ -10,6 +10,8 @@ from __future__ import annotations
 from enum import StrEnum
 import json
 
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.antigravity import is_antigravity_step
+
 
 class AgentType(StrEnum):
     """Agent enum used by the parsers + LocalSource dispatch.
@@ -24,6 +26,8 @@ class AgentType(StrEnum):
     OPENCODE = "opencode"
     CURSOR = "cursor"
     KIRO = "kiro"
+    GEMINI_CLI = "gemini-cli"
+    ANTIGRAVITY_CLI = "antigravity-cli"
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -70,6 +74,22 @@ def detect_agent(data: bytes) -> AgentType | None:
         # rationale as Cursor's — no other agent emits this `type`.
         if line_type == "kiro_session":
             return AgentType.KIRO
+
+        # Gemini CLI: the first line is a header with `sessionId`, a
+        # `projectHash` string and NO `type` (Claude Code's records all carry
+        # one), and messages are typed `user` / `gemini`. `gemini` is a type no
+        # other agent emits, so it identifies a file whose header was cut off.
+        if (
+            "type" not in obj
+            and isinstance(obj.get("sessionId"), str)
+            and isinstance(obj.get("projectHash"), str)
+        ):
+            return AgentType.GEMINI_CLI
+        if line_type == "gemini" and isinstance(obj.get("id"), str):
+            return AgentType.GEMINI_CLI
+
+        if is_antigravity_step(obj):
+            return AgentType.ANTIGRAVITY_CLI
 
         # Codex: session_meta with codex originator.
         if line_type == "session_meta":

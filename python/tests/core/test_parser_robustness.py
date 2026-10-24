@@ -27,6 +27,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_copilot_vscode,
     parse_cursor_agent_transcript,
     parse_cursor_store,
+    parse_gemini,
     parse_kiro,
     parse_opencode,
 )
@@ -286,6 +287,36 @@ def _opencode() -> list[dict]:
     ]
 
 
+def _gemini() -> list[dict]:
+    shell = {
+        "id": "c1",
+        "name": "run_shell_command",
+        "args": {"command": "ls", "description": "list"},
+        "result": [{"functionResponse": {"id": "c1", "name": "run_shell_command", "response": {"output": "Output: x"}}}],
+        "status": "success",
+        "timestamp": TS.format(2),
+    }
+    reply = {
+        "id": "g1",
+        "timestamp": TS.format(1),
+        "type": "gemini",
+        "content": "",
+        "thoughts": [{"subject": "s", "description": "d", "timestamp": TS.format(1)}],
+        "tokens": {"input": 10, "output": 5, "cached": 2, "thoughts": 1, "tool": 0, "total": 16},
+        "model": "gemini-3.6-flash",
+    }
+    return [
+        {"sessionId": "s1", "projectHash": "h", "startTime": TS.format(0), "lastUpdated": TS.format(3), "kind": "main"},
+        {"id": "u0", "timestamp": TS.format(0), "type": "user", "content": [{"text": "<session_context>x</session_context>"}]},
+        {"id": "u1", "timestamp": TS.format(0), "type": "user", "content": [{"text": "list files"}]},
+        {"$set": {"lastUpdated": TS.format(1)}},
+        reply,
+        {**reply, "toolCalls": [shell]},
+        {"id": "u2", "timestamp": TS.format(2), "type": "user", "content": [shell["result"][0]]},
+        {"id": "g2", "timestamp": TS.format(3), "type": "gemini", "content": "done", "model": "gemini-3.6-flash"},
+    ]
+
+
 PARSERS = {
     "claude_code": (parse_claude_code, _claude),
     "codex": (parse_codex, _codex),
@@ -293,6 +324,7 @@ PARSERS = {
     "copilot_vscode": (parse_copilot_vscode, _copilot_vscode),
     "cursor_store": (parse_cursor_store, _cursor_store),
     "cursor_agent": (parse_cursor_agent_transcript, _cursor_agent),
+    "gemini": (parse_gemini, _gemini),
     "kiro": (parse_kiro, _kiro),
     "opencode": (parse_opencode, _opencode),
 }

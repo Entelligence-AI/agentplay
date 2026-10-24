@@ -2,6 +2,7 @@ import {
   sessionExplorerSessionSchema,
   type SessionExplorerSession,
 } from '@/core/schema';
+import { insightsStatsSchema } from '@/core/insights';
 import { SessionExplorerError } from './errors';
 import { listRows } from './memoryListing';
 import { parseMapBytes } from './parse';
@@ -15,15 +16,34 @@ type DemoRow = SessionExplorerSession & { file?: string };
  * to the page. `root` is resolved against the page, so the build works from
  * any path.
  */
+/**
+ * A demo file URL, refused unless it is on the page's own origin: `file`
+ * entries come from `index.json`, so they must not point the page elsewhere.
+ */
+export function sameOriginUrl(path: string, base: URL): URL {
+  const url = new URL(path, base);
+  if (url.origin !== base.origin) throw new SessionExplorerError('demo file is not on this site', 'not_found');
+  return url;
+}
+
 export function demoSource(root = 'demo/'): SessionMapSource {
   const base = new URL(root, document.baseURI);
+  let raw: Promise<{ sessions?: unknown[] }> | null = null;
   let index: Promise<DemoRow[]> | null = null;
-  const load = () =>
-    (index ??= fetch(new URL('index.json', base))
+  const loadRaw = () =>
+    // Same-origin only (sameOriginUrl), and this runs in the browser: no server-side request.
+    // nosemgrep: app.repo_health.semgrep_rules.entelligence.javascript.ssrf.fetch-dynamic-url
+    (raw ??= fetch(sameOriginUrl('index.json', base))
       .then((r) => {
         if (!r.ok) throw new SessionExplorerError('demo index missing', 'not_found');
         return r.json() as Promise<{ sessions?: unknown[] }>;
       })
+      .catch((err) => {
+        raw = null;
+        throw err;
+      }));
+  const load = () =>
+    (index ??= loadRaw()
       .then((body) =>
         (body.sessions ?? []).map((raw) => {
           const row = sessionExplorerSessionSchema.parse(raw) as DemoRow;
@@ -58,8 +78,20 @@ export function demoSource(root = 'demo/'): SessionMapSource {
         }),
       };
     },
+    async stats(range) {
+      // The demo index rows carry the same facts `/api/stats` serves
+      // (`scripts/demo_facts.py`); the row schema above drops them, so read raw.
+      const body = await loadRaw();
+      const rows = (body.sessions ?? []).filter((r) => {
+        const day = (r as { sessionDate?: string | null }).sessionDate ?? '';
+        return (!range.from || day >= range.from) && (!range.to || day <= range.to);
+      });
+      return insightsStatsSchema.parse({ sessions: rows });
+    },
     async fetchMap(meta) {
-      const r = await fetch(meta.url);
+      // Same-origin only (sameOriginUrl); index entries cannot point the page elsewhere.
+      // nosemgrep: app.repo_health.semgrep_rules.entelligence.javascript.ssrf.fetch-dynamic-url
+      const r = await fetch(sameOriginUrl(meta.url, base));
       if (!r.ok) throw new SessionExplorerError(`demo map ${r.status}`, 'not_found');
       return parseMapBytes(new Uint8Array(await r.arrayBuffer()));
     },

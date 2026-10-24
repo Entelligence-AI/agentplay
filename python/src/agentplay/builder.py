@@ -172,6 +172,8 @@ class RepoResolver:
 
     def __init__(self) -> None:
         self._cache: dict[str, tuple[str, str, str] | None] = {}
+        # name -> root, most recently resolved last, so a shared name keeps the latest checkout.
+        self._roots: dict[str, str] = {}
 
     def resolve(self, path: str) -> tuple[str, str, str] | None:
         p = Path(path)
@@ -193,7 +195,17 @@ class RepoResolver:
             d = d.parent
         for k in seen:
             self._cache[k] = result
+        if result:
+            self._roots.pop(result[1], None)
+            self._roots[result[1]] = result[0]
         return result
+
+    def roots(self) -> dict[str, str]:
+        """Repo name -> checkout root for every repo resolved so far (local use only).
+
+        When two checkouts share a name, the one resolved most recently wins.
+        """
+        return dict(self._roots)
 
     @staticmethod
     def _remote(root: Path, git: Path) -> tuple[str, str]:

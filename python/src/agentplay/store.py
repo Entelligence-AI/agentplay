@@ -17,7 +17,8 @@ import hashlib
 import json
 import os
 import re
-import tempfile
+import stat
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -29,12 +30,40 @@ def root() -> Path:
     return Path(os.environ.get("AGENTPLAY_HOME") or Path.home() / ".agentplay")
 
 
-def _atomic_write(path: Path, data: bytes) -> None:
+class OutsideRoot(OSError):
+    """A write resolved to somewhere outside the directory it was confined to."""
+
+def _atomic_write(path: Path, data: bytes, *, private: bool = True, within: Path | None = None) -> None:
+    """Replace ``path`` with ``data`` atomically, keeping an existing file's mode.
+
+    A new file is 0600 when ``private`` (agentplay's own store), else the umask
+    default like any editor would create (files in a person's repo). ``within`` refuses a
+    write whose final, symlink-resolved path left that directory.
+    """
+    # A person's file may be a dotfiles-managed symlink: write its target, never replace the link.
+    # agentplay's own store never follows one, so a link planted there cannot redirect a write.
+    if not private:
+        path = Path(os.path.realpath(path))
+        # Checked on the same resolved path the write uses, not on an earlier resolution of it.
+        if within is not None and not path.is_relative_to(within):
+            raise OutsideRoot(f"{path} is outside {within}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+    try:
+        # lstat for the store: a link planted there must not lend its target's mode
+        # (a 0644 target would make the replacement readable by other users).
+        st = os.lstat(path) if private else path.stat()
+        mode: int | None = stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None
+    except FileNotFoundError:
+        mode = None
+    tmp = path.parent / f"{path.name}{uuid.uuid4().hex[:8]}.tmp"
+    # The kernel applies the umask to the create mode, so no process-wide umask juggling between threads.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = os.open(tmp, flags, 0o600 if private or mode is not None else 0o666)
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
         try:
