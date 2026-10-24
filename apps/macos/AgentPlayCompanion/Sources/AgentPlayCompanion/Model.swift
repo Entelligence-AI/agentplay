@@ -55,7 +55,9 @@ final class CompanionModel: ObservableObject {
     private var lastRefreshStarted = Date.distantPast
     private var refreshQueued = false
     private var lastRefreshDuration: TimeInterval = 0
-    private var sampleMode = false
+    private var sampleMode = false {
+        didSet { claudeIdentity = isSample ? .sample : ClaudeAccount.readIdentity() }
+    }
     private var started = false
 
     init(prefsStore: PrefsStore = PrefsStore(), isDevBuild: Bool) {
@@ -294,7 +296,7 @@ final class CompanionModel: ObservableObject {
     @Published private(set) var claudeIdentity: ClaudeAccount.Identity?
 
     func refreshIdentity() {
-        let id = ClaudeAccount.readIdentity()
+        let id = isSample ? .sample : ClaudeAccount.readIdentity()
         if id != claudeIdentity { claudeIdentity = id }
         guard !isSample, let uuid = id?.accountUuid else { return }
         if let saved = savedAccounts.first(where: { $0.accountUuid == uuid }) {
@@ -307,11 +309,12 @@ final class CompanionModel: ObservableObject {
 
     // MARK: Claude accounts (switching)
 
-    var savedAccounts: [ClaudeSwitch.Saved] { prefs.claudeAccounts ?? [] }
+    /// Hidden with sample data, like the login itself.
+    var savedAccounts: [ClaudeSwitch.Saved] { isSample ? [] : prefs.claudeAccounts ?? [] }
     @Published private(set) var switching = false
 
     private func upsert(_ s: ClaudeSwitch.Saved) {
-        var list = savedAccounts
+        var list = prefs.claudeAccounts ?? []
         if let i = list.firstIndex(where: { $0.accountUuid == s.accountUuid }) {
             var merged = s
             merged.lastSession = s.lastSession ?? list[i].lastSession
@@ -425,7 +428,7 @@ final class CompanionModel: ObservableObject {
 
     func forgetAccount(_ s: ClaudeSwitch.Saved) {
         Task.detached { ClaudeSwitch.forget(s.accountUuid) }
-        prefs.claudeAccounts = savedAccounts.filter { $0.accountUuid != s.accountUuid }
+        prefs.claudeAccounts = (prefs.claudeAccounts ?? []).filter { $0.accountUuid != s.accountUuid }
     }
     @Published private(set) var accountFailure: ClaudeAccount.Failure?
     private var lastAccountFetch = Date.distantPast

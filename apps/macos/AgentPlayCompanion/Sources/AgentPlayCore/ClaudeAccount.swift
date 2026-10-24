@@ -45,6 +45,9 @@ public enum ClaudeAccount {
         public var organization: String?
         public var seatTier: String?
 
+        /// Shown with sample data, so a sample never carries the real login.
+        public static let sample = Identity(accountUuid: nil, email: "you@example.com", organization: "Example Org", seatTier: nil)
+
         /// "you@example.com · Example Org"
         public var line: String? {
             let parts = [email, organization].compactMap { $0 }.filter { !$0.isEmpty }
