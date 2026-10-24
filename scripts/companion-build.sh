@@ -40,7 +40,9 @@ PYV="$(ls "$PY_SRC/lib" | sed -n 's/^python\(3\.[0-9]*\)$/\1/p' | head -1)"
 [ -n "$PYV" ] || { echo "No lib/python3.x in $PY_SRC"; exit 1; }
 
 # --- 2. The viewer must be bundled into the package --------------------------------------------------
-if [ ! -f "$ROOT/python/src/agentplay/viewer/index.html" ]; then
+# Built when missing, and rebuilt when its source changed since (a merge from main brings new pages).
+BUILT="$ROOT/python/src/agentplay/viewer/index.html"
+if [ ! -f "$BUILT" ] || [ -n "$(find "$ROOT/viewer/src" "$ROOT/viewer/index.html" "$ROOT/viewer/package.json" -newer "$BUILT" -print -quit 2>/dev/null)" ]; then
   say "Building the web viewer (make viewer)"
   make -C "$ROOT" viewer >/dev/null
 fi
