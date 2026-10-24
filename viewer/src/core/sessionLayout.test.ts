@@ -18,7 +18,7 @@ import {
   type NodeRef,
 } from './sessionMapModel';
 import { deriveScopeDoc, sessionTasks, stampTasks, withoutSrcSeq } from './sessionScope';
-import { optionalLanesHeight } from './timelineDraw';
+import { axisTickLabels, optionalLanesHeight } from './timelineDraw';
 import {
   SIDEBAR_COLLAPSED_KEY,
   adjacentSubagent,
@@ -1434,5 +1434,50 @@ describe('sessionErrors for failed hooks', () => {
     expect(post?.errors[0].label).toBe('PostToolUse:Bash hook error');
     expect(post?.worstRun).toBe(3);
     expect(post?.worstRunLabel).toBe('PostToolUse:Bash hook error');
+  });
+});
+
+describe('axisTickLabels', () => {
+  const start = '2026-10-21T07:04:00Z';
+  const H = 3_600_000;
+
+  it('is plain HH:MM within the start day', () => {
+    expect(axisTickLabels(start, [0, H, 3 * H])).toEqual([
+      '07:04',
+      '08:04',
+      '10:04',
+    ]);
+  });
+
+  it('dates only the first tick on each new UTC day', () => {
+    // A 26.9h session: the axis used to read 07:04 08:04 02:22 07:46 09:58.
+    expect(
+      axisTickLabels(start, [0, H, 19.3 * H, 24.7 * H, 26.9 * H])
+    ).toEqual(['07:04', '08:04', 'Oct 22 02:22', '07:46', '09:58']);
+  });
+
+  it('dates every tick that starts another day, across many days', () => {
+    expect(axisTickLabels(start, [0, 30 * H, 60 * H, 250 * H])).toEqual([
+      '07:04',
+      'Oct 22 13:04',
+      'Oct 23 19:04',
+      'Oct 31 17:04',
+    ]);
+  });
+
+  it('flips at midnight, not after 24h', () => {
+    const late = '2026-10-21T23:50:00Z';
+    expect(axisTickLabels(late, [0, 9 * 60_000, 11 * 60_000])).toEqual([
+      '23:50',
+      '23:59',
+      'Oct 22 00:01',
+    ]);
+  });
+
+  it('falls back to bare clocks for an unparseable start', () => {
+    expect(axisTickLabels('not a date', [0, 30 * H])).toEqual([
+      '--:--',
+      '--:--',
+    ]);
   });
 });
