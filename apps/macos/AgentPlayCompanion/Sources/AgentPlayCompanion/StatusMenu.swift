@@ -369,6 +369,10 @@ struct ProviderCard: View {
                     Spacer()
                     if let plan = p.plan { Text(plan.capitalized).font(.subheadline).foregroundStyle(Ink.secondary) }
                 }
+                if p.provider == "claude-code", let who = model.claudeIdentity?.line {
+                    // Which account these numbers belong to.
+                    Text(who).font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(1).truncationMode(.middle)
+                }
                 Text(status(p)).font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
             }
             ForEach(p.windows) { w in MeterRow(window: w, now: now) }

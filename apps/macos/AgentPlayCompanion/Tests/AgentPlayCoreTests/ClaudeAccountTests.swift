@@ -23,6 +23,13 @@ import Testing
         #expect(ordered.map(\.account) == ["me", "other", "unknown"])
     }
 
+    @Test func readsWhoClaudeCodeIsSignedInAs() throws {
+        let json = #"{"numStartups":3,"oauthAccount":{"accountUuid":"e2a","emailAddress":"me@example.com","organizationName":"example","seatTier":"team","displayName":"Me"},"projects":{}}"#
+        let id = try #require(ClaudeAccount.parseIdentity(Data(json.utf8)))
+        #expect(id.line == "me@example.com · example" && id.accountUuid == "e2a" && id.seatTier == "team")
+        #expect(ClaudeAccount.parseIdentity(Data(#"{"projects":{}}"#.utf8)) == nil)
+    }
+
     @Test func parsesUsageWindows() throws {
         let json = #"{"five_hour":{"utilization":67.0,"resets_at":"2026-10-24T15:00:00.123456+00:00"},"seven_day":{"utilization":23,"resets_at":"2026-10-28T09:00:00Z"},"seven_day_opus":null}"#
         let now = Date(timeIntervalSince1970: 1_792_800_000)

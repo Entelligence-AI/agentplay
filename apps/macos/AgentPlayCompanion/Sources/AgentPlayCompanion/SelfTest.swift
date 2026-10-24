@@ -115,6 +115,7 @@ extension Renderer {
                                    isDevBuild: true)
             m.prefs = real
             m.installLiveForRender(snap)
+            m.refreshIdentity()
             let c = StatusItemController(model: m)
             c.updateIcon()
             RunLoop.current.run(until: Date().addingTimeInterval(0.4))

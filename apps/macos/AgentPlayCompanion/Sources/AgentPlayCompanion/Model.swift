@@ -35,7 +35,7 @@ final class CompanionModel: ObservableObject {
     @Published private(set) var claudeBridgeOn = false
     let claudeBridge = ClaudeBridge()
     @Published var popoverOpen = false {
-        didSet { if popoverOpen { scheduleRefresh(reason: .popoverOpened); refreshAccount(force: false) } }
+        didSet { if popoverOpen { scheduleRefresh(reason: .popoverOpened); refreshAccount(force: false); refreshIdentity() } }
     }
     @Published private(set) var notificationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var loginItemEnabled = false
@@ -115,6 +115,7 @@ final class CompanionModel: ObservableObject {
         startLiveWatch()
         startAccountTimer()
         refreshAccount(force: true)
+        refreshIdentity()
         observeSystem()
     }
 
@@ -263,6 +264,13 @@ final class CompanionModel: ObservableObject {
     // MARK: Claude account usage (opt-in)
 
     @Published private(set) var accountLimits: [ProviderLimitWindow] = []
+    /// Who Claude Code is signed in as (local, from ~/.claude.json).
+    @Published private(set) var claudeIdentity: ClaudeAccount.Identity?
+
+    func refreshIdentity() {
+        let id = ClaudeAccount.readIdentity()
+        if id != claudeIdentity { claudeIdentity = id }
+    }
     @Published private(set) var accountFailure: ClaudeAccount.Failure?
     private var lastAccountFetch = Date.distantPast
     private var accountBackoffUntil = Date.distantPast

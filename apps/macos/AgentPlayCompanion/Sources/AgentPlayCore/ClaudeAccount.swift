@@ -38,6 +38,32 @@ public enum ClaudeAccount {
         }
     }
 
+    /// Who Claude Code is signed in as, from `oauthAccount` in `~/.claude.json`. Local, no network.
+    public struct Identity: Equatable, Sendable {
+        public var accountUuid: String?
+        public var email: String?
+        public var organization: String?
+        public var seatTier: String?
+
+        /// "you@example.com · Example Org"
+        public var line: String? {
+            let parts = [email, organization].compactMap { $0 }.filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        }
+    }
+
+    public static func parseIdentity(_ data: Data) -> Identity? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let o = obj["oauthAccount"] as? [String: Any] else { return nil }
+        let id = Identity(accountUuid: o["accountUuid"] as? String, email: o["emailAddress"] as? String,
+                          organization: o["organizationName"] as? String, seatTier: o["seatTier"] as? String)
+        return id.email == nil && id.accountUuid == nil ? nil : id
+    }
+
+    public static func readIdentity(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Identity? {
+        (try? Data(contentsOf: home.appendingPathComponent(".claude.json"))).flatMap(parseIdentity)
+    }
+
     /// `{"claudeAiOauth": {"accessToken", "expiresAt" (ms), "subscriptionType"}}`, Claude Code's own format.
     public static func parseCredentials(_ data: Data) -> Credentials? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
