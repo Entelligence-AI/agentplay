@@ -45,8 +45,11 @@ logger = logging.getLogger("agentplay.discover")
 AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
-# applies anyway; this keeps one pathological file from stalling a run).
-MAX_SOURCE_BYTES = 512 * 1024 * 1024
+# applies anyway; this keeps one pathological file from stalling a run). The size
+# counts a session's subagent transcripts too, and long agent-heavy sessions pass
+# 512 MB, and since the reader streams one just past it builds in about 10 s with a small memory peak. The reader
+# streams. Past the cap a map stops updating, so it is set well above real sessions.
+MAX_SOURCE_BYTES = 4 * 1024 * 1024 * 1024
 
 
 def _homes_from_env(var: str, defaults: Iterable[str | Path]) -> list[Path]:
