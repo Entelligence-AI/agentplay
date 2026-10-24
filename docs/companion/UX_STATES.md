@@ -67,6 +67,7 @@ Notifications for "Session needs you" carry Go to Terminal, Snooze 15 Minutes an
 | Claude limits off | Card says "Live limits are off", then "Turn On Live Limits…" | (Settings preview not in the docs: it shows your home path) |
 | Claude from an editor panel | Every live Claude session started from an editor (entrypoint `sdk-ts`): the card says "Your sessions run in Zed's agent panel, which doesn't report plan usage", and the menu offers "Show Usage from My Claude Account…" | (real data only) |
 | Claude account usage | Opt-in in Settings → Live Limits; the card fills from the account. Failures say what to do: no login, Keychain denied, login expired, Anthropic busy | (Settings → Live Limits; not in the docs, it shows your home path) |
+| Claude account | The card shows who the numbers belong to, "info@… · organization", from `~/.claude.json`. Switch Claude Account › lists saved accounts with a check on the active one and each one's last-seen session and week; Save for Switching, Add Another Account…, Manage Accounts… | (real data only) |
 | Claude limit reached | Claude Code was refused for a window: that window shows full with its reset time, read from the transcript, no network | (real data only) |
 | Stale plan snapshot | Grey bar, "88% · stale, updates when Codex runs" | [stale](screens/state-stale-quota-light.png) |
 | Conflicting plan reports | "Recent sessions reported Plus and Pro. They may be different accounts." | [conflicting](screens/state-conflicting-plans-light.png) |

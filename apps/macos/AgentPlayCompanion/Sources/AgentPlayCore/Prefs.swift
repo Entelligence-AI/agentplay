@@ -20,6 +20,10 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
     public var pipEnabled: Bool? = nil
     public var pipIslandEnabled: Bool? = nil
     public var showsPip: Bool { pipEnabled ?? true }
+    /// Claude accounts saved for switching: names and last-seen usage only; logins live in the Keychain.
+    public var claudeAccounts: [ClaudeSwitch.Saved]? = nil
+    /// Save each new account Claude Code signs in to (off: only when the user chooses Save).
+    public var rememberClaudeAccounts: Bool? = nil
     public var showsPipIsland: Bool { pipIslandEnabled ?? true }
 
     public init(now: Date = Date()) { history = AlertHistory(watermark: now) }

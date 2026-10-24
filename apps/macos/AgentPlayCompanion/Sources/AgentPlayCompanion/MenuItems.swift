@@ -10,6 +10,7 @@ enum MenuEntry: Equatable {
     case message(title: String, detail: String?) // informational, not clickable
     case provider(ProviderSummary)               // hosted card: name, plan, freshness, meters, pace
     case enableLimits(provider: String)          // "Turn On Live Limits…"
+    case claudeAccounts                          // submenu: switch, save, add
     case session(SessionLine)
     case usage(UsageReport)                      // hosted two-line summary
     case usageDetails(UsageReport)               // submenu: chart, 7 and 30 days, by model, by project
@@ -107,6 +108,7 @@ enum MenuBuilder {
         for p in providers {
             out.append(.provider(p))
             if p.windows.isEmpty, p.provider == "claude-code" { out.append(.enableLimits(provider: p.provider)) }
+            if p.provider == "claude-code" { out.append(.claudeAccounts) }
         }
         if !providers.isEmpty { out.append(.separator) }
 

@@ -188,6 +188,37 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             i.image = symbol("gauge.with.dots.needle.33percent")
             menu.addItem(i)
 
+        case .claudeAccounts:
+            guard let me = model.claudeIdentity else { return }
+            let i = NSMenuItem(title: "Switch Claude Account", action: nil, keyEquivalent: "")
+            i.image = symbol("person.2")
+            let sub = NSMenu()
+            sub.autoenablesItems = false
+            for a in model.savedAccounts {
+                let active = a.accountUuid == me.accountUuid
+                let ai = item(a.title) { [model] in if !active { model.switchAccount(to: a) } }
+                ai.state = active ? .on : .off
+                var parts = [a.organization, a.seatTier?.capitalized].compactMap { $0 }
+                if let s = a.lastSession, let w = a.lastWeekly {
+                    parts.append("\(Format.percent(s)) session · \(Format.percent(w)) week"
+                                 + (active ? "" : a.lastSeen.map { ", \(Format.relative($0, now: now))" } ?? ""))
+                }
+                setSubtitle(parts.joined(separator: " · "), on: ai)
+                ai.isEnabled = !model.switching
+                sub.addItem(ai)
+            }
+            if !model.savedAccounts.contains(where: { $0.accountUuid == me.accountUuid }) {
+                let save = item("Save \(me.email ?? "This Account") for Switching") { [model] in model.saveCurrentAccount() }
+                setSubtitle("Keeps its login in your Keychain, for one-click switching", on: save)
+                sub.addItem(save)
+            }
+            sub.addItem(.separator())
+            sub.addItem(item("Add Another Account…") { AccountHelp.showAdd() })
+            sub.addItem(item("Manage Accounts…") { [model] in model.settingsPane = .account; Windows.show(.settings) })
+            i.submenu = sub
+            if let cur = model.savedAccounts.first(where: { $0.accountUuid == me.accountUuid }) { setSubtitle(cur.title, on: i) }
+            menu.addItem(i)
+
         case .session(let s):
             menu.addItem(sessionItem(s))
             // Option swaps in the replay, like the system menus' alternate items.
@@ -599,6 +630,26 @@ struct UsageDetail: View {
                 .font(.body)
             }
         }
+    }
+}
+
+// MARK: - Adding an account
+
+@MainActor
+enum AccountHelp {
+    static func showAdd() {
+        NSApp.activate()
+        let a = NSAlert()
+        a.messageText = "Add another Claude account"
+        a.informativeText = """
+        1. In AgentPlay, save the account you're on now (Switch Claude Account → Save).
+        2. In a terminal, run claude and type /login. Sign in with the other account. Don't use /logout first: it can cancel the saved login.
+        3. Open this menu again and choose Save for the new account.
+
+        To have AgentPlay save each new sign-in for you, turn on "Remember accounts I sign in to" in Settings → Account.
+        """
+        a.addButton(withTitle: "OK")
+        a.runModal()
     }
 }
 

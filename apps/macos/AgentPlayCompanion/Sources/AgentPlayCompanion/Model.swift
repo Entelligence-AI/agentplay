@@ -270,6 +270,72 @@ final class CompanionModel: ObservableObject {
     func refreshIdentity() {
         let id = ClaudeAccount.readIdentity()
         if id != claudeIdentity { claudeIdentity = id }
+        guard !isSample, let uuid = id?.accountUuid else { return }
+        if let saved = savedAccounts.first(where: { $0.accountUuid == uuid }) {
+            // Claude Code rotated this account's login since we saved it: keep the saved copy current.
+            if let mod = ClaudeSwitch.liveLoginModified(), mod > saved.savedAt.addingTimeInterval(5) { saveCurrentAccount(quiet: true) }
+        } else if prefs.rememberClaudeAccounts == true {
+            saveCurrentAccount(quiet: false)
+        }
+    }
+
+    // MARK: Claude accounts (switching)
+
+    var savedAccounts: [ClaudeSwitch.Saved] { prefs.claudeAccounts ?? [] }
+    @Published private(set) var switching = false
+
+    private func upsert(_ s: ClaudeSwitch.Saved) {
+        var list = savedAccounts
+        if let i = list.firstIndex(where: { $0.accountUuid == s.accountUuid }) {
+            var merged = s
+            merged.lastSession = s.lastSession ?? list[i].lastSession
+            merged.lastWeekly = s.lastWeekly ?? list[i].lastWeekly
+            merged.lastSeen = s.lastSeen ?? list[i].lastSeen
+            list[i] = merged
+        } else {
+            list.append(s)
+        }
+        prefs.claudeAccounts = list
+    }
+
+    func saveCurrentAccount(quiet: Bool = false) {
+        Task {
+            let r = await Task.detached { ClaudeSwitch.saveCurrent() }.value
+            switch r {
+            case .success(let s):
+                upsert(s)
+                if !quiet { toast = "Saved \(s.title) for switching." }
+            case .failure(let f):
+                if !quiet { toast = f.message }
+            }
+        }
+    }
+
+    func switchAccount(to target: ClaudeSwitch.Saved) {
+        guard !switching else { return }
+        let busy = (snapshot?.live ?? []).contains { $0.status == .busy }
+        let backups = (ProcessInfo.processInfo.environment["AGENTPLAY_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".agentplay")).appendingPathComponent("backups")
+        switching = true
+        Task {
+            let r = await Task.detached { ClaudeSwitch.switchTo(target, liveBusy: busy, backups: backups) }.value
+            switching = false
+            switch r {
+            case .success(let s):
+                upsert(s)
+                accountLimits = []
+                refreshIdentity()
+                refreshAccount(force: true)
+                toast = "Switched to \(s.title). Open sessions follow within about 30 seconds."
+            case .failure(let f):
+                toast = f.message
+            }
+        }
+    }
+
+    func forgetAccount(_ s: ClaudeSwitch.Saved) {
+        Task.detached { ClaudeSwitch.forget(s.accountUuid) }
+        prefs.claudeAccounts = savedAccounts.filter { $0.accountUuid != s.accountUuid }
     }
     @Published private(set) var accountFailure: ClaudeAccount.Failure?
     private var lastAccountFetch = Date.distantPast
@@ -317,6 +383,13 @@ final class CompanionModel: ObservableObject {
             case .success(let rows):
                 accountLimits = rows
                 accountFailure = nil
+                // Remember what this account had left, for the switch menu.
+                if let uuid = claudeIdentity?.accountUuid, var s = savedAccounts.first(where: { $0.accountUuid == uuid }) {
+                    s.lastSession = rows.first { $0.window == "five_hour" }?.used.value?.usedPercent
+                    s.lastWeekly = rows.first { $0.window == "weekly" }?.used.value?.usedPercent
+                    s.lastSeen = Date()
+                    upsert(s)
+                }
             case .failure(let f):
                 accountFailure = f
                 if case .rateLimited(let until) = f { accountBackoffUntil = until ?? Date().addingTimeInterval(600) }

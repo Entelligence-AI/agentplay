@@ -293,7 +293,34 @@ struct PrivacyPane: View {
 }
 
 struct AccountPane: View {
+    @EnvironmentObject var model: CompanionModel
+
     var body: some View {
+        Section("Claude accounts") {
+            if let me = model.claudeIdentity?.line { LabeledContent("Signed in as", value: me) }
+            ForEach(model.savedAccounts) { a in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(a.title)
+                        Text([a.organization, a.seatTier?.capitalized].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if a.accountUuid == model.claudeIdentity?.accountUuid {
+                        Text("Active").foregroundStyle(.secondary)
+                    } else {
+                        Button("Switch") { model.switchAccount(to: a) }.disabled(model.switching)
+                    }
+                    Button("Forget") { model.forgetAccount(a) }
+                }
+            }
+            Toggle(isOn: Binding(get: { model.prefs.rememberClaudeAccounts == true }, set: { model.prefs.rememberClaudeAccounts = $0 })) {
+                Text("Remember accounts I sign in to")
+                Text("Each new Claude Code login is saved for switching, and you're told when.")
+            }
+            Text("Switching swaps Claude Code's login in your Keychain and the account in ~/.claude.json, like claude-swap. The account you leave is saved first, your MCP server logins stay, and ~/.claude.json is backed up in ~/.agentplay/backups. Logins stay on this Mac in your Keychain. Not while a session is mid-step; open sessions follow within about 30 seconds.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
         Section {
             LabeledContent("Status", value: "Local only")
             Text("Every feature here works without an account, offline.")
