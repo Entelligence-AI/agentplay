@@ -46,12 +46,7 @@ public enum Pip {
         let fresh = limits.filter { $0.used.isAvailable && $0.used.freshness != .stale && ($0.resetsAt.map { $0 > now } ?? true) }
         if fresh.contains(where: { ($0.used.value?.usedPercent ?? 0) >= 100 }) { return .limit }
         if let recent { return recent.pose }
-        let ahead = fresh.contains { w in
-            let used = w.used.value?.usedPercent ?? 0
-            let p = Pace.of(used: used, windowMinutes: w.windowMinutes, resetsAt: w.resetsAt, now: now)
-            return used >= 90 || (p.map { $0.level != .normal } ?? false)
-        }
-        if ahead { return .sweat }
+        if hotWindow(fresh, now: now) != nil { return .sweat }
         if live.contains(where: { $0.status == .busy }) { return .work }
         return .sleep
     }
@@ -79,13 +74,25 @@ public enum Pip {
         case .cheer:
             return (recent?.text ?? "Done", detail)
         case .sweat:
-            let hot = ProviderSummary.build(limits).first { !$0.windows.isEmpty }?.window("five_hour")
-            let left = hot?.resetsAt.map { Format.duration($0.timeIntervalSince(now)) }
-            return ("Going fast" + (left.map { ", \($0) left in this session" } ?? ""), detail)
+            guard let w = hotWindow(limits, now: now) else { return ("Going fast", detail) }
+            let name = w.window == "five_hour" ? "session" : "week"
+            let used = Format.percent(w.used.value?.usedPercent ?? 0)
+            let left = w.resetsAt.map { ", \(Format.duration($0.timeIntervalSince(now))) left" } ?? ""
+            return ("Going fast: \(name) at \(used)\(left)", detail)
         case .work:
             return (working == 1 ? "1 agent working" : "\(working) agents working", detail)
         case .sleep:
             return ("All quiet", detail)
+        }
+    }
+
+    /// The first fresh window that's 90% used or ahead of pace.
+    public static func hotWindow(_ limits: [ProviderLimitWindow], now: Date) -> ProviderLimitWindow? {
+        limits.first { w in
+            guard w.used.isAvailable, w.used.freshness != .stale, w.resetsAt.map({ $0 > now }) ?? true else { return false }
+            let used = w.used.value?.usedPercent ?? 0
+            let p = Pace.of(used: used, windowMinutes: w.windowMinutes, resetsAt: w.resetsAt, now: now)
+            return used >= 90 || (p.map { $0.level != .normal } ?? false)
         }
     }
 

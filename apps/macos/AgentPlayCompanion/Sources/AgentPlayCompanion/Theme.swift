@@ -15,9 +15,10 @@ enum PaceTint {
 
     var color: Color {
         switch self {
-        case .normal: .accentColor
-        case .ahead: .orange
-        case .over: .red
+        // System colours by NSColor: SwiftUI's own resolve to white inside an NSMenu.
+        case .normal: Color(nsColor: .controlAccentColor)
+        case .ahead: Color(nsColor: .systemOrange)
+        case .over: Color(nsColor: .systemRed)
         case .stale: Color(nsColor: .tertiaryLabelColor)
         }
     }

@@ -38,6 +38,10 @@ import Testing
         #expect(s.title == "1 waiting on you: docs-site" && s.detail == "Session 75%")
         #expect(Pip.sentence(.work, live: [live("a", .busy), live("b", .busy)], limits: [], recent: nil, now: now).title == "2 agents working")
         #expect(Pip.sentence(.sleep, live: [], limits: [], recent: nil, now: now) == ("All quiet", nil))
+        // Sweating about the week, not the calm session: say so.
+        let week = [window("five_hour", used: 4, minutes: 300, resetsIn: 4 * 3600),
+                    window("weekly", used: 71, minutes: 10080, resetsIn: 5 * 86400)]
+        #expect(Pip.sentence(.sweat, live: [], limits: week, recent: nil, now: now).title == "Going fast: week at 71%, 5d left")
     }
 
     @Test func eventsAreTransitionsNotStates() {

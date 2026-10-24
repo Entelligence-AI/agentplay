@@ -99,18 +99,34 @@ extension Renderer {
     static func renderLive(to path: String) async {
         _ = NSApplication.shared
         guard case .success(let rt) = Runtime.locate(allowDevOverride: true),
-              case .success(let s) = await SnapshotService(runtime: rt).fetch(.read) else { print("no snapshot"); return }
+              case .success(let fetched) = await SnapshotService(runtime: rt).fetch(.read) else { print("no snapshot"); return }
         let dir = URL(fileURLWithPath: path)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // As the user sees it: their settings (read, never written), and account usage if they turned it on.
+        let real = PrefsStore().load()
+        var s = fetched
+        if real.usesClaudeAccount, case .success(let rows) = await ClaudeAccount.fetch(claudeVersion: CompanionModel.claudeVersion()) {
+            s.limits = ClaudeAccount.merge(s.limits, account: rows)
+        }
+        let snap = s
         await MainActor.run {
             NSApp.setActivationPolicy(.accessory)
             let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "render.\(UUID().uuidString)")!),
                                    isDevBuild: true)
-            m.installLiveForRender(s)
-            for dark in [false, true] {
-                captureMenu(m, now: s.generatedAt, to: dir.appendingPathComponent("live-menu-\(dark ? "dark" : "light").png"), dark: dark)
+            m.prefs = real
+            m.installLiveForRender(snap)
+            let c = StatusItemController(model: m)
+            c.updateIcon()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+            if let v = c.statusItem.button?.window?.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                v.cacheDisplay(in: v.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("live-statusitem.png"))
             }
-            if let u = s.usage {
+            NSStatusBar.system.removeStatusItem(c.statusItem)
+            for dark in [false, true] {
+                captureMenu(m, now: snap.generatedAt, to: dir.appendingPathComponent("live-menu-\(dark ? "dark" : "light").png"), dark: dark)
+            }
+            if let u = snap.usage {
                 write(AnyView(UsageDetail(report: u)), to: dir.appendingPathComponent("live-usage-details.png"), dark: true, material: true)
             }
         }
