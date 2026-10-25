@@ -116,13 +116,48 @@ enum Film {
     static func center(_ r: NSRect) -> CGPoint { cg(NSPoint(x: r.midX, y: r.midY)) }
     static var pipCenter: CGPoint { center(pipRect) }
 
+    /// The menu bar's mean brightness over our backdrop, from a screenshot of the strip left of the status item.
+    /// A translucent bar over the near-black backdrop reads about 40 to 70; a full-screen Space shows a black
+    /// overlay bar or nothing at all (under 25), which `visibleFrame` does not report.
+    static func barLuma() -> Double {
+        let f = screen.frame
+        let r = pipRect
+        let x = Int(max(f.minX, r.minX - 260)), w = 200, h = Int(f.maxY - screen.visibleFrame.maxY)
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("agentplay-film-bar.png")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-x", "-D", "\(screenIndex + 1)", "-R", "\(x),0,\(w),\(max(h, 24))", tmp.path]
+        try? p.run(); p.waitUntilExit()
+        guard let img = NSImage(contentsOf: tmp), let rep = img.representations.first as? NSBitmapImageRep ?? img.tiffRepresentation.flatMap(NSBitmapImageRep.init) else { return -1 }
+        var sum = 0.0, n = 0.0
+        for y in stride(from: 0, to: rep.pixelsHigh, by: 4) {
+            for xx in stride(from: 0, to: rep.pixelsWide, by: 4) {
+                if let c = rep.colorAt(x: xx, y: y) { sum += Double(c.brightnessComponent) * 255; n += 1 }
+            }
+        }
+        return n > 0 ? sum / n : -1
+    }
+
     /// Waits for a visible menu bar and for the status item to sit in it (it slides in after launch).
     static func waitForPip() async {
         var warned = false
         for i in 0..<6000 {
             if menuBarVisible {
                 let r = pipRect
-                if screen.frame.contains(NSPoint(x: r.midX, y: r.midY)), r.minY > screen.frame.maxY - 40 { return }
+                if screen.frame.contains(NSPoint(x: r.midX, y: r.midY)), r.minY > screen.frame.maxY - 40 {
+                    // The bar must be the normal translucent one, twice in a row, before a take records.
+                    var good = 0
+                    while good < 2 {
+                        let l = barLuma()
+                        if l >= 28 && l <= 95 { good += 1 } else {
+                            good = 0
+                            print("film: the menu bar reads \(Int(l)) (a full-screen Space shows a black bar). Waiting for a normal bar.")
+                            try? await Task.sleep(for: .seconds(6))
+                        }
+                        try? await Task.sleep(for: .milliseconds(400))
+                    }
+                    return
+                }
                 if i % 10 == 0 {
                     // A real click on our backdrop: that is what macOS takes as "the user is on this display".
                     await Cursor.click()
