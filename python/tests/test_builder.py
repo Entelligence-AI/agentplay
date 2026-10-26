@@ -744,3 +744,25 @@ def test_hex_named_files_are_still_file_operations():
     ops = sm.file_ops("Bash", {"command": "rm deadbeef1 && echo x > cafe1234"}, "/repo")
     assert ops.get(os.path.normpath("/repo/deadbeef1")) == "delete"
     assert ops.get(os.path.normpath("/repo/cafe1234")) == "create"
+
+
+def test_source_byte_cap_is_4gb_for_streamed_claude_code_and_512mb_for_the_rest(monkeypatch):
+    from agentplay import discover
+
+    assert discover.MAX_SOURCE_BYTES == 512 * 1024 * 1024
+    assert discover.CLAUDE_CODE_MAX_SOURCE_BYTES == 4 * 1024 * 1024 * 1024
+    built = []
+    monkeypatch.setattr(sm, "build_claude_code_map", lambda path, **kw: built.append(path) or {"ok": True})
+    source = SimpleNamespace(get_spans_by_session=lambda sid: pytest.fail("past the cap, never parsed"))
+    claude = discover.Candidate("c", "claude-code", "/x/c.jsonl", 0.0)
+    codex = discover.Candidate("x", "codex", "/x/rollout.jsonl", 0.0)
+
+    monkeypatch.setattr(discover, "source_bytes", lambda c: 1024 * 1024 * 1024)  # 1 GB
+    assert discover.build_map(claude, source) == {"ok": True}
+    with pytest.raises(discover.SkipSession, match="too_large"):
+        discover.build_map(codex, source)
+
+    monkeypatch.setattr(discover, "source_bytes", lambda c: discover.CLAUDE_CODE_MAX_SOURCE_BYTES + 1)
+    with pytest.raises(discover.SkipSession, match="too_large"):
+        discover.build_map(claude, source)
+    assert len(built) == 1

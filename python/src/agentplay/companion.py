@@ -31,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -234,7 +235,9 @@ def process_evidence(paths_by_sid: dict[str, tuple[str, str]]) -> dict[str, str]
     if not paths_by_sid:
         return {}
     out: dict[str, str] = {}
-    held = _lsof(["-Fn", "--", *[p for _, p in paths_by_sid.values() if os.path.exists(p)]])
+    existing = [p for _, p in paths_by_sid.values() if os.path.exists(p)]
+    # With no file named, lsof would list every open file on the machine.
+    held = _lsof(["-Fn", "--", *existing]) if existing else ""
     open_paths = {line[1:] for line in held.splitlines() if line.startswith("n")}
     for sid, (_, path) in paths_by_sid.items():
         if path in open_paths:
@@ -257,6 +260,8 @@ def live_claude_sessions(homes: discover.Homes, now: datetime) -> list[dict[str,
     kept (a repo-like label); the path, session name and socket are never read into the snapshot.
     The file is internal to Claude Code, not a documented interface, so anything unexpected is skipped.
     """
+    if os.name != "posix":
+        return []  # the companion is macOS-only; os.kill(pid, 0) elsewhere (Windows) terminates the process
     out = []
     for home in homes.claude_code:
         d = Path(home) / "sessions"
@@ -332,8 +337,10 @@ def _num(v: Any) -> float | None:
 def codex_context(path: str) -> dict[str, Any] | None:
     """Context occupancy Codex itself reported for its latest request, or None."""
     for ts, payload in reversed(_codex_token_counts(path)):
-        info = payload.get("info") or {}
-        last = info.get("last_token_usage") or {}
+        info = payload.get("info")
+        last = info.get("last_token_usage") if isinstance(info, dict) else None
+        if not isinstance(last, dict):
+            continue  # malformed record: skip it, not the whole snapshot
         used, limit = _num(last.get("input_tokens")), _num(info.get("model_context_window"))
         if used is None:
             continue
@@ -450,7 +457,8 @@ def codex_limits(paths: list[tuple[str, str]], now: datetime) -> list[dict[str, 
     return out
 
 
-_RL_WINDOWS = {"five_hour": ("five_hour", 300), "seven_day": ("weekly", 10080), "seven_day_opus": ("weekly", 10080)}
+# Only account-wide windows: a model-scoped refusal ("seven_day_opus") says nothing about the general weekly window.
+_RL_WINDOWS = {"five_hour": ("five_hour", 300), "seven_day": ("weekly", 10080)}
 
 
 def claude_limit_hits(homes: discover.Homes, now: datetime) -> list[dict[str, Any]]:
@@ -599,17 +607,20 @@ def repeated_failures(doc: dict[str, Any], t0: datetime | None, pending_seq: int
     """
     files = doc.get("files") or []
     streaks: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
-    found: dict[tuple[str, str, str], dict[str, Any]] = {}
+    found: list[dict[str, Any]] = []
+    open_alerts: dict[tuple[str, str, str], dict[str, Any]] = {}  # the alert of each streak still running
     for e in doc.get("events") or []:
         fam = command_family(e)
         if not fam:
             continue
+        if pending_seq is not None and e.get("seq") == pending_seq:
+            continue  # still running: neither a failure nor a success
         lane = e.get("agent") or "main"
-        if not e.get("err") or e.get("seq") == pending_seq:
+        if not e.get("err"):
             # A success ends every streak of this family in this lane, and resolves what it ended.
             for key in [k for k in streaks if k[0] == lane and k[1] == fam]:
-                if key in found and found[key].get("resolvedSeq") is None:
-                    found[key]["resolvedSeq"] = e.get("seq")
+                if key in open_alerts:
+                    open_alerts.pop(key)["resolvedSeq"] = e.get("seq")
                 del streaks[key]
             continue
         key = (lane, fam, str(e.get("errClass") or "other"))
@@ -617,9 +628,9 @@ def repeated_failures(doc: dict[str, Any], t0: datetime | None, pending_seq: int
         s.append(e)
         while len(s) > 1 and (int(s[-1].get("t") or 0) - int(s[0].get("t") or 0)) > REPEAT_WINDOW_MS:
             s.pop(0)
-        if len(s) >= REPEAT_N and key not in found:
+        if len(s) >= REPEAT_N and key not in open_alerts:
             first = s[0]
-            found[key] = {
+            open_alerts[key] = {
                 "rule": "repeated_failure",
                 "signature": _sig(doc["session"]["id"], lane, fam, key[2], first.get("seq")),
                 "patternKey": _sig("repeated_failure", fam, key[2]),
@@ -639,9 +650,10 @@ def repeated_failures(doc: dict[str, Any], t0: datetime | None, pending_seq: int
                                       f"{fam} failed {len(s)} times in a row ({key[2]}) in one run, "
                                       "with no success of it in between.")),
             }
-        elif key in found and found[key].get("resolvedSeq") is None:
-            found[key]["count"] = max(found[key]["count"], len(s))
-    return list(found.values())
+            found.append(open_alerts[key])
+        elif key in open_alerts:
+            open_alerts[key]["count"] = max(open_alerts[key]["count"], len(s))
+    return found
 
 
 def learn_card(store: Store, rows: list[dict[str, Any]], now: datetime) -> dict[str, Any] | None:
@@ -706,7 +718,7 @@ def learn_card(store: Store, rows: list[dict[str, Any]], now: datetime) -> dict[
 
 # --------------------------------------------------------------------------- runs
 def _run(doc: dict[str, Any], row: dict[str, Any], now: datetime, live: dict[str, str],
-         codex_ctx: dict[str, Any] | None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+         codex_ctx: dict[str, Any] | None, turn_ended: bool = False) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     s = doc["session"]
     sid = s["id"]
     agent = s.get("agentTool") or row.get("agentTool")
@@ -747,7 +759,8 @@ def _run(doc: dict[str, Any], row: dict[str, Any], now: datetime, live: dict[str
     # its transcript, the result has most likely landed since: neither running nor failed.
     if trailing_no_result and (active or behind is not None):
         pending_seq = visible[-1].get("seq")
-    pending_is_live = active and behind is None
+    # Claude Code says the turn ended (idle): a call with no result is not running any more.
+    pending_is_live = active and behind is None and not turn_ended
     tail = [session_event(e, files, t0, pending=pending_is_live and e.get("seq") == pending_seq)
             for e in visible[-TAIL_EVENTS:]]
     if pending_seq is not None and not pending_is_live and tail and tail[-1]["seq"] == pending_seq:
@@ -909,10 +922,28 @@ def insights(store: Store, now: datetime, homes: discover.Homes | None = None) -
 
 
 _WRONG_EVENT = re.compile(r"expected '(\w+)' but got '(\w+)'")
+_ENV_ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _hook_executable(command: Any) -> str | None:
+    """The file name of the program a hook command runs ("TOKEN=x /bin/hook.sh --a" -> "hook.sh").
+
+    Only that: environment assignments, arguments and the folder can hold secrets or private paths.
+    """
+    if not isinstance(command, str):
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:  # unbalanced quotes
+        tokens = command.split()
+    exe = next((t for t in tokens if not _ENV_ASSIGN.match(t)), None)
+    if exe is None:
+        return None
+    return os.path.basename(exe.rstrip("/"))[:160] or None
 
 
 def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
-    """For a failing hook ("SessionStart:startup"): the commands configured for its event, and why the newest
+    """For a failing hook ("SessionStart:startup"): the programs (file names only) configured for its event, and why the newest
     failure happened, as a fixed phrase. Claude Code records the error with the hook's output; that output is
     read to classify it and dropped, like every error text in AgentPlay."""
     event = hook_name.split(":")[0]
@@ -927,8 +958,9 @@ def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
                 continue
             for g in groups if isinstance(groups, list) else []:
                 for h in (g.get("hooks") or []) if isinstance(g, dict) else []:
-                    if isinstance(h, dict) and isinstance(h.get("command"), str):
-                        commands.append(h["command"][:160])
+                    exe = _hook_executable(h.get("command")) if isinstance(h, dict) else None
+                    if exe:
+                        commands.append(exe)
                         files.append(_home_label(p))
     cause = None
     newest = 0.0
@@ -1025,12 +1057,16 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
     now = now or datetime.now(UTC)
     homes = homes or discover.Homes.default()
     index_error = None
+    unreadable_index = "The AgentPlay index can't be read. Rebuild it from Settings (Diagnostics)."
     if store.index_path.exists():
         try:
             json.loads(store.index_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            index_error = "The AgentPlay index can't be read. Rebuild it from Settings (Diagnostics)."
-    rows = [r for r in store.rows() if r.get("role") not in ("subagent", "helper") and r.get("calls")]
+            index_error = unreadable_index
+    try:
+        rows = [r for r in store.rows() if r.get("role") not in ("subagent", "helper") and r.get("calls")]
+    except (AttributeError, TypeError):  # valid JSON of the wrong shape, e.g. "sessions" as a list
+        index_error, rows = unreadable_index, []
     # Newest activity first: a long session started yesterday and still writing outranks one started an hour ago.
     def activity_key(r: dict[str, Any]) -> str:
         return max(r.get("endedAt") or "", r.get("startedAt") or "", iso(r.get("sourceMtime")) or "")
@@ -1065,8 +1101,8 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         ctx = None
         if r.get("agentTool") == "codex" and isinstance(r.get("sourcePath"), str):
             ctx = codex_context(r["sourcePath"])
-        run, run_alerts = _run(doc, r, now, live, ctx)
-        rec = status_by_sid.get(run["sessionId"])
+        rec = status_by_sid.get(r["sessionId"])
+        run, run_alerts = _run(doc, r, now, live, ctx, turn_ended=bool(rec) and rec["status"] == "idle")
         run["liveStatus"] = rec["status"] if rec else None
         runs.append(run)
         alerts.extend(run_alerts)
@@ -1098,7 +1134,7 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         "unreadable": errors,
         "alerts": alerts,
         "limits": limits,
-        "live": [{**r, "inStore": r["sessionId"] in store.index} for r in live_sessions],
+        "live": [{**r, "inStore": index_error is None and r["sessionId"] in store.index} for r in live_sessions],
         "learn": learn_card(store, by_activity, now),
         "usage": _usage(store, now, homes),
         "insights": _insights(store, now, homes),
@@ -1117,12 +1153,21 @@ def _find_fix(store: Store, fix_id: str) -> dict[str, Any]:
     return fx
 
 
+def _drop_insights_cache(store: Store) -> None:
+    """Forget cached insights after a change, so an applied fix stops showing as applicable."""
+    try:
+        (store.base / "cache" / "companion-insights.json").unlink(missing_ok=True)
+    except OSError:
+        pass  # a stale cache only lasts INSIGHTS_TTL_S
+
+
 def fix_action(store: Store, action: str, ident: str, *, grant: bool = False) -> dict[str, Any]:
     """The menu's Apply, Preview and Undo, through the same guarded writer as the viewer (fixes.py)."""
     from . import fixes
 
     if action == "undo":
         e = fixes.undo(store.base, ident)
+        _drop_insights_cache(store)
         return {"undone": e["id"], "file": e.get("file"), "repo": e.get("repo")}
     fx = _find_fix(store, ident)
     if not fx.get("actions"):
@@ -1144,6 +1189,7 @@ def fix_action(store: Store, action: str, ident: str, *, grant: bool = False) ->
             raise fixes.FixError("not_granted", f"AgentPlay may not write to {repo} yet.")
         fixes.grant(store.base, repo, root)
     e = fixes.apply(store.base, fx, act, source="button")
+    _drop_insights_cache(store)
     return {"entryId": e["id"], "file": e.get("file"), "repo": repo}
 
 
@@ -1152,8 +1198,10 @@ def autotune_action(store: Store, action: str, fix_id: str) -> dict[str, Any]:
 
     if action == "approve":
         e = autotune.approve(store, fix_id)
+        _drop_insights_cache(store)
         return {"entryId": e["id"], "file": e.get("file"), "repo": e.get("repo")}
     autotune.dismiss(store, fix_id)
+    _drop_insights_cache(store)
     return {"dismissed": fix_id}
 
 
