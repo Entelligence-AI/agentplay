@@ -221,6 +221,8 @@ final class CompanionModel: ObservableObject {
         switch result {
         case .success(let s):
             apply(s)
+            // ~/.claude/sessions may not have existed at launch.
+            if sessionsWatcher == nil { startLiveWatch() }
         case .failure(let e):
             lastError = e
             phase = snapshot == nil ? .failed(e) : .ready
@@ -535,13 +537,17 @@ final class CompanionModel: ObservableObject {
     func refreshAccount(force: Bool) {
         guard !filmMode else { return }
         let now = Date()
-        guard prefs.usesClaudeAccount, !isSample, !accountFetching, now >= accountBackoffUntil else { return }
+        guard prefs.usesClaudeAccount, !isSample, !accountFetching, !switching, now >= accountBackoffUntil else { return }
         guard force || now.timeIntervalSince(lastAccountFetch) >= 120 else { return }
         accountFetching = true
         let version = Self.claudeVersion()
+        let account = ClaudeAccount.readIdentity()?.accountUuid
         Task {
             let result = await Task.detached { await ClaudeAccount.fetch(claudeVersion: version) }.value
             accountFetching = false
+            // Switched or signed in to another account meanwhile: these numbers are the old one's. Ask again.
+            // A failure (rate limit, Keychain denied) still applies below, so its backoff holds.
+            if ClaudeAccount.readIdentity()?.accountUuid != account, case .success = result { refreshAccount(force: true); return }
             lastAccountFetch = Date()
             switch result {
             case .success(let rows):

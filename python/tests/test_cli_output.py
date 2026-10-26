@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 from collections import Counter
 from datetime import UTC, datetime
@@ -165,3 +166,88 @@ def test_view_says_when_the_requested_port_is_busy(monkeypatch, capsys, requeste
     out, err = capsys.readouterr()
     assert (f"Port {requested} is busy; using {bound} instead." in err) is notice
     assert f"127.0.0.1:{bound}/" in out
+
+
+@pytest.fixture
+def list_store(monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENTPLAY_HOME", str(tmp_path))
+    monkeypatch.setattr(cli, "_TTY", False)
+    st = cli.Store()
+    recent = datetime(2026, 10, 20, tzinfo=UTC).timestamp()
+    old = datetime(2026, 9, 1, tzinfo=UTC).timestamp()
+    for sid, agent, started, modified, role in [
+        ("other", "claude-code", "2026-10-23T00:00:00Z", recent, None),
+        ("child", "codex", "2026-10-22T00:00:00Z", recent, "subagent"),
+        ("helper", "codex", "2026-10-21T00:00:00Z", recent, "helper"),
+        ("imported", "codex", "2026-10-20T01:00:00+02:00", None, None),
+        ("stale", "codex", "2026-10-19T00:00:00Z", old, None),
+        ("updated", "codex", "2026-09-01T00:00:00Z", recent, None),
+        ("old-import", "codex", "2026-08-01T00:00:00Z", None, None),
+        ("undated", "codex", "", None, None),
+    ]:
+        st.index[sid] = {"sessionId": sid, "agentTool": agent, "startedAt": started, "role": role}
+        if modified is not None:
+            st.index[sid]["sourceMtime"] = modified
+    st.save_index()
+    return st
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+@pytest.mark.parametrize("since", ["7d", "168h", "1w", "2026-10-16"])
+def test_list_filters_before_limit(list_store, monkeypatch, capsys, as_json, since):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 10, 23, tzinfo=UTC)
+
+    monkeypatch.setattr(cli, "datetime", Clock)
+    flags = ["--json"] if as_json else []
+    assert cli.main(["list", "--agents", "codex", "--since", since, "--limit", "2", *flags]) == 0
+    out = capsys.readouterr().out
+    ids = [r["sessionId"] for r in json.loads(out)] if as_json else [s.strip() for s in out.splitlines()[1::2]]
+    assert ids == ["imported", "updated"]
+
+
+@pytest.mark.parametrize(("flags", "expected"), [
+    ([], ["other", "imported", "stale", "updated", "old-import", "undated"]),
+    (["--agents", "codex, claude-code", "--limit", "1"], ["other"]),
+    (["--agents", "cursor"], []),
+    (["--since", "2026-10-20T00:00:00Z"], ["other", "updated"]),
+])
+def test_list_filters_independently(list_store, capsys, flags, expected):
+    assert cli.main(["list", "--json", *flags]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == expected
+
+
+@pytest.mark.parametrize(("flags", "message"), [
+    (["--agents", "unknown"], "unknown agent"),
+    (["--since", "yesterday"], "can't read --since"),
+])
+def test_list_rejects_invalid_filters(list_store, flags, message):
+    with pytest.raises(SystemExit, match=message):
+        cli.main(["list", *flags])
+
+
+@pytest.mark.parametrize("filtered", [False, True])
+def test_list_empty_message(list_store, capsys, filtered):
+    flags = ["--agents", "cursor"] if filtered else []
+    if not filtered:
+        list_store.index.clear()
+        list_store.save_index()
+    assert cli.main(["list", *flags]) == 0
+    expected = "No sessions match these filters." if filtered else "No maps yet. Run `agentplay build`."
+    assert capsys.readouterr().out.strip() == expected
+
+
+@pytest.mark.parametrize(("started", "expected"), [
+    ("2026-10-20T00:00:00Z", ["session"]),
+    ("2026-09-01T00:00:00Z", []),
+])
+def test_list_uses_start_time_for_zero_source_mtime(list_store, capsys, started, expected):
+    list_store.index.clear()
+    list_store.index["session"] = {
+        "sessionId": "session", "agentTool": "codex", "startedAt": started, "sourceMtime": 0.0,
+    }
+    list_store.save_index()
+    assert cli.main(["list", "--since", "2026-10-16", "--json"]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == expected

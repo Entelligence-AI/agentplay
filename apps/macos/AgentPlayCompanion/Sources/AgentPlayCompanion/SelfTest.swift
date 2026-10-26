@@ -27,12 +27,16 @@ enum SelfTest {
             report["liveRecords"] = live.map { l in
                 "\(l.status.rawValue) → \(l.pid.flatMap { TerminalFocus.app(for: $0)?.localizedName } ?? "no app (tmux, ssh or ended)")"
             }
-            // The opt-in account fetch: percentages or why not, never the token.
-            switch await ClaudeAccount.fetch(claudeVersion: CompanionModel.claudeVersion()) {
-            case .success(let rows):
-                report["claudeAccount"] = rows.map { "\($0.window) \(Int($0.used.value?.usedPercent ?? -1))% resets \($0.resetsAt.map { "\($0)" } ?? "?")" }
-            case .failure(let f):
-                report["claudeAccount"] = f.message
+            // The opt-in account fetch, only if the user turned it on: percentages or why not, never the token.
+            if !PrefsStore().load().usesClaudeAccount {
+                report["claudeAccount"] = "off"
+            } else {
+                switch await ClaudeAccount.fetch(claudeVersion: CompanionModel.claudeVersion()) {
+                case .success(let rows):
+                    report["claudeAccount"] = rows.map { "\($0.window) \(Int($0.used.value?.usedPercent ?? -1))% resets \($0.resetsAt.map { "\($0)" } ?? "?")" }
+                case .failure(let f):
+                    report["claudeAccount"] = f.message
+                }
             }
             report["planKinds"] = s.limits.map { "\($0.provider):\($0.window):\($0.used.kind.rawValue):\($0.used.freshness.rawValue)" }
             let viewer = ViewerManager(runtime: rt)

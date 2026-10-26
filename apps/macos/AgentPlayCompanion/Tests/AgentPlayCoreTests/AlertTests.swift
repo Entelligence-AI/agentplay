@@ -200,6 +200,20 @@ func failure(_ sig: String, pattern: String = "aaaaaaaaaaaaaaaa", session: Strin
         #expect(h3.delivered["1111111111111111"] != nil && h3.delivered["2222222222222222"] != nil)
     }
 
+    @Test func groupedRunsOverBudgetWaitForTheSummary() throws {
+        var s = try liveSnapshot(now: now)
+        s.alerts = [failure("1111111111111111", pattern: "p1", session: "a", at: now.addingTimeInterval(-60), rule: .unresolvedEnd),
+                    failure("2222222222222222", pattern: "p1", session: "b", at: now.addingTimeInterval(-50), rule: .unresolvedEnd),
+                    failure("3333333333333333", pattern: "p1", session: "c", at: now.addingTimeInterval(-40), rule: .unresolvedEnd)]
+        var full = AlertHistory(watermark: start)
+        full.recent = Array(repeating: now, count: settings([.unresolvedEnd]).maxPerHour)
+        let (out, h) = run(s, settings([.unresolvedEnd]), full)
+        #expect(out.isEmpty && h.delivered.isEmpty)
+        // An hour later the summary still covers all three.
+        let (later, h2) = run(s, settings([.unresolvedEnd]), h, at: now.addingTimeInterval(3601))
+        #expect(later.count == 1 && later[0].note.body.hasPrefix("3 runs") && h2.delivered.count == 3)
+    }
+
     @Test func purgeKeepsWatermarkMovingForward() {
         var h = AlertHistory(watermark: start)
         h.delivered["x"] = now
@@ -242,6 +256,16 @@ func failure(_ sig: String, pattern: String = "aaaaaaaaaaaaaaaa", session: Strin
         #expect(env["AGENTPLAY_CODEX_HOMES"] == "/mnt/c/.codex,/other/.codex,/x/codex")
         #expect(env["AGENTPLAY_COPILOT_HOMES"] == "/srv/copilot,/x/cp")
         #expect(env["AGENTPLAY_OPENCODE_HOMES"] == "/data/opencode,/x/oc")
+    }
+
+    @Test func everyAgentsAddedFolderKeepsItsDefaults() {
+        var p = CompanionPrefs()
+        p.customFolders = ["gemini-cli": ["/g"], "antigravity-cli": ["/a"], "copilot-vscode": ["/v"]]
+        let env = p.folderEnvironment(parent: [:])
+        #expect(env["AGENTPLAY_GEMINI_HOMES"] == "~/.gemini,/g")
+        #expect(env["AGENTPLAY_ANTIGRAVITY_HOMES"] == "~/.gemini/antigravity-cli,/a")
+        #expect(env["AGENTPLAY_COPILOT_VSCODE_HOMES"] == "~/Library/Application Support/Code/User,"
+                + "~/Library/Application Support/Code - Insiders/User,~/Library/Application Support/VSCodium/User,/v")
     }
 
     @Test func learnDismissalExpires() {

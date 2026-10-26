@@ -1,6 +1,6 @@
 # Privacy
 
-AgentPlay Companion is local only. It has no account, sends nothing anywhere, and keeps no analytics. This page says exactly what it reads, shows, stores and runs, and which test holds each line.
+AgentPlay Companion is local by default. It has no AgentPlay account and keeps no analytics; the only request it can make is the opt-in Claude usage fetch described under Network. This page says exactly what it reads, shows, stores and runs, and which test holds each line.
 
 ## Network
 
@@ -32,7 +32,7 @@ Not requested: Full Disk Access, Accessibility, Screen Recording, Contacts, brow
 
 ## What it never shows, stores or sends
 
-Prompt text, session titles and task labels (both are prompt text in the index), assistant or reasoning text, file contents, command arguments, tool inputs and outputs, repo remotes, PR URLs, transcript paths.
+Prompt text, session titles and task labels (both are prompt text in the index), assistant or reasoning text, file contents, command arguments, tool inputs and outputs, repo remotes, PR URLs. Transcript paths are never shown or sent; they are stored only on this Mac (see "What it writes").
 
 These are never read into the snapshot in the first place: the Python core does not pass them through (`companion.py`), and the Swift side has nothing to leak. Tests:
 
@@ -52,7 +52,7 @@ Off by default, except "Session needs you", which onboarding offers switched on 
 
 - Its preferences, in the `ai.entelligence.agentplay.companion` domain: settings, mutes, pins, dismissed Learn cards, alert ids and times, custom folders.
 - `~/Library/Caches/ai.entelligence.agentplay.companion/viewer.pid` while its viewer runs.
-- The same maps and index in `~/.agentplay` that `agentplay build` writes.
+- The same maps and index in `~/.agentplay` that `agentplay build` writes. The index records each session's transcript path (`sourcePath`), and the usage cache in `~/.agentplay/cache` is keyed by transcript path. Both stay on this Mac; neither is shown or sent.
 
 Nothing is written inside the app bundle (Python bytecode is precompiled at build time and `PYTHONDONTWRITEBYTECODE=1` is set). Uninstalling leaves `~/.agentplay` alone unless asked (`scripts/companion-uninstall.sh --remove-maps`).
 

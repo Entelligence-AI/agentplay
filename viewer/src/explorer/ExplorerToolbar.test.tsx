@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelUsage } from '@/core/sessionScope';
 import { ExplorerToolbar } from './ExplorerToolbar';
 
@@ -34,8 +34,8 @@ afterEach(() => {
 });
 
 function renderToolbar(
-  model: string | null,
-  onModel: (model: string | null) => void
+  model: string | null = null,
+  onModel: (model: string | null) => void = () => {}
 ) {
   const host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
@@ -90,5 +90,46 @@ describe('ModelPicker', () => {
     press('Enter');
 
     expect(onModel).toHaveBeenCalledExactlyOnceWith('claude-sonnet-4-5');
+  });
+});
+
+describe('CopyLinkButton', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('copies window.location.href to clipboard and shows brief Copied confirmation', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: { writeText },
+    });
+
+    renderToolbar();
+
+    const copyBtn = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Copy link to current view"]'
+    )!;
+    expect(copyBtn).toBeTruthy();
+    expect(copyBtn.textContent).toContain('Copy link');
+
+    await act(async () => {
+      copyBtn.click();
+    });
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(window.location.href);
+    expect(copyBtn.textContent).toContain('Copied');
+    expect(copyBtn.getAttribute('aria-label')).toBe('Link copied');
+
+    // Advance 2s timer to ensure it resets back to "Copy link"
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(copyBtn.textContent).toContain('Copy link');
+    expect(copyBtn.getAttribute('aria-label')).toBe('Copy link to current view');
   });
 });

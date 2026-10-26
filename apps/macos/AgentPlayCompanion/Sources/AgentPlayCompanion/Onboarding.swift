@@ -11,6 +11,8 @@ struct OnboardingView: View {
     /// Filming: the first run plays itself, step by step, on the timings a viewer would take.
     var filmAutoplay = false
     @State private var scanning = false
+    /// Why the first read failed, when it did; Retry runs it again.
+    @State private var scanError: String?
     @State private var opened = Date()
     // The three choices, on until switched off; Start applies them. Defaults nobody has to go looking for.
     @State private var wantsAlerts = true
@@ -41,7 +43,7 @@ struct OnboardingView: View {
                 }
                 .accessibilityLabel("Step \(step) of 4")
                 Spacer()
-                if step > 2 { Button("Back") { go(step - 1) }.controlSize(.large) }
+                if step > 2 || (step == 2 && scanError != nil) { Button("Back") { go(step - 1) }.controlSize(.large) }
                 primary.controlSize(.large)
             }
             .padding(.horizontal, 28).padding(.bottom, 24).padding(.top, 8)
@@ -61,6 +63,7 @@ struct OnboardingView: View {
     @ViewBuilder var primary: some View {
         switch step {
         case 1: Button("Let\u{2019}s Go") { go(2); scan() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+        case 2 where scanError != nil: Button("Retry") { scan() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
         case 2: Button(scanning ? "Reading…" : "Continue") { go(3) }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(scanning)
         case 3: Button("Continue") { go(4) }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
         default: Button("Start") { finish() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
@@ -128,17 +131,24 @@ struct OnboardingView: View {
     var reading: some View {
         VStack(spacing: 0) {
             Spacer()
-            pip(scanning ? .work : .cheer, size: 96)
-            title(scanning ? "Reading your sessions" : "All read.").padding(.top, 24)
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("\(found)")
-                    .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
-                    .contentTransition(.numericText())
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
-                Text(found == 1 ? "session" : "sessions").font(.system(size: 17)).foregroundStyle(.secondary)
+            if let scanError {
+                // The read failed: say why, and the button below becomes Retry instead of claiming "All read."
+                pip(.sleep, size: 96)
+                title("Couldn\u{2019}t read your sessions.").padding(.top, 24)
+                body(scanError).padding(.top, 12)
+            } else {
+                pip(scanning ? .work : .cheer, size: 96)
+                title(scanning ? "Reading your sessions" : "All read.").padding(.top, 24)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(found)")
+                        .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
+                        .contentTransition(.numericText())
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
+                    Text(found == 1 ? "session" : "sessions").font(.system(size: 17)).foregroundStyle(.secondary)
+                }
+                .padding(.top, 14)
+                Text(sources).font(.callout).foregroundStyle(.secondary).padding(.top, 4)
             }
-            .padding(.top, 14)
-            Text(sources).font(.callout).foregroundStyle(.secondary).padding(.top, 4)
             Spacer()
             permission
             Text("macOS may ask about your Desktop or Documents folder: that\u{2019}s me checking which repo a session worked in.")
@@ -278,10 +288,14 @@ struct OnboardingView: View {
     func scan() {
         guard !model.isSample else { return }
         scanning = true
+        scanError = nil
         Task {
             await model.refreshNotificationStatus()
             await model.runFirstScan()
             scanning = false
+            // Failed, or nothing to read with: say why and offer Retry instead of "All read."
+            if case .failed(let e) = model.phase { scanError = e.localizedDescription; return }
+            if model.snapshot == nil { scanError = "AgentPlay couldn\u{2019}t start reading. Try again in a moment."; return }
             // A beat on "All read." before moving on.
             try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 900))
             if step == 2 { go(3) }
@@ -289,12 +303,16 @@ struct OnboardingView: View {
     }
 
     func finish() {
-        if model.isSample { model.leaveSample() }
+        let wasSample = model.isSample
+        if wasSample { model.leaveSample() }
         // The choices take effect now, not as they were toggled: Back and forth changes nothing until Start.
         if wantsAlerts, model.notificationStatus != .denied { model.setPreset(.needsYou, on: true) }
         if wantsAccount != model.prefs.usesClaudeAccount { model.setClaudeAccount(wantsAccount) }
         if wantsLogin != model.loginItemEnabled { model.setLoginItem(wantsLogin) }
         model.finishOnboarding()
+        // The sample skipped the first read of this Mac's sessions: do it now, in the background. The service
+        // folds the reads leaveSample and finishOnboarding queued into this one full scan.
+        if wasSample { Task { await model.runFirstScan() } }
         Windows.close(.welcome)
     }
 }

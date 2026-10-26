@@ -48,14 +48,16 @@ AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "openco
           "antigravity-cli")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
-# applies anyway; this keeps one pathological file from stalling a run). The size
-# counts a session's subagent transcripts too, and long agent-heavy sessions pass
-# 512 MB. The Claude Code reader streams and caps its events as it goes, so one just
-# past that builds in about 10 s with a small memory peak. Past the cap a map stops
-# updating, so it is set well above real sessions. Every other agent goes through the
-# shared parser, which reads a file whole and has its own 1 GB cap; `build_map`
-# applies that cap before the read.
-MAX_SOURCE_BYTES = 4 * 1024 * 1024 * 1024
+# applies anyway; this keeps one pathological file from stalling a run). Every agent
+# but Claude Code goes through the shared parser, which reads a file whole and only
+# then checks its own 1 GB cap, so their cap stays at 512 MB and `build_map` applies
+# the parser's cap too before the read.
+MAX_SOURCE_BYTES = 512 * 1024 * 1024
+# Claude Code's JSONL is read by a streaming builder that caps its events as it goes.
+# Its size counts the session's subagent transcripts too, and long agent-heavy
+# sessions pass 512 MB; one just past that builds in about 10 s with a small memory
+# peak. Past the cap a map stops updating, so it is set well above real sessions.
+CLAUDE_CODE_MAX_SOURCE_BYTES = 4 * 1024 * 1024 * 1024
 
 
 def _homes_from_env(var: str, defaults: Iterable[str | Path]) -> list[Path]:
@@ -245,14 +247,14 @@ def candidates(source: Any, *, since: datetime | None = None) -> list[Candidate]
 
 def source_bytes(c: Candidate) -> int:
     """On-disk size of a session's transcript plus Claude Code subagent files."""
+    from ._core.ingestion.coding_agent._sources.local.source import claude_code_subagent_files
+
     total = 0
     with captured():
         p = Path(c.path)
         if p.is_file():
             total += p.stat().st_size
-            sub = p.with_suffix("") / "subagents"
-            if sub.is_dir():
-                total += sum(f.stat().st_size for f in sub.glob("agent-*.jsonl"))
+            total += sum(f.stat().st_size for f in claude_code_subagent_files(p))
     return total
 
 
@@ -272,15 +274,17 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
     Raises:
         SkipSession: the transcript is too large or has no parseable spans.
     """
+    streamed = c.agent == "claude-code" and c.path.endswith(".jsonl")
     size = source_bytes(c)
-    if size > MAX_SOURCE_BYTES:
+    if size > (CLAUDE_CODE_MAX_SOURCE_BYTES if streamed else MAX_SOURCE_BYTES):
         raise SkipSession("too_large")
-    if c.agent == "claude-code" and c.path.endswith(".jsonl"):
+    if streamed:
         return builder.build_claude_code_map(
             Path(c.path), path_mode=path_mode, hmac_key=hmac_key, cli_version=version, resolver=resolver
         )
     # The shared parser reads a transcript whole and only then checks its own cap, so a file past that
-    # cap is refused here, before the read, rather than loaded into memory to be rejected.
+    # cap is refused here, before the read, rather than loaded into memory to be rejected. Today
+    # MAX_SOURCE_BYTES is the lower of the two; this keeps it so if either cap moves.
     from ._core.ingestion.coding_agent._sources._base import MAX_SESSION_BYTES
 
     if size > MAX_SESSION_BYTES:

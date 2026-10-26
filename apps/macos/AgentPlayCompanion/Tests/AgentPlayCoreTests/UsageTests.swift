@@ -108,6 +108,25 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: b.scriptURL.path))
     }
 
+    @Test func symlinkedSettingsStayALink() throws {
+        let (b, dir) = try temp()
+        let target = dir.appendingPathComponent("dotfiles/claude-settings.json")
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"model":"opus"}"#.utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: b.claudeSettings, withDestinationURL: target)
+        func linked() -> Bool { (try? FileManager.default.destinationOfSymbolicLink(atPath: b.claudeSettings.path)) == target.path }
+        func onDisk() throws -> [String: Any] { try JSONSerialization.jsonObject(with: Data(contentsOf: target)) as! [String: Any] }
+        try b.install(script: "#!/bin/sh\n")
+        var disk = try onDisk()
+        #expect(linked() && b.state() == .on && disk["statusLine"] != nil && disk["model"] as? String == "opus")
+        // The backup is a copy of the contents, not a second link to the file being changed.
+        #expect(FileManager.default.fileExists(atPath: b.backupURL.path)
+                && (try? FileManager.default.destinationOfSymbolicLink(atPath: b.backupURL.path)) == nil)
+        try b.uninstall()
+        disk = try onDisk()
+        #expect(linked() && b.state() == .off && disk["statusLine"] == nil)
+    }
+
     @Test func noPreviousStatusLineIsRemovedCleanly() throws {
         let (b, _) = try temp()
         try b.install(script: "#!/bin/sh\n")   // no settings file at all yet

@@ -473,6 +473,30 @@ export function drawPlayhead(g: DrawEnv, p: number) {
   ctx.stroke();
 }
 
+/**
+ * "HH:MM" labels for axis ticks at `ts` ms into the session. A tick that lands
+ * on a later UTC day than the tick before it also gets the date
+ * ("Oct 22 02:23"), so a session that runs past midnight doesn't read as going
+ * back in time.
+ */
+export function axisTickLabels(startedAt: string, ts: number[]): string[] {
+  const base = Date.parse(startedAt);
+  let prevDay = Math.floor(base / 86_400_000);
+  return ts.map((t) => {
+    const clock = clockAt(startedAt, t).slice(0, 5);
+    if (Number.isNaN(base)) return clock;
+    const day = Math.floor((base + t) / 86_400_000);
+    if (day === prevDay) return clock;
+    prevDay = day;
+    const date = new Date(base + t).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    return `${date} ${clock}`;
+  });
+}
+
 /** Five clock ticks along the bottom. */
 export function drawAxis(
   g: DrawEnv,
@@ -484,16 +508,18 @@ export function drawAxis(
   const N = events.length;
   ctx.fillStyle = col('var(--ds-text-subtler)');
   ctx.font = g.mono;
-  for (let q = 0; q <= 4; q++) {
-    let i = pos.findIndex((v) => v >= q / 4);
-    if (i < 0) i = N - 1;
+  const ticks = [0, 1, 2, 3, 4].map((q) => {
+    const i = pos.findIndex((v) => v >= q / 4);
+    return i < 0 ? N - 1 : i;
+  });
+  const labels = axisTickLabels(
+    startedAt,
+    ticks.map((i) => events[i]?.t ?? 0)
+  );
+  ticks.forEach((i, q) => {
     ctx.textAlign = q === 0 ? 'left' : q === 4 ? 'right' : 'center';
-    ctx.fillText(
-      clockAt(startedAt, events[i]?.t ?? 0).slice(0, 5),
-      x(i),
-      height - 6
-    );
-  }
+    ctx.fillText(labels[q], x(i), height - 6);
+  });
   ctx.textAlign = 'left';
   ctx.font = g.sans;
 }

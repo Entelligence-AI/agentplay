@@ -228,6 +228,61 @@ def test_acompact_snapshot_is_not_a_subagent_lane(transcript):
     assert doc["totals"]["tokens"] == before["totals"]["tokens"]
 
 
+def test_workflow_subagent_gets_a_lane_without_leaking_text(transcript):
+    before = sm.build_claude_code_map(transcript)
+    cwd = json.loads(transcript.read_text().splitlines()[0])["cwd"]
+    run = transcript.with_suffix("") / "subagents" / "workflows" / "wf_0a1b2c3d-4e5"
+    run.mkdir(parents=True)
+    (run / "agent-a0f1e2d3c4b5a6978.meta.json").write_text(
+        json.dumps(
+            {"agentType": "workflow-subagent", "description": "SECRET-WF-DESC", "workflowPhase": "SECRET-WF-PHASE"}
+        )
+    )
+    (run / "agent-a0f1e2d3c4b5a6978.jsonl").write_text(
+        _line(
+            type="user",
+            timestamp="2026-09-10T01:00:05Z",
+            cwd=cwd,
+            isSidechain=True,
+            message={"role": "user", "content": "SECRET-WF-PROMPT"},
+        )
+        + _line(
+            type="assistant",
+            timestamp="2026-09-10T01:00:06Z",
+            cwd=cwd,
+            isSidechain=True,
+            message={
+                "id": "w1",
+                "model": "claude-sonnet-5",
+                "usage": {"input_tokens": 11, "output_tokens": 4},
+                "content": [
+                    {"type": "tool_use", "id": "wt1", "name": "Bash", "input": {"command": "pytest -q SECRET-WF-ARG"}}
+                ],
+            },
+        )
+        + _line(
+            type="user",
+            timestamp="2026-09-10T01:00:07Z",
+            cwd=cwd,
+            isSidechain=True,
+            message={
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "wt1", "content": "SECRET-WF-OUTPUT"}],
+            },
+        )
+    )
+    doc = sm.build_claude_code_map(transcript)
+    (lane,) = [a for a in doc["agents"] if a.get("subagentType") == "workflow-subagent"]
+    assert (lane["parent"], lane["kind"]) == ("main", "subagent")
+    assert [e.get("tool") for e in doc["events"] if e["agent"] == lane["id"] and e["kind"] != "llm"] == ["Bash"]
+    assert doc["totals"]["subagents"] == before["totals"]["subagents"] + 1
+    assert doc["totals"]["requests"] == before["totals"]["requests"] + 1
+    assert doc["totals"]["tokens"] == before["totals"]["tokens"] + 15
+    raw = json.dumps(doc)
+    for secret in ("SECRET-WF-DESC", "SECRET-WF-PHASE", "SECRET-WF-PROMPT", "SECRET-WF-ARG", "SECRET-WF-OUTPUT"):
+        assert secret not in raw
+
+
 def test_builder_never_leaks_free_text(transcript):
     doc = sm.build_claude_code_map(transcript)
     # Session facts and search postings are held to the same contract as the map.
@@ -623,6 +678,71 @@ def test_derived_delays_respect_max_events(monkeypatch):
     assert all(e["kind"] != "delay" or isinstance(e.get("ref"), int) for e in doc["events"])
 
 
+def test_event_cap_keeps_the_first_events_and_whole_session_totals(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    t0 = datetime(2026, 9, 10, 1, 0, tzinfo=UTC)
+    usage = {
+        "input_tokens": 10,
+        "cache_creation_input_tokens": 100,
+        "cache_read_input_tokens": 1000,
+        "output_tokens": 50,
+    }
+    requests, calls_each = 210, 100
+    lines = []
+    for m in range(requests):
+        ids = [f"t{m}-{i}" for i in range(calls_each)]
+        last = m == requests - 1
+        lines.append(
+            _line(
+                type="assistant",
+                timestamp=(t0 + timedelta(seconds=2 * m)).isoformat(),
+                message={
+                    "id": f"m{m}",
+                    "model": "claude-sonnet-5",
+                    "usage": usage,
+                    "content": [
+                        {"type": "tool_use", "id": i, "name": "Bash", "input": {"command": "true"}}
+                        for i in ids
+                    ],
+                },
+            )
+        )
+        lines.append(
+            _line(
+                type="user",
+                timestamp=(t0 + timedelta(seconds=2 * m + 1)).isoformat(),
+                message={
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": i, "content": "x", "is_error": last}
+                        for i in ids
+                    ],
+                },
+            )
+        )
+    path = tmp_path / "big.jsonl"
+    path.write_text("".join(lines))
+
+    doc = sm.build_claude_code_map(path)
+
+    one = sm.estimate_cost_usd("claude-sonnet-5", 10, 100, 1000, 50)
+    t = doc["totals"]
+    assert t["calls"] == requests * calls_each > sm.MAX_EVENTS
+    assert t["requests"] == requests
+    assert t["errors"] == calls_each
+    assert t["tokens"] == requests * 1160
+    assert t["outputTokens"] == requests * 50
+    assert t["costUsd"] == pytest.approx(requests * one, abs=1e-3) and t["costUsd"] > 0
+    assert doc["session"]["models"] == ["claude-sonnet-5"]
+    assert doc["session"]["durationMs"] == 2 * (requests - 1) * 1000
+    assert doc["session"]["truncated"] is True
+    evs = doc["events"]
+    assert len(evs) == sm.MAX_EVENTS
+    assert {e["kind"] for e in evs} >= {"llm", "exec"}
+    assert evs[-1]["t"] < doc["session"]["durationMs"]
+
+
 def _span(span_id, name, start, end=None, parent=None, **attrs):
     return SimpleNamespace(
         span_id=span_id,
@@ -744,3 +864,25 @@ def test_hex_named_files_are_still_file_operations():
     ops = sm.file_ops("Bash", {"command": "rm deadbeef1 && echo x > cafe1234"}, "/repo")
     assert ops.get(os.path.normpath("/repo/deadbeef1")) == "delete"
     assert ops.get(os.path.normpath("/repo/cafe1234")) == "create"
+
+
+def test_source_byte_cap_is_4gb_for_streamed_claude_code_and_512mb_for_the_rest(monkeypatch):
+    from agentplay import discover
+
+    assert discover.MAX_SOURCE_BYTES == 512 * 1024 * 1024
+    assert discover.CLAUDE_CODE_MAX_SOURCE_BYTES == 4 * 1024 * 1024 * 1024
+    built = []
+    monkeypatch.setattr(sm, "build_claude_code_map", lambda path, **kw: built.append(path) or {"ok": True})
+    source = SimpleNamespace(get_spans_by_session=lambda sid: pytest.fail("past the cap, never parsed"))
+    claude = discover.Candidate("c", "claude-code", "/x/c.jsonl", 0.0)
+    codex = discover.Candidate("x", "codex", "/x/rollout.jsonl", 0.0)
+
+    monkeypatch.setattr(discover, "source_bytes", lambda c: 1024 * 1024 * 1024)  # 1 GB
+    assert discover.build_map(claude, source) == {"ok": True}
+    with pytest.raises(discover.SkipSession, match="too_large"):
+        discover.build_map(codex, source)
+
+    monkeypatch.setattr(discover, "source_bytes", lambda c: discover.CLAUDE_CODE_MAX_SOURCE_BYTES + 1)
+    with pytest.raises(discover.SkipSession, match="too_large"):
+        discover.build_map(claude, source)
+    assert len(built) == 1

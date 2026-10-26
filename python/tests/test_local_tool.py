@@ -122,6 +122,73 @@ def test_build_is_incremental_and_redacted(env):
     assert doc["repos"][0]["remote"] == "acme/app"
 
 
+def test_incremental_build_picks_up_a_new_workflow_subagent(env):
+    stem = "11111111-0000-0000-0000-000000000002"
+    f = _write_claude_session(env["home"], stem, env["repo"])
+    assert pipeline.build_all(agents={"claude-code"}, store=Store(env["sm"])).built == 1
+    run = f.with_suffix("") / "subagents" / "workflows" / "wf_0a1b2c3d-4e5"
+    run.mkdir(parents=True)
+    agent = run / "agent-a0f1e2d3c4b5a6978.jsonl"
+    agent.write_text(
+        _line(type="assistant", timestamp="2026-09-10T02:00:00Z", cwd=str(env["repo"]), sessionId=stem,
+              isSidechain=True,
+              message={"id": "w1", "model": "claude-sonnet-5", "role": "assistant",
+                       "usage": {"input_tokens": 10, "output_tokens": 5},
+                       "content": [{"type": "tool_use", "id": "w1t", "name": "Read",
+                                    "input": {"file_path": f"{env['repo']}/src/app.py"}}]})
+        + _line(type="user", timestamp="2026-09-10T02:00:01Z", cwd=str(env["repo"]), sessionId=stem,
+                isSidechain=True,
+                message={"role": "user", "content": [{"type": "tool_result", "tool_use_id": "w1t",
+                                                      "content": "x = 1"}]})
+    )
+    later = f.stat().st_mtime + 60
+    os.utime(agent, (later, later))
+
+    again = pipeline.build_all(agents={"claude-code"}, store=Store(env["sm"]))
+    assert (again.built, again.unchanged) == (1, 0)
+    sid = f"local:claude-code:{stem}"
+    doc = Store(env["sm"]).get(sid)
+    lanes = {a["id"]: a["kind"] for a in doc["agents"]}
+    assert [lanes[e["agent"]] for e in doc["events"] if e.get("tool") == "Read"] == ["main", "subagent"]
+    cand = discover.Candidate(sid, "claude-code", str(f), later)
+    assert discover.source_bytes(cand) == f.stat().st_size + agent.stat().st_size
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions")
+def test_unreadable_workflow_folder_fails_only_its_own_session(env):
+    _write_claude_session(env["home"], "11111111-0000-0000-0000-000000000003", env["repo"])
+    f = _write_claude_session(env["home"], "11111111-0000-0000-0000-000000000004", env["repo"])
+    run = f.with_suffix("") / "subagents" / "workflows" / "wf_0a1b2c3d-4e5"
+    run.mkdir(parents=True)
+    run.chmod(0)
+    try:
+        rep = pipeline.build_all(agents={"claude-code"}, store=Store(env["sm"]))
+    finally:
+        run.chmod(0o700)
+    assert (rep.found, rep.built, rep.failed) == (2, 1, 1)
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions")
+def test_hook_detail_keeps_readable_subagents_beside_an_unreadable_folder(tmp_path):
+    from agentplay.hook_detail import _transcripts
+
+    f = tmp_path / "s.jsonl"
+    f.write_text("")
+    subs = tmp_path / "s" / "subagents"
+    (subs / "workflows" / "ok").mkdir(parents=True)
+    direct = subs / "agent-a.jsonl"
+    nested = subs / "workflows" / "ok" / "agent-b.jsonl"
+    direct.write_text("")
+    nested.write_text("")
+    bad = subs / "workflows" / "locked"
+    bad.mkdir()
+    bad.chmod(0)
+    try:
+        assert _transcripts(str(f)) == [str(f), str(direct), str(nested)]
+    finally:
+        bad.chmod(0o700)
+
+
 @pytest.mark.parametrize(
     ("raw", "want"),
     [
@@ -1086,8 +1153,9 @@ def test_hook_text_never_reaches_a_map_the_index_or_an_export(env, monkeypatch, 
         assert "stop msg" not in raw and "stop cmd" not in raw
     assert _HOOK_BLOCK in map_raw and _HOOK_BLOCK not in index_raw
 
-def test_hook_detail_finds_a_subagent_hook_in_its_own_transcript(hooked):
-    sub = hooked.transcript.with_suffix("") / "subagents"
+@pytest.mark.parametrize("folder", ["subagents", "subagents/workflows/wf_0a1b2c3d-4e5"])
+def test_hook_detail_finds_a_subagent_hook_in_its_own_transcript(hooked, folder):
+    sub = hooked.transcript.with_suffix("") / folder
     sub.mkdir(parents=True)
     uuid = "55555555-0000-0000-0000-000000000005"
     (sub / "agent-abc.jsonl").write_text(_line(type="attachment", uuid=uuid, attachment={

@@ -173,6 +173,7 @@ def _line(**d):
     return json.dumps({"sessionId": "11111111-2222-3333-4444-555555555555", "uuid": os.urandom(8).hex(), **d}) + "\n"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the companion is macOS-only")
 def test_snapshot_never_leaks_prompt_args_paths_or_remotes(fake_home, tmp_path, monkeypatch):
     """End to end from a real-shaped transcript: build, then snapshot, then grep for every secret."""
     repo = tmp_path / "work" / "LEAKDIR" / "backend"
@@ -560,6 +561,7 @@ def test_usage_never_carries_titles_or_paths(store, empty_homes):
 
 
 # ---------------------------------------------------------------- live Claude sessions
+@pytest.mark.skipif(sys.platform == "win32", reason="the companion is macOS-only")
 def test_live_claude_sessions_alive_only_and_minimal(tmp_path):
     home = tmp_path / ".claude"
     (home / "sessions").mkdir(parents=True)
@@ -582,6 +584,7 @@ def test_live_claude_sessions_alive_only_and_minimal(tmp_path):
         assert secret not in raw
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the companion is macOS-only")
 def test_live_status_marks_runs_and_sorts_first(store, tmp_path, monkeypatch):
     home = tmp_path / ".claude"
     (home / "sessions").mkdir(parents=True)
@@ -807,7 +810,8 @@ def test_hook_cause_names_commands_without_arguments_or_paths(fake_home):
     ]}]}}))
     homes = discover.Homes(*([claude] if i == 0 else [fake_home / "none"] for i in range(len(dataclasses.fields(discover.Homes)))))
     cause = companion.hook_cause(homes, "SessionStart:startup")
-    assert cause["commands"] == ["notify.sh", "pnpm run", "sh"]
+    # The script a hook runs, never its launcher ("pnpm run"); a line with an unbalanced quote names nothing.
+    assert cause["commands"] == ["notify.sh", "lint"]
     assert cause["settingsFiles"] == ["~/.claude/settings.json"]
     raw = json.dumps(cause)
     for secret in ("SECRET-HOOK-ARG", "SECRET-ENV", "PRIVATE", "/Users/me", "--token"):
@@ -899,3 +903,146 @@ def test_merge_keeps_every_raw_request():
     copy = (sec + 1, *a[1:6], 0.01, "claude-code", "api", "local:claude-code:a")  # a map's copy of a
     other = (sec + 60, *a[1:])
     assert usage.merge([a, b], [copy, other]) == [a, b, other]
+# ---------------------------------------------------------------- review fixes
+def _claude_homes(tmp_path, home):
+    return discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(len(dataclasses.fields(discover.Homes)))))
+
+
+def test_live_claude_sessions_never_signal_off_posix(tmp_path, monkeypatch):
+    # os.kill(pid, 0) on Windows is TerminateProcess: it must never be called there.
+    home = tmp_path / ".claude"
+    (home / "sessions").mkdir(parents=True)
+    (home / "sessions" / "4242.json").write_text(json.dumps({"pid": 4242, "sessionId": "abc", "status": "busy"}))
+    called = []
+    monkeypatch.setattr(companion.os, "name", "nt")
+    monkeypatch.setattr(companion.os, "kill", lambda *a: called.append(a) or (_ for _ in ()).throw(AssertionError))
+    assert companion.live_claude_sessions(_claude_homes(tmp_path, home), NOW) == []
+    assert called == []
+
+
+def test_hook_cause_keeps_only_the_program_name(tmp_path, monkeypatch, store):
+    from agentplay import health
+
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / "settings.json").write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
+        {"type": "command", "command": "TOKEN=sk-X /bin/hook.sh --a"},
+        {"type": "command", "command": "\"$HOME/SECRET-DIR/x y.sh\" 'unbalanced"},
+        {"type": "command", "command": "   "}]}]}}))
+    homes = _claude_homes(tmp_path, home)
+    assert companion.hook_cause(homes, "SessionStart:startup")["commands"] == ["hook.sh"]
+    fix = {"id": "f1", "rule": "broken_hook", "subject": "SessionStart:startup", "component": "environment",
+           "title": "Fix the hook", "pattern": "p", "effect": "e", "actions": []}
+    monkeypatch.setattr(health, "report", lambda *a, **k: {"sessions": 0, "minSessions": 0, "score": None,
+                                                           "prevScore": None, "components": [], "fixes": [fix]})
+    snap = _snap(store, homes)
+    assert snap["insights"]["fixes"][0]["hook"]["commands"] == ["hook.sh"]
+    raw = json.dumps(snap) + (store.base / "cache" / "companion-insights.json").read_text()
+    for secret in ("sk-X", "--a", "TOKEN", "SECRET-DIR", "/bin/"):
+        assert secret not in raw, secret
+
+
+def test_opus_only_refusal_is_not_the_weekly_window(tmp_path):
+    home = tmp_path / ".claude"
+    proj = home / "projects" / "-Users-me-x"
+    proj.mkdir(parents=True)
+    (proj / "a.jsonl").write_text(json.dumps({
+        "type": "assistant", "timestamp": (NOW - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "apiErrorParams": {"rate_limit_info": {"status": "rejected", "rateLimitType": "seven_day_opus",
+                                               "resetsAt": int((NOW + timedelta(days=2)).timestamp())}}}) + "\n")
+    assert companion.claude_limit_hits(_claude_homes(tmp_path, home), NOW) == []
+
+
+def test_pending_call_neither_resolves_nor_counts():
+    doc = _doc("local:claude-code:a", [_exec(i, "pytest", True) for i in range(3)] + [_exec(3, "pytest", True, "no_result")])
+    a = companion.repeated_failures(doc, NOW, pending_seq=3)
+    assert len(a) == 1 and a[0]["resolvedSeq"] is None and a[0]["count"] == 3
+    ok = _doc("local:claude-code:a", [_exec(i, "pytest", True) for i in range(3)] + [_exec(3, "pytest")])
+    assert companion.repeated_failures(ok, NOW, pending_seq=3)[0]["resolvedSeq"] is None
+
+
+def test_each_streak_of_one_failure_is_its_own_alert(store, empty_homes):
+    evs = [_exec(i, "pytest", True) for i in range(3)] + [_exec(3, "pytest")] + [_exec(i, "pytest", True) for i in range(4, 7)]
+    a = _alerts(store, empty_homes, evs)
+    assert [(x["firstSeq"], x["resolvedSeq"], x["count"]) for x in a] == [(0, 3, 3), (4, None, 3)]
+    assert len({x["signature"] for x in a}) == 2
+
+
+def test_process_evidence_skips_the_file_lsof_when_no_transcript_exists(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(companion, "_lsof", lambda args: calls.append(args) or "")
+    companion.process_evidence({"a": ("claude-code", str(tmp_path / "gone.jsonl"))})
+    assert calls == [["-a", "-d", "cwd", "-c", "claude", "-Fn"]]  # the claude cwd check still runs
+    calls.clear()
+    (tmp_path / "here.jsonl").write_text("")
+    companion.process_evidence({"a": ("codex", str(tmp_path / "here.jsonl"))})
+    assert calls == [["-Fn", "--", str(tmp_path / "here.jsonl")]]
+
+
+def test_fix_and_autotune_actions_drop_the_insights_cache(store, monkeypatch):
+    from agentplay import autotune, fixes
+
+    cache = store.base / "cache" / "companion-insights.json"
+    monkeypatch.setattr(fixes, "undo", lambda base, ident: {"id": ident})
+    monkeypatch.setattr(autotune, "approve", lambda st, fid: {"id": fid})
+    monkeypatch.setattr(autotune, "dismiss", lambda st, fid: None)
+    for call in (lambda: companion.fix_action(store, "undo", "e1"),
+                 lambda: companion.autotune_action(store, "approve", "f1"),
+                 lambda: companion.autotune_action(store, "dismiss", "f1")):
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text("{}")
+        call()
+        assert not cache.exists()
+    companion.autotune_action(store, "dismiss", "f1")  # no cache file: still fine
+
+
+def test_codex_context_skips_malformed_records(tmp_path):
+    def rec(info):
+        return json.dumps({"timestamp": "2026-10-23T11:50:00Z", "type": "event_msg",
+                           "payload": {"type": "token_count", "info": info}}) + "\n"
+
+    p = tmp_path / "a.jsonl"
+    p.write_text(rec({"last_token_usage": {"input_tokens": 100}, "model_context_window": 1000})
+                 + rec({"last_token_usage": "bad"}) + rec("bad") + rec(["bad"]))
+    assert companion.codex_context(str(p))["value"] == {"tokens": 100, "limit": 1000, "percent": 10.0}
+
+
+@pytest.mark.parametrize("body", ['{"version": 1, "sessions": []}', '{"version": 1, "sessions": 5}'])
+def test_index_of_the_wrong_shape_is_reported(store, empty_homes, body):
+    store.index_path.parent.mkdir(parents=True)
+    store.index_path.write_text(body)
+    snap = _snap(store, empty_homes)
+    assert snap["store"]["indexError"] and snap["runs"] == [] and snap["store"]["available"] is False
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the companion is macOS-only")
+def test_idle_live_session_stays_active_but_runs_no_tool(store, tmp_path, monkeypatch):
+    home = tmp_path / ".claude"
+    (home / "sessions").mkdir(parents=True)
+    me = os.getpid()
+    (home / "sessions" / f"{me}.json").write_text(json.dumps({"pid": me, "sessionId": "a", "status": "idle"}))
+    monkeypatch.setattr(companion, "process_evidence", lambda paths: {"local:claude-code:a": "a claude process is running"})
+    _put(store, _doc("local:claude-code:a", [_exec(0, "ls", kind="exec"), _exec(1, "pytest", True, "no_result")]))
+    snap = companion.snapshot(store, now=NOW, homes=_claude_homes(tmp_path, home))
+    run = snap["runs"][0]
+    assert run["liveStatus"] == "idle" and run["activity"]["value"] == "active" and run["pendingTool"] is None
+    assert run["recentEvents"][-1]["err"] is False  # the turn ended: the last call is neither running nor failed
+    assert [r["sessionId"] for r in snap["live"]] == ["local:claude-code:a"]
+
+
+def test_hook_executable_with_unbalanced_quotes_shows_nothing():
+    # A whitespace split would cut the quoted folder and show "PRIVATE-DIR/x" as the program.
+    assert companion._hook_executable('"/Users/me/PRIVATE DIR/hook.sh --a') is None
+    assert companion._hook_executable("TOKEN=x /bin/hook.sh --a") == "hook.sh"
+
+
+def test_hook_executable_names_the_script_not_the_launcher():
+    f = companion._hook_executable
+    assert f("cd /x && ./h.sh") == "h.sh"
+    assert f("env K=v hook") == "hook"
+    assert f("bash ~/x.sh") == "x.sh"
+    assert f("/Users/me/my proj/h.sh") == "h.sh"
+    assert f("uv run python ~/hooks/check.py --fast") == "check.py"
+    assert f("python3.12 /opt/a/notify.py > /tmp/LOG.txt") == "notify.py"
+    assert f("my-hook 2>&1 | tee /tmp/out") == "my-hook"
+    assert f("lint; notify.sh > /tmp/x.log") == "notify.sh"
