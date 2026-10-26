@@ -812,13 +812,13 @@ def test_hook_cause_keeps_only_the_program_name(tmp_path, monkeypatch, store):
         {"type": "command", "command": "\"$HOME/SECRET-DIR/x y.sh\" 'unbalanced"},
         {"type": "command", "command": "   "}]}]}}))
     homes = _claude_homes(tmp_path, home)
-    assert companion.hook_cause(homes, "SessionStart:startup")["commands"] == ["hook.sh", "x"]
+    assert companion.hook_cause(homes, "SessionStart:startup")["commands"] == ["hook.sh"]
     fix = {"id": "f1", "rule": "broken_hook", "subject": "SessionStart:startup", "component": "environment",
            "title": "Fix the hook", "pattern": "p", "effect": "e", "actions": []}
     monkeypatch.setattr(health, "report", lambda *a, **k: {"sessions": 0, "minSessions": 0, "score": None,
                                                            "prevScore": None, "components": [], "fixes": [fix]})
     snap = _snap(store, homes)
-    assert snap["insights"]["fixes"][0]["hook"]["commands"] == ["hook.sh", "x"]
+    assert snap["insights"]["fixes"][0]["hook"]["commands"] == ["hook.sh"]
     raw = json.dumps(snap) + (store.base / "cache" / "companion-insights.json").read_text()
     for secret in ("sk-X", "--a", "TOKEN", "SECRET-DIR", "/bin/"):
         assert secret not in raw, secret
@@ -910,3 +910,9 @@ def test_idle_live_session_stays_active_but_runs_no_tool(store, tmp_path, monkey
     assert run["liveStatus"] == "idle" and run["activity"]["value"] == "active" and run["pendingTool"] is None
     assert run["recentEvents"][-1]["err"] is False  # the turn ended: the last call is neither running nor failed
     assert [r["sessionId"] for r in snap["live"]] == ["local:claude-code:a"]
+
+
+def test_hook_executable_with_unbalanced_quotes_shows_nothing():
+    # A whitespace split would cut the quoted folder and show "PRIVATE-DIR/x" as the program.
+    assert companion._hook_executable('"/Users/me/PRIVATE DIR/hook.sh --a') is None
+    assert companion._hook_executable("TOKEN=x /bin/hook.sh --a") == "hook.sh"

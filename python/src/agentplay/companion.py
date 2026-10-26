@@ -934,8 +934,8 @@ def _hook_executable(command: Any) -> str | None:
         return None
     try:
         tokens = shlex.split(command)
-    except ValueError:  # unbalanced quotes
-        tokens = command.split()
+    except ValueError:  # unbalanced quotes: a whitespace split could cut a quoted folder and show part of it
+        return None
     exe = next((t for t in tokens if not _ENV_ASSIGN.match(t)), None)
     if exe is None:
         return None

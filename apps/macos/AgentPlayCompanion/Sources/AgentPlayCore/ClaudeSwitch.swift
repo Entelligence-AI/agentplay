@@ -231,7 +231,10 @@ public enum ClaudeSwitch {
         let (_, status) = runSecurity(["-i"], stdin: securityLine(service: env.claudeService, account: account,
                                                                  label: nil, value: String(decoding: login, as: UTF8.self)))
         guard status == 0 else {
-            try? current.write(to: claudeJSONURL, options: .atomic)
+            guard (try? current.write(to: claudeJSONURL, options: .atomic)) != nil else {
+                return .failure(.keychain("couldn't write Claude Code's login (status \(status)), and couldn't restore "
+                                          + "~/.claude.json; its previous copy is in \(backups.path)"))
+            }
             return .failure(.keychain("couldn't write Claude Code's login (status \(status)), so nothing was changed"))
         }
         var t = target
