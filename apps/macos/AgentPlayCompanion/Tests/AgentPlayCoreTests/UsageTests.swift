@@ -85,7 +85,8 @@ import Testing
         let (b, _) = try temp()
         let original: [String: Any] = ["model": "opus", "permissions": ["allow": ["Bash(ls)"]],
                                        "statusLine": ["type": "command", "command": "my-line --fancy"]]
-        try JSONSerialization.data(withJSONObject: original).write(to: b.claudeSettings)
+        let originalData = try JSONSerialization.data(withJSONObject: original)
+        try originalData.write(to: b.claudeSettings)
         #expect(b.state() == .otherStatusLine("my-line --fancy"))
         try b.install(script: "#!/bin/sh\ndir=\"${AGENTPLAY_HOME:-$HOME/.agentplay}/live/claude\"\n")
         #expect(b.state() == .on)
@@ -98,7 +99,8 @@ import Testing
         // The previous command is kept so the bridge can keep running it.
         let prev = try String(contentsOf: b.agentplayHome.appendingPathComponent("live/claude-statusline.previous"), encoding: .utf8)
         #expect(prev == "my-line --fancy")
-        #expect(FileManager.default.fileExists(atPath: b.backupURL.path))
+        // The backup is the original settings byte for byte, not just some file at that path.
+        #expect(try Data(contentsOf: b.backupURL) == originalData)
         try b.uninstall()
         s = try settings(b)
         #expect((s["statusLine"] as? [String: Any])?["command"] as? String == "my-line --fancy")

@@ -49,15 +49,20 @@ public enum ClaudeSwitch {
     }
 
     public enum Failure: Error, Equatable, Sendable {
-        case notSignedIn, notSaved, busy, expired, keychain(String), claudeJSON
+        case notSignedIn, notSaved, busy, expired, changing, keychain(String), backup(String), claudeJSON, halfSwitched(String)
         public var message: String {
             switch self {
             case .notSignedIn: "Claude Code isn't signed in on this Mac."
             case .notSaved: "That account's login isn't saved here anymore. Sign in with it once and save it again."
             case .busy: "A session is mid-step. Switch when your sessions are idle or waiting, so no reply is cut off."
             case .expired: "That account's saved login has expired. Sign in with it in Claude Code (/login) and save it again."
+            case .changing: "Claude Code's login is changing right now. Try again in a moment."
             case .keychain(let m): "The Keychain refused: \(m)"
+            case .backup(let dir): "Couldn't keep a copy of ~/.claude.json in \(dir), so nothing was changed."
             case .claudeJSON: "Couldn't update ~/.claude.json, so nothing was changed."
+            case .halfSwitched(let dir):
+                "Claude Code's login was switched, but ~/.claude.json couldn't be updated and the old login couldn't be put back. "
+                + "Sign in again in Claude Code (/login). A copy of ~/.claude.json is in \(dir)."
             }
         }
     }
@@ -116,6 +121,8 @@ public enum ClaudeSwitch {
     }
 
     /// A Terminal script that signs Claude Code in to another account. No /logout: that can cancel the saved login.
+    /// "Done" is printed only when the sign-in succeeded; otherwise the watcher never sees a new account and the
+    /// user is told so here, instead of being told an account was added.
     public static func loginScript(claude: String) -> String {
         let q = "'" + claude.replacingOccurrences(of: "'", with: "'\\''") + "'"
         return """
@@ -123,9 +130,14 @@ public enum ClaudeSwitch {
         clear
         echo "Sign in with the Claude account you want to add. Your current one is already saved in AgentPlay."
         echo
-        \(q) auth login --claudeai
-        echo
-        echo "Done. AgentPlay saves this account by itself. You can close this window."
+        if \(q) auth login --claudeai; then
+          echo
+          echo "Done. AgentPlay saves this account by itself. You can close this window."
+        else
+          echo
+          echo "Sign-in didn't finish, so nothing was added. Close this window and try again from the AgentPlay menu."
+          exit 1
+        fi
         """
     }
 
@@ -172,10 +184,21 @@ public enum ClaudeSwitch {
         return try? JSONSerialization.data(withJSONObject: acct, options: [.sortedKeys])
     }
 
+    /// One account operation at a time. The menu's auto-save and a switch can otherwise overlap, and a save that
+    /// reads account A's block and then account B's freshly written login would store B's token under A.
+    static let lock = NSLock()
+
     /// Saves who Claude Code is signed in as now: its login and its account block.
     public static func saveCurrent(_ env: Env = .live, now: Date = Date()) -> Result<Saved, Failure> {
+        lock.withLock { saveCurrentLocked(env, now: now) }
+    }
+
+    /// `saveCurrent` for callers that already hold `lock`.
+    static func saveCurrentLocked(_ env: Env, now: Date) -> Result<Saved, Failure> {
         guard let id = ClaudeAccount.readIdentity(home: env.home), let uuid = id.accountUuid,
               let block = oauthAccountBlock(home: env.home), let live = liveLogin(env) else { return .failure(.notSignedIn) }
+        // Claude Code itself may be mid sign-in: if the account changed while the login was read, the two don't match.
+        guard ClaudeAccount.readIdentity(home: env.home)?.accountUuid == uuid else { return .failure(.changing) }
         let payload: [String: Any] = ["login": String(decoding: live.data, as: UTF8.self),
                                       "oauthAccount": String(decoding: block, as: UTF8.self)]
         guard let body = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return .failure(.notSignedIn) }
@@ -192,35 +215,61 @@ public enum ClaudeSwitch {
         return (Data(login.utf8), Data(acct.utf8))
     }
 
-    public static func forget(_ uuid: String, _ env: Env = .live) {
-        _ = runSecurity(["delete-generic-password", "-s", env.storeService, "-a", uuid])
+    /// Removes a saved login. An item that is already gone counts as removed (`security` exits 44 for it), so the
+    /// caller only drops the account from its list once the Keychain really no longer holds the login.
+    @discardableResult
+    public static func forget(_ uuid: String, _ env: Env = .live) -> Result<Void, Failure> {
+        lock.withLock {
+            let (_, status) = runSecurity(["delete-generic-password", "-s", env.storeService, "-a", uuid])
+            guard status == 0 || status == 44 else { return .failure(.keychain("couldn't remove the saved login (status \(status))")) }
+            return .success(())
+        }
     }
 
     /// Switches Claude Code to a saved account. `liveBusy`: some session is mid-step right now.
+    ///
+    /// The two stores are changed last and together: the backup of `~/.claude.json` is written before either, and
+    /// if the file can't be updated after the login was, the previous login is put back so Claude Code never ends
+    /// up with one account's token and another's account block.
     public static func switchTo(_ target: Saved, liveBusy: Bool, env: Env = .live, backups: URL, now: Date = Date())
         -> Result<Saved, Failure> {
+        lock.withLock { switchToLocked(target, liveBusy: liveBusy, env: env, backups: backups, now: now) }
+    }
+
+    static func switchToLocked(_ target: Saved, liveBusy: Bool, env: Env, backups: URL, now: Date) -> Result<Saved, Failure> {
         let home = env.home
         guard !liveBusy else { return .failure(.busy) }
         guard let saved = savedPayload(target.accountUuid, env) else { return .failure(.notSaved) }
         guard isUsable(saved.login, now: now) else { return .failure(.expired) }
         // 1. The outgoing account's newest login first, so its rotated token isn't lost.
         let outgoing = ClaudeAccount.readIdentity(home: home)?.accountUuid
-        if outgoing != nil, outgoing != target.accountUuid, case .failure(let f) = saveCurrent(env, now: now) { return .failure(f) }
+        if outgoing != nil, outgoing != target.accountUuid, case .failure(let f) = saveCurrentLocked(env, now: now) { return .failure(f) }
         // 2. The new ~/.claude.json, computed before anything is written.
         let claudeJSONURL = home.appendingPathComponent(".claude.json")
         guard let current = try? Data(contentsOf: claudeJSONURL),
               let newJSON = withAccount(current, oauthAccount: saved.oauthAccount) else { return .failure(.claudeJSON) }
-        // 3. The login, with this Mac's MCP logins kept.
+        // 3. A copy of the old ~/.claude.json, before anything is written: the failure messages promise it.
+        try? FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)
+        guard (try? current.write(to: backups.appendingPathComponent("claude.json.\(Int(now.timeIntervalSince1970))"))) != nil
+        else { return .failure(.backup(backups.path)) }
+        // 4. The login, with this Mac's MCP logins kept.
         let live = liveLogin(env)
         guard let login = merged(target: saved.login, live: live?.data) else { return .failure(.notSaved) }
         let account = live?.item.account ?? env.user
         let (_, status) = runSecurity(["-i"], stdin: securityLine(service: env.claudeService, account: account,
                                                                  label: nil, value: String(decoding: login, as: UTF8.self)))
         guard status == 0 else { return .failure(.keychain("couldn't write Claude Code's login (status \(status))")) }
-        // 4. ~/.claude.json, with a copy of the old one kept.
-        try? FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)
-        try? current.write(to: backups.appendingPathComponent("claude.json.\(Int(now.timeIntervalSince1970))"))
-        guard (try? newJSON.write(to: claudeJSONURL, options: .atomic)) != nil else { return .failure(.claudeJSON) }
+        // 5. ~/.claude.json. If it can't be written, the login goes back to what it was.
+        guard (try? newJSON.write(to: claudeJSONURL, options: .atomic)) != nil else {
+            let restored: Int32
+            if let live {
+                restored = runSecurity(["-i"], stdin: securityLine(service: env.claudeService, account: account, label: nil,
+                                                                  value: String(decoding: live.data, as: UTF8.self))).1
+            } else {
+                restored = runSecurity(["delete-generic-password", "-s", env.claudeService, "-a", account]).1
+            }
+            return .failure(restored == 0 ? .claudeJSON : .halfSwitched(backups.path))
+        }
         var t = target
         t.savedAt = now
         return .success(t)

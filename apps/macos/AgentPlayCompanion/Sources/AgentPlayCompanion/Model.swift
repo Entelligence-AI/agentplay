@@ -490,9 +490,15 @@ final class CompanionModel: ObservableObject {
         }
     }
 
+    /// The account leaves the list only once its login is out of the Keychain, so a refusal doesn't strand a login.
     func forgetAccount(_ s: ClaudeSwitch.Saved) {
-        Task.detached { ClaudeSwitch.forget(s.accountUuid) }
-        prefs.claudeAccounts = (prefs.claudeAccounts ?? []).filter { $0.accountUuid != s.accountUuid }
+        Task {
+            let r = await Task.detached { ClaudeSwitch.forget(s.accountUuid) }.value
+            switch r {
+            case .success: prefs.claudeAccounts = (prefs.claudeAccounts ?? []).filter { $0.accountUuid != s.accountUuid }
+            case .failure(let f): toast = f.message
+            }
+        }
     }
     @Published private(set) var accountFailure: ClaudeAccount.Failure?
     private var lastAccountFetch = Date.distantPast
@@ -620,7 +626,7 @@ final class CompanionModel: ObservableObject {
         let now = Date()
         if let until = a.snoozeUntil, until > now { return }
         if let q = a.quietHours, q.contains(now, timeZone: .current) { return }
-        if Self.isPresenting() { return }
+        if a.silenceWhilePresenting, Self.isPresenting() { return }
         if let pid = l.pid, let app = TerminalFocus.app(for: pid), app.isActive { return }
         let run = runs.first { $0.sessionId == l.sessionId }
         guard let note = Redacted.finished(l, run: run, busySince: busySince, includeRepo: a.includeRepoInNotifications, now: now)
@@ -634,7 +640,7 @@ final class CompanionModel: ObservableObject {
         let now = Date()
         if let until = a.snoozeUntil, until > now { return }
         if let q = a.quietHours, q.contains(now, timeZone: .current) { return }
-        if Self.isPresenting() { return }
+        if a.silenceWhilePresenting, Self.isPresenting() { return }
         for l in sessions where !a.mutedSessions.contains(l.sessionId) {
             // Already looking at it: its terminal is the frontmost app.
             if let pid = l.pid, let app = TerminalFocus.app(for: pid), app.isActive { continue }

@@ -72,25 +72,52 @@ import Testing
         try signIn("uB", "b@example.com", token: "tokB", mcp: "m2")
         _ = try ClaudeSwitch.saveCurrent(env).get()
 
-        #expect(ClaudeSwitch.switchTo(a, liveBusy: true, env: env, backups: home.appendingPathComponent("bk")) == .failure(.busy))
-        _ = try ClaudeSwitch.switchTo(a, liveBusy: false, env: env, backups: home.appendingPathComponent("bk")).get()
+        let bk = home.appendingPathComponent("bk")
+        let beforeSwitch = try Data(contentsOf: home.appendingPathComponent(".claude.json"))
+        #expect(ClaudeSwitch.switchTo(a, liveBusy: true, env: env, backups: bk, now: now) == .failure(.busy))
+        // The backup is written before anything else: if it can't be, nothing is touched.
+        let noDir = home.appendingPathComponent(".claude.json/bk")
+        #expect(ClaudeSwitch.switchTo(a, liveBusy: false, env: env, backups: noDir, now: now) == .failure(.backup(noDir.path)))
+        #expect(ClaudeAccount.readIdentity(home: home)?.email == "b@example.com")
+        _ = try ClaudeSwitch.switchTo(a, liveBusy: false, env: env, backups: bk, now: now).get()
 
         let live = try #require(ClaudeSwitch.liveLogin(env)?.data)
         let obj = try #require(JSONSerialization.jsonObject(with: live) as? [String: Any])
         #expect((obj["claudeAiOauth"] as? [String: Any])?["accessToken"] as? String == "tokA")
         #expect((obj["mcpOAuth"] as? [String: Any])?["srv"] as? String == "m2")  // this Mac's MCP logins kept
         #expect(ClaudeAccount.readIdentity(home: home)?.email == "a@example.com")
-        // B's login was saved on the way out, and the old ~/.claude.json was backed up.
+        // B's login was saved on the way out, and the old ~/.claude.json was backed up as it was.
         #expect(ClaudeSwitch.savedPayload("uB", env) != nil)
-        #expect((try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent("bk").path).count) == 1)
+        let backups = try FileManager.default.contentsOfDirectory(atPath: bk.path)
+        #expect(backups.count == 1)
+        #expect(try Data(contentsOf: bk.appendingPathComponent(backups[0])) == beforeSwitch)
+
+        // Switching back to B when ~/.claude.json can't be written puts A's login back, so the two stores agree.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: home.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: home.path) }
+        let b = ClaudeSwitch.Saved(accountUuid: "uB", email: "b@example.com", organization: nil, seatTier: nil, savedAt: now)
+        #expect(ClaudeSwitch.switchTo(b, liveBusy: false, env: env, backups: bk, now: now.addingTimeInterval(1)) == .failure(.claudeJSON))
+        let after = try #require(ClaudeSwitch.liveLogin(env)?.data)
+        #expect(((try? JSONSerialization.jsonObject(with: after) as? [String: Any])?["claudeAiOauth"] as? [String: Any])?["accessToken"] as? String == "tokA")
+        #expect(ClaudeAccount.readIdentity(home: home)?.email == "a@example.com")
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: home.path)
+
+        // Forgetting removes the saved login; forgetting again is still fine, the login is gone either way.
+        try ClaudeSwitch.forget("uB", env).get()
+        #expect(ClaudeSwitch.savedPayload("uB", env) == nil)
+        try ClaudeSwitch.forget("uB", env).get()
     }
 }
 
 @Suite struct ClaudeLoginScriptTests {
-    @Test func loginScriptSignsInWithoutLoggingOut() {
+    @Test func loginScriptSignsInWithoutLoggingOut() throws {
         let s = ClaudeSwitch.loginScript(claude: "/Users/me/it's here/claude")
-        #expect(s.contains(#"'/Users/me/it'\''s here/claude' auth login --claudeai"#))
+        #expect(s.contains(#"if '/Users/me/it'\''s here/claude' auth login --claudeai; then"#))
         #expect(!s.contains("logout"))
+        // "Done" belongs to the success branch only; a failed sign-in says so and exits nonzero.
+        let done = try #require(s.range(of: "Done.")), then = try #require(s.range(of: "; then")), other = try #require(s.range(of: "else"))
+        #expect(then.lowerBound < done.lowerBound && done.lowerBound < other.lowerBound)
+        #expect(s.contains("exit 1"))
     }
 }
 
