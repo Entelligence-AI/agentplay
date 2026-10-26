@@ -29,7 +29,7 @@ from typing import Any
 from .store import Store, _atomic_write
 
 CACHE_VERSION = 3
-RAW_CACHE_VERSION = 6  # 6: files keyed by a digest of their path, with the session id stored in the record
+RAW_CACHE_VERSION = 7  # 7: steering signals carry their kind (a correction that says it still isn't working; swearing)
 BLOCK_HOURS = 5
 WINDOW_DAYS = 30
 DUP_SECONDS = 5
@@ -170,10 +170,18 @@ def _signal_line(line: bytes, seen_user: bool) -> tuple[list[list[Any]], bool]:
     if origin.get("kind", "human" if not sdk else None) != "human":
         return out, seen_user
     out.append([sec, "msg", uid])
-    if seen_user and (_CORRECTION.match(t) or _CORRECTION_ANYWHERE.search(t[:160])):
-        out.append([sec, "cor", uid])
-    if _FRUSTRATION.search(t):
+    if seen_user:
+        if _CORRECTION.match(t):
+            out.append([sec, "cor", uid])
+        elif _CORRECTION_ANYWHERE.search(t[:160]):
+            # Said later in the message ("still not working", "why is it..."): a result that didn't hold,
+            # rather than a change of direction. Kept apart because the two call for different fixes.
+            out.append([sec, "cor", uid])
+            out.append([sec, "cornw", uid])
+    if (fr := _FRUSTRATION.search(t)) is not None:
         out.append([sec, "fru", uid])
+        if fr.group(1):
+            out.append([sec, "fruw", uid])  # a word, not a pile of ! or ?
     return out, True
 
 
@@ -197,6 +205,8 @@ def signals(entries: list[list[Any]], now: datetime, days: int = WINDOW_DAYS) ->
         msgs, calls = c.get("msg", 0), c.get("call", 0)
         return {"messages": msgs, "calls": calls, "corrections": c.get("cor", 0), "interrupts": c.get("int", 0),
                 "refusals": c.get("ref", 0), "frustrated": c.get("fru", 0),
+                # Of the corrections, those that say the result didn't hold; of the frustration, the swearing.
+                "notWorking": c.get("cornw", 0), "swearing": c.get("fruw", 0),
                 "correctionRate": round(100 * c.get("cor", 0) / msgs, 1) if msgs else None,
                 "frustrationRate": round(100 * c.get("fru", 0) / msgs, 1) if msgs else None,
                 "interruptRate": round(100 * c.get("int", 0) / msgs, 1) if msgs else None,

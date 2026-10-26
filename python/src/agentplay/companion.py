@@ -249,6 +249,47 @@ def process_evidence(paths_by_sid: dict[str, tuple[str, str]]) -> dict[str, str]
     return out
 
 
+_PS_START = "%a %b %d %H:%M:%S %Y"  # how ps prints lstart: "Sat Oct 24 17:20:26 2026"
+
+
+def _process_starts(pids: list[int]) -> dict[int, set[str]] | None:
+    """pid -> the process's start time as ``ps`` prints it, in UTC and in local time, for the processes that
+    exist right now. None when ``ps`` can't be asked, so the caller falls back to the plain alive check."""
+    if not pids:
+        return {}
+    try:
+        res = subprocess.run(["/bin/ps", "-p", ",".join(str(p) for p in pids), "-o", "pid=,lstart="],
+                             capture_output=True, text=True, timeout=5, check=False, env={**os.environ, "TZ": "UTC"})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out: dict[int, set[str]] = {}
+    for line in res.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 6:
+            continue
+        try:
+            pid, utc = int(parts[0]), " ".join(parts[1:6])
+            local = datetime.strptime(utc, _PS_START).replace(tzinfo=UTC).astimezone().strftime(_PS_START)
+        except ValueError:
+            continue
+        out[pid] = {" ".join(utc.split()), " ".join(local.split())}
+    return out
+
+
+def _same_process(rec: dict[str, Any], running: dict[int, set[str]] | None) -> bool:
+    """Whether the process under the record's pid is still the one that wrote it. Claude Code stores the
+    process start time in ``ps`` form (in UTC); a record without one is trusted on the alive check alone."""
+    if running is None:
+        return True
+    starts = running.get(rec["pid"])
+    if starts is None:
+        return False
+    recorded = rec.get("procStart")
+    if isinstance(recorded, str) and recorded.split():
+        return " ".join(recorded.split()) in starts
+    return True
+
+
 def live_claude_sessions(homes: discover.Homes, now: datetime) -> list[dict[str, Any]]:
     """Claude Code's own live-process records, ``<home>/sessions/<pid>.json``, for processes still alive.
 
@@ -257,7 +298,7 @@ def live_claude_sessions(homes: discover.Homes, now: datetime) -> list[dict[str,
     kept (a repo-like label); the path, session name and socket are never read into the snapshot.
     The file is internal to Claude Code, not a documented interface, so anything unexpected is skipped.
     """
-    out = []
+    candidates: list[dict[str, Any]] = []
     for home in homes.claude_code:
         d = Path(home) / "sessions"
         try:
@@ -282,20 +323,31 @@ def live_claude_sessions(homes: discover.Homes, now: datetime) -> list[dict[str,
                 pass  # alive, owned by someone else
             except OSError:
                 continue
-            def ms(v: Any) -> str | None:
-                return iso(v / 1000) if isinstance(v, (int, float)) and v > 0 else None
-            cwd = rec.get("cwd")
-            out.append({
-                "agentTool": "claude-code",
-                "sessionId": f"local:claude-code:{sid}",
-                "status": status,
-                "pid": pid,  # lets the app bring the session's terminal forward
-                # "cli" in a terminal; "sdk-ts" and the like from an editor's agent panel, which has no statusline.
-                "entrypoint": rec.get("entrypoint") if isinstance(rec.get("entrypoint"), str) else None,
-                "project": Path(cwd).name if isinstance(cwd, str) and cwd else None,
-                "startedAt": ms(rec.get("startedAt")),
-                "statusSince": ms(rec.get("statusUpdatedAt")) or ms(rec.get("updatedAt")),
-            })
+            candidates.append(rec)
+    # A pid outlives its process: after a reboot the same numbers go to Docker, a system helper, or a newer
+    # agent. The record carries the process's start time, so compare it with the one running now.
+    running = _process_starts([r["pid"] for r in candidates])
+    out = []
+    for rec in candidates:
+        if not _same_process(rec, running):
+            continue
+        pid, sid, status = rec["pid"], rec["sessionId"], rec["status"]
+
+        def ms(v: Any) -> str | None:
+            return iso(v / 1000) if isinstance(v, (int, float)) and v > 0 else None
+
+        cwd = rec.get("cwd")
+        out.append({
+            "agentTool": "claude-code",
+            "sessionId": f"local:claude-code:{sid}",
+            "status": status,
+            "pid": pid,  # lets the app bring the session's terminal forward
+            # "cli" in a terminal; "sdk-ts" and the like from an editor's agent panel, which has no statusline.
+            "entrypoint": rec.get("entrypoint") if isinstance(rec.get("entrypoint"), str) else None,
+            "project": Path(cwd).name if isinstance(cwd, str) and cwd else None,
+            "startedAt": ms(rec.get("startedAt")),
+            "statusSince": ms(rec.get("statusUpdatedAt")) or ms(rec.get("updatedAt")),
+        })
     out.sort(key=lambda r: ({"waiting": 0, "busy": 1, "idle": 2}[r["status"]], r["startedAt"] or ""), reverse=False)
     return out
 
@@ -845,6 +897,8 @@ def _sources(homes: discover.Homes, rows: list[dict[str, Any]], index_error: str
 
 INSIGHTS_DAYS = 30
 INSIGHTS_TTL_S = 900
+# Bumped when the cached shape changes, so an older companion's cache is recomputed rather than read short.
+INSIGHTS_CACHE_V = 2
 
 
 def _health_rows(store: Store, lo: str, hi: str) -> list[dict[str, Any]]:
@@ -878,7 +932,7 @@ def insights(store: Store, now: datetime, homes: discover.Homes | None = None) -
     try:
         hit = json.loads(cache.read_text(encoding="utf-8"))
         made = _parse_iso(hit.get("generatedAt"))
-        if made and 0 <= (now - made).total_seconds() < INSIGHTS_TTL_S:
+        if made and 0 <= (now - made).total_seconds() < INSIGHTS_TTL_S and hit.get("v") == INSIGHTS_CACHE_V:
             return hit.get("insights")
     except (OSError, ValueError, AttributeError):
         pass
@@ -899,16 +953,11 @@ def insights(store: Store, now: datetime, homes: discover.Homes | None = None) -
                      "at": e.get("at"), "source": e.get("source"), "title": e.get("title")}
                     for e in _applied(store)][:8],
         "autotune": _autotune_summary(store),
-        "fixes": [{"id": f["id"], "rule": f["rule"], "repo": f.get("repo") or None, "subject": f.get("subject"),
-                   "component": f["component"], "title": f["title"], "pattern": f["pattern"], "effect": f["effect"],
-                   "points": f.get("points"), "sessions": len(f.get("sessions") or []),
-                   "evidence": list(f.get("sessions") or [])[:5], "applicable": bool(f.get("actions")),
-                   **({"hook": hook_cause(homes, str(f.get("subject") or ""))}
-                      if f["rule"] == "broken_hook" and homes is not None else {})}
-                  for f in rep["fixes"][:6]],
+        "fixes": [_fix_entry(f, homes) for f in rep["fixes"][:6]],
     }
     try:
-        _atomic_write_text(cache, json.dumps({"generatedAt": iso(now), "insights": out}, separators=(",", ":")))
+        _atomic_write_text(cache, json.dumps({"generatedAt": iso(now), "v": INSIGHTS_CACHE_V, "insights": out},
+                                             separators=(",", ":")))
     except OSError:
         pass  # a cache that can't be written only costs speed
     return out
@@ -941,6 +990,8 @@ def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
                         files.append(_home_label(p))
     cause = None
     newest = 0.0
+    wrong: tuple[str, str] | None = None  # (the event it ran for, the event it answered as)
+    failing: str | None = None            # the exact command, kept out of the snapshot; the fix needs it
     for home in homes.claude_code:
         try:
             recent = sorted((Path(home) / "projects").glob("*/*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)[:30]
@@ -963,10 +1014,12 @@ def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
                     continue
                 newest = f.stat().st_mtime
                 err = str(a.get("stderr") or "")
+                failing = a.get("command") if isinstance(a.get("command"), str) else None
                 m = _WRONG_EVENT.search(err)
                 if m:
-                    cause = (f"It answers as {m.group(2)}, but Claude Code ran it for {m.group(1)}, so every run is "
-                             f"rejected. Register it under {m.group(2)}, or have it answer {m.group(1)} here.")
+                    wrong = (m.group(1), m.group(2))
+                    cause = (f"It was written for {m.group(2)}: when Claude Code runs it at {m.group(1)} it answers "
+                             f"as the wrong event, so every run is rejected.")
                 elif "not found" in err or "No such file" in err:
                     cause = "Its command can't be found."
                 elif "timed out" in err.lower() or "timeout" in err.lower():
@@ -976,7 +1029,41 @@ def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
                 else:
                     cause = "It fails when it runs."
                 break
-    return {"commands": commands[:4], "settingsFiles": sorted(set(files)), "cause": cause}
+    out: dict[str, Any] = {"commands": commands[:4], "settingsFiles": sorted(set(files)), "cause": cause, "remedy": None}
+    if wrong and failing:
+        action = _hook_event_action(homes, failing, ran_for=wrong[0], answers=wrong[1])
+        if action:
+            label = _home_label(Path(action["root"]) / action["file"])
+            out["remedy"] = (
+                f"Apply takes its entry out of {wrong[0]} in {label}. It keeps running at {wrong[1]}, where it is already registered."
+                if action["to"] is None else
+                f"Apply moves its entry from {wrong[0]} to {wrong[1]} in {label}.")
+            out["_action"] = action
+    return out
+
+
+def _hook_event_action(homes: discover.Homes, command: str, *, ran_for: str, answers: str) -> dict[str, Any] | None:
+    """The file change that stops a hook answering the wrong event: its entry leaves ``ran_for`` and, unless
+    it is already there, joins ``answers``. None when no settings file of this Mac registers it at ``ran_for``.
+    The full command stays inside this action; the snapshot only ever sees its name."""
+    for home in homes.claude_code:
+        for name in ("settings.json", "settings.local.json"):
+            p = Path(home) / name
+            try:
+                hooks = json.loads(p.read_text(encoding="utf-8")).get("hooks") or {}
+            except (OSError, ValueError, AttributeError):
+                continue
+            if _hook_runs(hooks, ran_for, command):
+                return {"kind": "hook_event", "file": name, "root": str(p.parent), "command": command,
+                        "from": ran_for, "to": None if _hook_runs(hooks, answers, command) else answers}
+    return None
+
+
+def _hook_runs(hooks: Any, event: str, command: str) -> bool:
+    groups = hooks.get(event) if isinstance(hooks, dict) else None
+    return any(isinstance(h, dict) and h.get("command") == command
+               for g in (groups if isinstance(groups, list) else []) if isinstance(g, dict)
+               for h in (g.get("hooks") or []))
 
 
 def _applied(store: Store) -> list[dict[str, Any]]:
@@ -1123,6 +1210,20 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
     }
 
 
+def _fix_entry(f: dict[str, Any], homes: discover.Homes | None) -> dict[str, Any]:
+    """A fix as the snapshot carries it. A failing hook brings its cause and, when the fix can be written,
+    what Apply would do; the action itself (which holds the full command) never leaves this process."""
+    out = {"id": f["id"], "rule": f["rule"], "repo": f.get("repo") or None, "subject": f.get("subject"),
+           "component": f["component"], "title": f["title"], "pattern": f["pattern"], "effect": f["effect"],
+           "points": f.get("points"), "sessions": len(f.get("sessions") or []),
+           "evidence": list(f.get("sessions") or [])[:5], "applicable": bool(f.get("actions"))}
+    if f["rule"] == "broken_hook" and homes is not None:
+        hook = hook_cause(homes, str(f.get("subject") or ""))
+        out["applicable"] = out["applicable"] or "_action" in hook
+        out["hook"] = {k: v for k, v in hook.items() if not k.startswith("_")}
+    return out
+
+
 def _find_fix(store: Store, fix_id: str) -> dict[str, Any]:
     from . import fixes, health
 
@@ -1131,6 +1232,12 @@ def _find_fix(store: Store, fix_id: str) -> dict[str, Any]:
     fx = next((f for f in health.fixes(rows) if f["id"] == fix_id), None)
     if fx is None:
         raise fixes.FixError("not_found", "That fix no longer applies to your recent sessions.")
+    if fx["rule"] == "broken_hook" and not fx.get("actions"):
+        # The hook's own fix lives in Claude Code's settings, not a repo: found here, written as the home "repo".
+        action = hook_cause(discover.Homes.default(), str(fx.get("subject") or "")).get("_action")
+        if action:
+            fx["actions"] = [action]
+            fx["repo"] = fixes.HOME_REPO
     return fx
 
 
@@ -1147,12 +1254,12 @@ def fix_action(store: Store, action: str, ident: str, *, grant: bool = False) ->
     act = fx["actions"][0]
     repo = str(fx.get("repo") or "")
     granted = repo in fixes.grants(store.base)
-    root = fixes.grants(store.base).get(repo) or fixes.known_roots(store.base).get(repo)
+    root = fixes.grants(store.base).get(repo) or act.get("root") or fixes.known_roots(store.base).get(repo)
     if action == "preview":
         out = {"fixId": fx["id"], "title": fx["title"], "repo": repo, "granted": granted, "root": root,
                "kind": act.get("kind")}
-        if granted:
-            out.update(fixes.preview(store.base, repo, fx, act))
+        if granted or act.get("root"):
+            out.update(fixes.preview(store.base, repo, fx, act, root=root))
         else:
             out["file"] = act.get("file")
         return out
