@@ -175,14 +175,14 @@ struct OnboardingView: View {
                 switch model.notificationStatus {
                 case .authorized, .provisional:
                     Text("Notifications are allowed").font(.body.weight(.medium))
-                    Text("Nothing is sent until you turn an alert on.").font(.callout).foregroundStyle(.secondary)
+                    Text("Nothing is sent until you keep an alert on, in the next step.").font(.callout).foregroundStyle(.secondary)
                 case .denied:
                     Text("Notifications are off for AgentPlay").font(.body.weight(.medium))
                     Text("Turn them on in System Settings if you want a nudge when a session needs you.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 default:
                     Text("May I notify you?").font(.body.weight(.medium))
-                    Text("Only for what you choose. Off by default.").font(.callout).foregroundStyle(.secondary)
+                    Text("Only for what you choose, in the next step.").font(.callout).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 8)
