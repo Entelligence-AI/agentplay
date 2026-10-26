@@ -1,7 +1,7 @@
 {
   "schema": "agentplay.companion/v1",
   "schemaVersion": 1,
-  "agentplayVersion": "0.2.4",
+  "agentplayVersion": "sample",
   "generatedAt": "2026-10-23T10:46:00Z",
   "store": {
     "available": true,
