@@ -2,20 +2,19 @@ import AgentPlayCore
 import AppKit
 import SwiftUI
 
-/// First run, told by Pip: it says what it does, reads this Mac's sessions while you watch (and asks to notify
-/// you while that runs), says three things it learnt, and shows how it'll talk to you from the menu bar.
-/// Four short steps; motion follows Reduce Motion.
+/// First run, told by Pip, one idea per screen: who it is; reading this Mac's sessions while you watch (and
+/// the one permission worth asking for while that runs); where it lives, shown with the real icon as it is
+/// right now; three choices. Big type, room around it, one button. Motion follows Reduce Motion.
 struct OnboardingView: View {
     @EnvironmentObject var model: CompanionModel
     @State var step = 1
     /// Filming: the first run plays itself, step by step, on the timings a viewer would take.
     var filmAutoplay = false
     @State private var scanning = false
-    @State private var shown = 0          // learnings revealed so far
     @State private var opened = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static let size = CGSize(width: 560, height: 500)
+    static let size = CGSize(width: 600, height: 560)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,50 +22,50 @@ struct OnboardingView: View {
                 switch step {
                 case 1: meet
                 case 2: reading
-                case 3: learnt
-                default: home
+                case 3: home
+                default: choices
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .transition(.opacity)
+            .id(step)
+            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 10)), removal: .opacity))
             HStack {
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     ForEach(1...4, id: \.self) { i in
-                        Circle().fill(i == step ? Color.accentColor : Color.secondary.opacity(0.3)).frame(width: 6, height: 6)
+                        Circle().fill(i == step ? Color.primary.opacity(0.7) : Color.primary.opacity(0.15)).frame(width: 6, height: 6)
                     }
                 }
                 .accessibilityLabel("Step \(step) of 4")
                 Spacer()
-                if step > 1 && step != 2 { Button("Back") { go(step - 1) } }
-                primary
+                if step > 2 { Button("Back") { go(step - 1) }.controlSize(.large) }
+                primary.controlSize(.large)
             }
-            .padding(.horizontal, 22).padding(.vertical, 16)
+            .padding(.horizontal, 28).padding(.bottom, 24).padding(.top, 8)
         }
         .frame(width: Self.size.width, height: Self.size.height)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: step)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: step)
     }
 
     /// Filming: advance on the view's own clock (onAppear never fires in a window parked off the screen).
     func filmAdvance(_ now: Date) {
         guard filmAutoplay else { return }
         let el = now.timeIntervalSince(opened)
-        if step == 1, el > 3.6 { DispatchQueue.main.async { go(2); scan() } }   // reading, then learnt by itself
+        if step == 1, el > 3.6 { DispatchQueue.main.async { go(2); scan() } }   // reading, then home by itself
         if step == 3, el > 7.0 { DispatchQueue.main.async { go(4) } }
     }
 
     @ViewBuilder var primary: some View {
         switch step {
-        case 1: Button("Read My Sessions") { go(2); scan() }.keyboardShortcut(.defaultAction)
-        case 2: Button(scanning ? "Reading…" : "Continue") { go(3) }.keyboardShortcut(.defaultAction).disabled(scanning)
-        case 3: Button("Continue") { go(4) }.keyboardShortcut(.defaultAction)
-        default: Button("Start") { finish() }.keyboardShortcut(.defaultAction)
+        case 1: Button("Let\u{2019}s Go") { go(2); scan() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+        case 2: Button(scanning ? "Reading…" : "Continue") { go(3) }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(scanning)
+        case 3: Button("Continue") { go(4) }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+        default: Button("Start") { finish() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
         }
     }
 
     func go(_ s: Int) {
         step = s
         opened = Date()
-        if s == 3 { reveal() }
     }
 
     // MARK: Pip, big
@@ -90,57 +89,29 @@ struct OnboardingView: View {
     }
 
     func title(_ s: String) -> some View {
-        Text(s).font(.system(size: 26, weight: .semibold, design: .rounded)).multilineTextAlignment(.center)
-    }
-
-    func body(_ s: String) -> some View {
-        Text(s).font(.title3).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        Text(s).font(.system(size: 30, weight: .semibold, design: .rounded)).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 460)
     }
 
-    // MARK: 1. Meet Pip: what it does, and with which agents
-
-    var meet: some View {
-        VStack(spacing: 12) {
-            pip(.wave, wakeAfter: 1.2, size: 84).padding(.top, 14)
-            title("Hi, I'm Pip.")
-            body("I live in your menu bar and watch your coding agents, so you don't have to watch the terminal.")
-            HStack(alignment: .top, spacing: 12) {
-                tile("eye", "See what's running", "Every live session, what it just did, and its context.")
-                tile("hand.wave", "Know when it needs you", "I wave in the menu bar, and notify you if you let me.")
-                tile("gauge.with.dots.needle.33percent", "Watch your plan", "5-hour and weekly windows, before they run out.")
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 6)
-            VStack(spacing: 4) {
-                HStack(spacing: 6) {
-                    Text("Works with").font(.caption).foregroundStyle(.secondary)
-                    ForEach(["Claude Code", "Codex", "Cursor", "Copilot", "OpenCode", "Kiro"], id: \.self) { a in
-                        Text(a).font(.caption.weight(.medium))
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(.quaternary.opacity(0.6), in: Capsule())
-                    }
-                }
-                Text("Plan limits come from Claude Code and Codex; the others don't report them.")
-                    .font(.caption).foregroundStyle(.tertiary)
-            }
-            .padding(.top, 4)
-            Button("Just Show Me With Sample Data") { model.loadSample(); go(3) }.buttonStyle(.link)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 24)
+    func body(_ s: String) -> some View {
+        Text(s).font(.system(size: 17)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            .lineSpacing(3).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 400)
     }
 
-    func tile(_ symbol: String, _ head: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: symbol).font(.title2).foregroundStyle(.tint)
-            Text(head).font(.subheadline.weight(.semibold))
-            Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    // MARK: 1. Meet Pip
+
+    var meet: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            pip(.wave, wakeAfter: 1.2, size: 132)
+            title("Hi, I\u{2019}m Pip.").padding(.top, 28)
+            body("I watch your coding agents from the menu bar, so you don\u{2019}t have to watch the terminal.").padding(.top, 12)
+            Spacer()
+            Button("Try it with sample data instead") { model.loadSample(); go(3) }
+                .buttonStyle(.plain).font(.callout).foregroundStyle(.tertiary)
+                .padding(.bottom, 4)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 40)
     }
 
     // MARK: 2. Reading your sessions (and, while that runs, the one permission worth asking for)
@@ -151,118 +122,124 @@ struct OnboardingView: View {
     }
 
     var reading: some View {
-        VStack(spacing: 10) {
-            pip(scanning ? .work : .cheer, size: 84).padding(.top, 14)
-            title(scanning ? "Reading your sessions…" : "All read.")
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(spacing: 0) {
+            Spacer()
+            pip(scanning ? .work : .cheer, size: 96)
+            title(scanning ? "Reading your sessions" : "All read.").padding(.top, 24)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("\(found)")
-                    .font(.system(size: 40, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
                     .contentTransition(.numericText())
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
-                Text(found == 1 ? "session" : "sessions").font(.headline).foregroundStyle(.secondary)
+                Text(found == 1 ? "session" : "sessions").font(.system(size: 17)).foregroundStyle(.secondary)
             }
-            if !scanning, let s = model.snapshot, !s.foundSources.isEmpty {
-                Text("From " + s.foundSources.map(\.label).joined(separator: ", ") + ".").font(.callout).foregroundStyle(.secondary)
-            }
-            Label("Read on this Mac. Nothing leaves it.", systemImage: "lock.fill")
-                .font(.callout).foregroundStyle(.secondary)
-            permission.padding(.top, 8)
-            if scanning {
-                Text("macOS may ask about your Desktop or Documents folder: that's me checking which repo a session worked in. Allow keeps repo names; declining hides them.")
-                    .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 440).padding(.top, 2)
-            }
-            Spacer(minLength: 0)
+            .padding(.top, 14)
+            Text(sources).font(.callout).foregroundStyle(.secondary).padding(.top, 4)
+            Spacer()
+            permission
+            Text("macOS may ask about your Desktop or Documents folder: that\u{2019}s me checking which repo a session worked in.")
+                .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 420).padding(.top, 10)
+                .opacity(scanning ? 1 : 0)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 40)
+    }
+
+    var sources: String {
+        if let s = model.snapshot, !s.foundSources.isEmpty, !scanning {
+            return "From " + s.foundSources.map(\.label).joined(separator: ", ") + ". Read on this Mac; nothing leaves it."
+        }
+        return "Read on this Mac. Nothing leaves it."
     }
 
     /// Notifications, asked for here because this is when there's a moment to answer. Each state says what
     /// to do; the system prompt comes from the button, never by surprise.
     var permission: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 14) {
             Image(systemName: "bell.badge").font(.title2).foregroundStyle(.tint).frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 switch model.notificationStatus {
                 case .authorized, .provisional:
-                    Text("Notifications allowed").font(.subheadline.weight(.semibold))
-                    Text("Nothing is sent until you turn an alert on, in the next step.").font(.caption).foregroundStyle(.secondary)
+                    Text("Notifications are allowed").font(.body.weight(.medium))
+                    Text("Nothing is sent until you turn an alert on.").font(.callout).foregroundStyle(.secondary)
                 case .denied:
-                    Text("Notifications are off for AgentPlay").font(.subheadline.weight(.semibold))
-                    Text("Turn them on in System Settings → Notifications if you want a nudge when a session needs you.")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("Notifications are off for AgentPlay").font(.body.weight(.medium))
+                    Text("Turn them on in System Settings if you want a nudge when a session needs you.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 default:
-                    Text("May I notify you?").font(.subheadline.weight(.semibold))
-                    Text("Only for what you choose: a session waiting on you, a plan window nearly spent. Off by default.")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("May I notify you?").font(.body.weight(.medium))
+                    Text("Only for what you choose. Off by default.").font(.callout).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 8)
             switch model.notificationStatus {
-            case .authorized, .provisional: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            case .authorized, .provisional: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.title3)
             case .denied: Button("Open System Settings") { model.openNotificationSettings() }
             default: Button("Allow") { model.requestNotifications() }.buttonStyle(.borderedProminent)
             }
         }
-        .padding(12)
+        .padding(16)
         .frame(maxWidth: 480)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    // MARK: 3. What I learnt
-
-    var learnings: [Pip.Learning] { model.snapshot.map(Pip.learnings) ?? [] }
-
-    func reveal() {
-        shown = 0
-        let n = learnings.count
-        guard !reduceMotion else { shown = n; return }
-        for i in 0..<n {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35 + 0.45 * Double(i)) {
-                withAnimation(.easeOut(duration: 0.35)) { shown = i + 1 }
-            }
-        }
-    }
-
-    var learnt: some View {
-        VStack(spacing: 14) {
-            pip(.cheer, size: 96).padding(.top, 18)
-            title(model.isSample ? "Here's what I'd tell you" : "Here's what I learnt")
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(learnings.enumerated()), id: \.offset) { i, l in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: l.symbol).font(.title3).foregroundStyle(.tint).frame(width: 24)
-                        Text(l.text).font(.body).fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(12)
-                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .opacity(i < shown ? 1 : 0)
-                    .offset(y: i < shown ? 0 : 8)
-                }
-            }
-            .frame(maxWidth: 460)
-            Spacer()
-        }
-        .padding(.horizontal, 24)
-        .onAppear { if shown == 0 { reveal() } }
-    }
-
-    // MARK: 4. Where I live
+    // MARK: 3. Where I live: the real icon, as it is right now, and what each pose means
 
     var home: some View {
-        VStack(spacing: 12) {
-            title("Find me in the menu bar").padding(.top, 22)
-            body("My pose says what's up. Click me for the details, right-click me for Settings and Quit.")
-            HStack(alignment: .top, spacing: 0) {
+        VStack(spacing: 0) {
+            Spacer()
+            title("This is me, in your menu bar.")
+            body("My pose says what\u{2019}s up. Click me for the details; right-click for Settings and Quit.").padding(.top, 12)
+            livePreview.padding(.top, 30)
+            HStack(spacing: 0) {
                 legend(.wave, "Needs you")
                 legend(.cheer, "Finished")
                 legend(.oops, "Keeps failing")
                 legend(.sweat, "Going fast")
                 legend(.limit, "Limit reached")
             }
-            .frame(maxWidth: 480)
-            .padding(.vertical, 10)
+            .frame(maxWidth: 500)
+            .padding(.top, 34)
+            Spacer()
+        }
+        .padding(.horizontal, 40)
+    }
+
+    /// A slice of menu bar with the status item exactly as it draws right now: the pose, the fill, the line.
+    var livePreview: some View {
+        let pose = model.pipPose
+        let lv = Pip.levels(model.snapshot?.limits ?? [], now: Date())
+        let say = Pip.sentence(pose, live: model.snapshot?.live ?? [], limits: model.snapshot?.limits ?? [],
+                               recent: model.pipRecent, now: Date()).title
+        return HStack(spacing: 10) {
+            Image(nsImage: PipIcon.image(pose, session: lv.session, weekly: lv.weekly))
+                .renderingMode(.template).interpolation(.none).resizable()
+                .frame(width: 40, height: 36).foregroundStyle(.primary)
+            Text(say).font(.system(size: 17, weight: .medium))
+        }
+        .padding(.horizontal, 18).frame(height: 56)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.07)))
+        .accessibilityLabel("Menu bar, right now: \(say)")
+    }
+
+    func legend(_ pose: PipPose, _ text: String) -> some View {
+        VStack(spacing: 10) {
+            Image(nsImage: PipIcon.image(pose, session: 0.45, weekly: 0.6))
+                .renderingMode(.template).interpolation(.none).resizable()
+                .frame(width: 40, height: 36).foregroundStyle(.primary)
+            Text(text).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: 4. Three choices
+
+    var choices: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            title("Three choices.")
+            body("Everything else has a sensible default. All of it can change in Settings later.").padding(.top, 12)
             Form {
                 Toggle(isOn: Binding(get: { model.prefs.alerts.enabled.contains(.needsYou) },
                                      set: { model.setPreset(.needsYou, on: $0) })) {
@@ -281,25 +258,16 @@ struct OnboardingView: View {
                 }
                 Toggle(isOn: Binding(get: { model.prefs.usesClaudeAccount }, set: { model.setClaudeAccount($0) })) {
                     Text("Show Claude usage from my account")
-                    Text("Asks your Claude account, like claude.ai's usage page. macOS asks once.")
+                    Text("The same numbers as claude.ai\u{2019}s usage page. macOS asks once.")
                 }
                 Toggle("Open AgentPlay when I log in", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
             }
-            .formStyle(.grouped).scrollDisabled(true).frame(maxWidth: 480, maxHeight: 190)
-            Spacer(minLength: 0)
+            .formStyle(.grouped).scrollDisabled(true).scrollContentBackground(.hidden)
+            .frame(maxWidth: 500, maxHeight: model.notificationStatus == .denied ? 240 : 200)
+            .padding(.top, 18)
+            Spacer()
         }
-        .padding(.horizontal, 24)
-    }
-
-    func legend(_ pose: PipPose, _ text: String) -> some View {
-        VStack(spacing: 8) {
-            Image(nsImage: PipIcon.image(pose, session: 0.45, weekly: 0.6))
-                .renderingMode(.template).interpolation(.none).resizable()
-                .frame(width: 40, height: 36).foregroundStyle(.primary)
-            Text(text).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 40)
     }
 
     // MARK: actions
@@ -311,7 +279,7 @@ struct OnboardingView: View {
             await model.refreshNotificationStatus()
             await model.runFirstScan()
             scanning = false
-            // A beat on "All read." before the reveal.
+            // A beat on "All read." before moving on.
             try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 900))
             if step == 2 { go(3) }
         }

@@ -89,12 +89,14 @@ The standard Mac settings window: toolbar tabs (General, Live Limits, Sources, N
 
 ## Onboarding (four steps, told by Pip)
 
-1. **Meet Pip**: Pip wakes (asleep, then blinks and waves): "Hi, I'm Pip." Three tiles say what it does (see what's running, know when it needs you, watch your plan), a row says which agents it works with (Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro) and that plan limits come from Claude Code and Codex only. "Read My Sessions" starts the scan.
-2. **Reading your sessions**: Pip types while a live counter climbs as the first scan indexes; "Read on this Mac. Nothing leaves it." Under it, the one permission worth asking for while there's time to answer: "May I notify you?" with Allow (the system prompt), or "Notifications allowed", or, when macOS has them off, "Open System Settings". A line under it says macOS may ask about the Desktop or Documents folder (the builder checking which repo a session worked in) and what allowing or declining does. It moves on by itself when done.
-3. **What I learnt**: three facts from this Mac's own sessions fade in one by one: where the work goes, which model does it (named as people say it: "Opus 5.5"), the biggest fix.
-4. **Find me in the menu bar**: "Click me for the details, right-click me for Settings and Quit", the pose legend (needs you, finished, keeps failing, going fast, limit reached) with room between the poses, and three choices: needs-you alerts (with Open System Settings inline when notifications are off), Claude usage from your account, open at login.
+One idea per screen, big type, room around it, one button; 600 by 560.
 
-Progress dots, no step counter. Every animation follows Reduce Motion.
+1. **Meet Pip**: Pip wakes (asleep, then blinks and waves). "Hi, I'm Pip. I watch your coding agents from the menu bar, so you don't have to watch the terminal." Let's Go. A quiet link offers sample data instead.
+2. **Reading your sessions**: Pip types while a live counter climbs as the first scan indexes; which agents it read from, and "Read on this Mac; nothing leaves it." Under it, the one permission worth asking for while there's time to answer: "May I notify you?" with Allow (the system prompt), or "Notifications are allowed", or, when macOS has them off, Open System Settings. A line says macOS may ask about the Desktop or Documents folder and why. It moves on by itself when done.
+3. **This is me, in your menu bar**: the status item exactly as it draws right now (pose, fill, and Pip's sentence, "1 waiting on you: docs-site" or "All quiet"), then the five poses with room between them (needs you, finished, keeps failing, going fast, limit reached). "Click me for the details; right-click for Settings and Quit."
+4. **Three choices**: needs-you alerts (with Open System Settings in its own row when notifications are off), Claude usage from your account, open at login. "Everything else has a sensible default." Start.
+
+Progress dots, no step counter. Screens fade and rise in; every animation follows Reduce Motion.
 
 ## Pip, interactive
 
