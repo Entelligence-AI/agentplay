@@ -277,6 +277,145 @@ def test_mcp_pr_tool_sets_vcs_category(tmp_path):
     assert ev["cat"] == "vcs" and ev["vcs"]["action"] == "pr_create" and ev["vcs"]["number"] == 102
 
 
+_PR_URL_OUT = "https://github.com/acme/backend/pull/7"
+
+
+def _one_bash_call(tmp_path, command, result, *, is_error=False):
+    cwd = str(_repo(tmp_path))
+    times = ("2026-09-10T01:00:00Z", "2026-09-10T01:00:02Z")
+    lines = [_bash("1", times, cwd, command, result, is_error=is_error)]
+    return sm.build_claude_code_map(_write_session(tmp_path, lines))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh pr create --fill",
+        "export GH_TOKEN=$(gh auth token --user bob) && gh pr create --fill",
+        "git push -q origin feat/x\ngh pr create --fill",
+        "GH_TOKEN=$(gh auth token --user bob) gh pr create --title SECRET-TITLE --body x",
+        "cd /tmp && GH_TOKEN=$(gh auth token --user bob) gh pr create -R acme/backend "
+        '--title "SECRET-TITLE" --body "runs `make`" 2>&1 | tail -2',
+        "git push -u origin feat/x 2>&1 | tail -3; gh pr create --fill",
+        "git diff --quiet || gh pr create --fill",
+        "env GH_TOKEN=x gh pr create --fill",
+        "cat > /tmp/b.md <<'EOF'\nIt's done\nEOF\ngh pr create --body-file /tmp/b.md | tail -1",
+    ],
+)
+def test_pr_create_found_anywhere_in_a_compound_command(tmp_path, command):
+    doc = _one_bash_call(tmp_path, command, _PR_URL_OUT)
+    assert [(p["repo"], p["number"], p["url"]) for p in doc["prs"]] == [
+        ("acme/backend", 7, _PR_URL_OUT)
+    ]
+    assert doc["totals"]["prsCreated"] == 1
+    assert doc["session"]["outcome"] == "pr_created"
+    assert "SECRET-TITLE" not in json.dumps(doc)
+
+
+@pytest.mark.parametrize(
+    ("command", "result"),
+    [
+        ('echo "gh pr create --fill" && gh pr view 7', _PR_URL_OUT),
+        ("cat > /tmp/notes.md <<'EOF'\ngh pr create --fill\nEOF\ngh pr view 7", _PR_URL_OUT),
+        (
+            "gh pr create --dry-run --fill",
+            f"Would have created a Pull Request with:\nbody: see {_PR_URL_OUT}",
+        ),
+        ("gh pr create --help", "Create a pull request on GitHub."),
+        (
+            "gh pr create --fill 2>&1 | tail -2",
+            'a pull request for branch "feat/x" into branch "main" already exists:\n' + _PR_URL_OUT,
+        ),
+        (
+            "gh pr create --fill 2>&1 | tail -2",
+            "GraphQL: A pull request already exists for acme:feat/x\n" + _PR_URL_OUT,
+        ),
+        ("false && gh pr create --fill; gh pr view 7 --json url --jq .url", _PR_URL_OUT),
+        ("gh pr create --fill || gh pr view 7 --json url --jq .url", _PR_URL_OUT),
+        ("gh pr view 3; gh pr create --fill", f"{_PR_URL_OUT[:-1]}3\n{_PR_URL_OUT}"),
+        ("echo see && gh pr create --fill", f"see {_PR_URL_OUT[:-1]}3\n{_PR_URL_OUT}"),
+        ("cat >\"/tmp/n\"<<'EOF'\ngh pr create --fill\nEOF\ngh pr view 7 --json url", _PR_URL_OUT),
+        ("cat > /tmp/notes.md <<'EOF'\ngh pr create --fill\nEOF\ncat /tmp/url.txt", _PR_URL_OUT),
+    ],
+)
+def test_pr_create_text_dry_run_or_refusal_is_not_a_created_pr(tmp_path, command, result):
+    doc = _one_bash_call(tmp_path, command, result)
+    assert doc["prs"] == [] and doc["totals"]["prsCreated"] == 0
+    assert doc["session"]["outcome"] != "pr_created"
+
+
+# ---------------------------------------------------------------- commits
+_COMMIT_KEYS = {"t", "seq", "kind", "agent", "model", "task", "err", "ref"} | {
+    "repo",
+    "sha",
+    "files",
+    "ins",
+    "del",
+}
+
+
+@pytest.mark.parametrize(
+    ("command", "result", "commits"),
+    [
+        ('git commit -q -m "SECRET-MSG"', "", 1),
+        ('git commit -qm "SECRET-MSG"', "(Bash completed with no output)", 1),
+        ('git commit -qam "SECRET-MSG"', "", 1),
+        ('git commit -a -q -m "SECRET-MSG"', "", 1),
+        ("git commit --amend --no-edit -q", "", 1),
+        ('git commit --no-verify -q -m "SECRET-MSG"', "", 1),
+        ('git -C /tmp commit -q -m "SECRET-MSG"', "", 1),
+        ('git add -A && git commit -q -m "SECRET-MSG" && git log --oneline -1', "1a2b3c4 x", 1),
+        ('CODEX_SKIP_REVIEW=1 git commit -q -m "SECRET-MSG" && git push -q', "", 1),
+        ('npx tsc --noEmit; git add -A && git commit -q -m "SECRET-MSG"', "", 1),
+        ("export A=$(gh auth token) && git commit -q -m SECRET-MSG && git log | head -1", "x", 1),
+        ("git add -A\ngit commit -q -m SECRET-MSG", "", 1),
+        ("git commit -q -m \"$(cat <<'EOF'\nSECRET-MSG\nEOF\n)\"", "", 1),
+        ("git commit -qm a && git add b && git commit -qm SECRET-MSG", "", 2),
+        ('git commit -q -m "SECRET-MSG" && git status', "nothing to commit, working tree clean", 1),
+        ('git commit -m "SECRET-MSG"', "[main 75f3d6d9a] x\n 1 file changed, 2 insertions(+)", 1),
+    ],
+)
+def test_commit_counted_from_its_summary_or_quiet_clean_exit(tmp_path, command, result, commits):
+    doc = _one_bash_call(tmp_path, command, result)
+    found = [e for e in doc["events"] if e["kind"] == "commit"]
+    assert doc["totals"]["commits"] == len(found) == commits
+    assert all(e["repo"] == "backend" and set(e) <= _COMMIT_KEYS for e in found)
+    assert "SECRET-MSG" not in json.dumps(doc)
+
+
+@pytest.mark.parametrize(
+    ("command", "result"),
+    [
+        ('git commit -m "SECRET-MSG" && git push -q', ""),
+        ("git commit -mq", ""),
+        ('git commit -q -m "SECRET-MSG"; echo done', "done"),
+        ('git commit -q -m "SECRET-MSG" && git push -q; echo done', "done"),
+        ('git diff --cached --quiet || git commit -q -m "SECRET-MSG"', ""),
+        ('git commit -q -m "SECRET-MSG" || true', ""),
+        ('git commit -q -m "SECRET-MSG" | tail -1', ""),
+        ("git commit -q -m SECRET-MSG\ngit push -q", ""),
+        ("git commit -q -m SECRET-MSG", "Command running in background with ID: b1."),
+        ('git commit --dry-run -m "SECRET-MSG"', "On branch main\nChanges to be committed:"),
+        ("git commit --help", "GIT-COMMIT(1)"),
+        ('echo "git commit -q -m SECRET-MSG"', "git commit -q -m SECRET-MSG"),
+        ("cat > /tmp/notes.md <<'EOF'\ngit commit -q -m SECRET-MSG\nEOF", ""),
+    ],
+)
+def test_commit_not_counted_when_nothing_proves_it_ran(tmp_path, command, result):
+    doc = _one_bash_call(tmp_path, command, result)
+    assert doc["totals"]["commits"] == 0
+
+
+def test_failed_quiet_commit_is_not_counted(tmp_path):
+    doc = _one_bash_call(
+        tmp_path,
+        "git add -A && git commit -q -m x && git push -q",
+        "Exit code 1\nOn branch main\nnothing to commit, working tree clean",
+        is_error=True,
+    )
+    assert doc["totals"]["commits"] == 0
+
+
 # ---------------------------------------------------------------- shell verbs
 @pytest.mark.parametrize(
     ("command", "verb"),

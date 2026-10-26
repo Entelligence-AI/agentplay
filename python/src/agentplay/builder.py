@@ -296,6 +296,12 @@ _PREFIX_VERBS = {"cd", "export", "set", "unset", "source", "pushd", "popd"}
 # `&&`, `||`, `;` and a newline sequence commands; a pipe does not
 # (`cat x | grep y` is a grep).
 _SEQUENCE_RE = re.compile(r"&&|\|\||;|\n")
+# A word that opens a here-document: `<<EOF`, `<<-'EOF'`, `cat<<"EOF"`. Not `<<<`, and
+# not a `<<` after a quote or `$` in the word.
+_HEREDOC_RE = re.compile(r"[^'\"`$\\<]*<<(?!<)(-?)(.*)", re.S)
+# Help or a dry run, so nothing is created. git's `--short`, `--long` and `--porcelain`
+# imply `--dry-run`.
+_PREVIEW_FLAGS = frozenset({"--dry-run", "--help", "-h", "--short", "--long", "--porcelain"})
 
 # `for i in ...; do CMD; done` and `if ...; then CMD; fi` — the verb is the body's,
 # not the shell keyword. `do`/`then` may follow a `;` or a newline. Opener and body
@@ -963,17 +969,20 @@ def pr_create_intent(tool: str, inp: dict[str, Any]) -> dict[str, Any] | None:
         }
     cmd = str(inp.get("command") or "")
     if tool in SHELL_TOOLS:
-        # Tier 2: the bundled detector marks a long, free-text-bearing command (a
-        # real PR title/body) as "unrecognized_creation_text" rather than confirming
-        # a provider — a cheap shape check on the first tokens still tells us this IS
-        # a create call, so it still gets resolved by URL below.
-        words = _cmd_words(cmd)
-        head = os.path.basename(words[0]) if words else ""
-        rest = [w for w in words[1:] if not w.startswith("-")]
-        if head in ("gh", "hub") and rest[:2] == ["pr", "create"]:
-            return {"provider": "github", "repo": None}
-        if head == "glab" and rest[:2] == ["mr", "create"]:
-            return {"provider": "gitlab", "repo": None}
+        # Tier 2: the bundled detector gives up on lines it cannot attribute (a pipe,
+        # an `export`, a substitution in the body). A lone gh/glab create call is
+        # still a create, resolved by URL below. Next to a second call, such as
+        # `gh pr view 7`, the URL in the result could be that call's.
+        calls = [
+            w for w, _ in _shell_commands(cmd) if os.path.basename(w[0]) in ("gh", "hub", "glab")
+        ]
+        if len(calls) == 1 and not _PREVIEW_FLAGS.intersection(calls[0]):
+            head = os.path.basename(calls[0][0])
+            rest = [w for w in calls[0][1:] if not w.startswith("-")]
+            if head in ("gh", "hub") and rest[:2] == ["pr", "create"]:
+                return {"provider": "github", "repo": None}
+            if head == "glab" and rest[:2] == ["mr", "create"]:
+                return {"provider": "gitlab", "repo": None}
     low = (tool + " " + cmd).lower()
     if re.search(r"\b(?:bb|bitbucket)\b.*\bpr\b.*\bcreate\b", low) or (
         "bitbucket" in low and "pull" in low and "create" in low
@@ -1073,6 +1082,10 @@ OUTPUT_KINDS = (
     "skill_write",
 )
 _COMMIT_OK = re.compile(r"\[([^\]\n]{1,120}?) ([0-9a-f]{7,40})\]")
+# Claude Code's and Codex's (text or JSON) replies for a command that is still running.
+_STILL_RUNNING = re.compile(
+    r'running in background with ID|Process running with session ID|"exit_code":\s*null'
+)
 _COMMIT_STAT = re.compile(
     r"(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?"
 )
@@ -1198,13 +1211,71 @@ def loose_command(raw: str) -> str:
     return raw
 
 
-def _segments_words(cmd: str) -> list[list[str]]:
+def _shell_commands(cmd: str) -> list[tuple[list[str], bool]]:
+    """Each simple command of a shell line: its words, and whether its failure fails the line.
+
+    The line splits where the shell splits it (``&&``, ``||``, ``;``, ``|``, ``&``, a
+    newline), never inside quotes or a substitution, and here-document bodies are
+    skipped, so quoted or heredoc text is never read as a command. Words lose their
+    quotes; ``VAR=value`` words and a leading ``env`` are dropped. A command's failure
+    fails the line when only ``&&`` steps follow it (``git commit -q && git log | head``),
+    it does not follow ``||`` or a pipe, and the line does not end in ``&``.
+    """
+    parsed: list[tuple[list[str], str]] = []
+    heredocs: list[tuple[str, bool]] = []
+    pos, n = 0, len(cmd)
+    try:
+        while pos < n:
+            words, pos, sep = _next_command(cmd, pos)
+            for k, (raw, _) in enumerate(words):
+                m = _HEREDOC_RE.match(raw)
+                if m:
+                    delim = m.group(2) or (words[k + 1][0] if k + 1 < len(words) else "")
+                    heredocs.append((re.sub(r"['\"\\]", "", delim), m.group(1) == "-"))
+            if sep == "\n":
+                for delim, tabs in heredocs:
+                    while pos < n:
+                        end = cmd.find("\n", pos)
+                        end = n if end < 0 else end + 1
+                        body, pos = cmd[pos:end].rstrip("\n"), end
+                        if (body.lstrip("\t") if tabs else body) == delim:
+                            break
+                heredocs = []
+            if words:
+                text = [t for _, t in words if "=" not in t or t.startswith("-")]
+                parsed.append((text[1:] if text[:1] == ["env"] else text, sep))
+    except RecursionError:
+        return []
     out = []
-    for seg in re.split(r"&&|\|\||;|\n", cmd):
-        w = _cmd_words(seg)
-        if w:
-            out.append(w)
+    for i, (words, _) in enumerate(parsed):
+        before = parsed[i - 1][1] if i else ""
+        after = [sep for _, sep in parsed[i:-1]]
+        fails_line = (
+            before not in ("||", "|")
+            and parsed[-1][1] in ("", ";", "\n")
+            and after[:1] in ([], ["&&"])
+            and set(after) <= {"&&", "|"}
+        )
+        if words:
+            out.append((words, fails_line))
     return out
+
+
+def _quiet_commit(args: list[str]) -> bool:
+    """True when ``git commit`` args hold ``-q``/``--quiet``, alone or in a cluster (``-qam``).
+
+    Git prints no ``[branch sha]`` summary line then. In ``-mq`` the ``q`` is the message.
+    """
+    for w in args:
+        if w == "--quiet":
+            return True
+        if re.fullmatch(r"-[A-Za-z]+", w):
+            for ch in w[1:]:
+                if ch == "q":
+                    return True
+                if ch in "CFSctmu":  # options whose value is the rest of the word
+                    break
+    return False
 
 
 def _gh_number(args: list[str]) -> int | None:
@@ -1249,15 +1320,17 @@ def output_intents(
         cmd = inp.get("command") or inp.get("cmd") or ""
         if isinstance(cmd, list):
             cmd = " ".join(str(c) for c in cmd)
-        for words in _segments_words(str(cmd)):
+        for words, fails_line in _shell_commands(str(cmd)):
             head = os.path.basename(words[0])
             args = [w for w in words[1:] if not w.startswith("-")]
             if head == "git":
                 sub = [w for w in words[1:] if not w.startswith("-")]
                 if words[1:2] == ["-C"]:
                     sub = [w for w in words[3:] if not w.startswith("-")]
-                if sub[:1] == ["commit"]:
-                    intents.append({"type": "commit"})
+                if sub[:1] == ["commit"] and not _PREVIEW_FLAGS.intersection(words):
+                    intents.append(
+                        {"type": "commit", "exitProves": fails_line and _quiet_commit(words[1:])}
+                    )
             elif head in ("gh", "hub", "glab") and len(args) >= 2:
                 noun, verb = args[0], args[1]
                 repo = _gh_repo_arg(words)
@@ -1410,12 +1483,14 @@ def confirm_output(
     typ = intent["type"]
     if typ == "commit":
         m = _COMMIT_OK.search(core)
-        if not m:
+        if not m and (not intent.get("exitProves") or _STILL_RUNNING.search(text or "")):
             return None
-        out: dict[str, Any] = {"kind": "commit", "sha": m.group(2)[:12]}
+        out: dict[str, Any] = {"kind": "commit"}
+        if m:
+            out["sha"] = m.group(2)[:12]
         if repo_name:
             out["repo"] = repo_name
-        st = _COMMIT_STAT.search(core, m.end())
+        st = _COMMIT_STAT.search(core, m.end()) if m else None
         if st:
             out["files"] = int(st.group(1))
             out["ins"] = int(st.group(2) or 0)
@@ -2315,6 +2390,8 @@ def _read_claude_transcript(
     metadata (thinking, tool-call count, text length) is summed across lines.
     Error text is read only to classify it (``classify_*``); it is never stored.
     """
+    from agentplay._core.ingestion.coding_agent.produced import creation_output_attributes
+
     msgs: dict[str, dict[str, Any]] = {}
     pending: dict[str, dict[str, Any]] = {}
     tool_events: dict[str, dict[str, Any]] = {}  # tool_use id -> event; hook errors link back to it
@@ -2433,7 +2510,13 @@ def _read_claude_transcript(
                             ev["dur"] = max(0, int((ts - ev["_ts"]) * 1000))
                         intent = ev.pop("_prIntent", None)
                         if intent:
-                            hit = None if ev["err"] else _pr_from_url(_flat_text(body, 4000))
+                            out_text = _flat_text(body, 4000)
+                            if ev["tool"] in SHELL_TOOLS and intent["provider"] != "bitbucket":
+                                # One URL on its own line and no refusal: a refused
+                                # create prints the existing PR's URL.
+                                checked = creation_output_attributes(out_text, intent["provider"])
+                                out_text = checked["pr.create.output_url"]
+                            hit = None if ev["err"] else _pr_from_url(out_text)
                             if hit and (
                                 not intent.get("repo")
                                 or hit["repo"].endswith(intent["repo"].split("/")[-1])
@@ -2746,9 +2829,10 @@ def build_map_from_spans(
         out = attrs.get("output.value")
         if out is not None:
             ev["outBytes"] = len(str(out))
-        b.resolve_outputs(
-            ev, str(out or "")[:20_000], ev["err"], end_ts if end_ts is not None else ts
-        )
+        if getattr(s, "status_code", "") != "UNSET":  # UNSET: the call never returned
+            b.resolve_outputs(
+                ev, str(out or "")[:20_000], ev["err"], end_ts if end_ts is not None else ts
+            )
     return b.finish(
         session={
             "id": session_id,
