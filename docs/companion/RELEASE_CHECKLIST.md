@@ -46,7 +46,7 @@ Not available yet. `ARCHS="arm64 x86_64" scripts/companion-build.sh release` fai
 
 ## Updates
 
-No updater ships. The app makes no network requests, so it never checks for updates; users update by installing a newer DMG or with Homebrew. Adding Sparkle would need a signed appcast, an EdDSA key, and an explicit "Check for updates" setting that is off by default.
+No updater ships. Networking is off by default and the app never checks for updates (the only request it can make is the opt-in Claude usage fetch to Anthropic, see PRIVACY.md); users update by installing a newer DMG or with Homebrew. Adding Sparkle would need a signed appcast, an EdDSA key, and an explicit "Check for updates" setting that is off by default.
 
 ## Homebrew cask (draft, after a notarized release exists)
 
@@ -79,6 +79,6 @@ end
 - Optional local alerts for a command failing three times in a row, and more, all off until you turn them on.
 - Context and plan usage only where the agent records them: Codex reports both; Claude Code records tokens but no limit, so the app says that instead of guessing.
 - One observed pattern across your recent runs, with its denominator.
-- Local only: no account, no network, no analytics. Your maps stay in `~/.agentplay`.
+- Local only: no account, no analytics, no network by default. The opt-in Claude usage fetch contacts Anthropic. Your maps stay in `~/.agentplay`.
 
 Known limitations: Apple silicon only; refreshes take seconds on very large live transcripts and are spaced out to bound CPU; repos under Documents, Desktop or Downloads need a one-time macOS folder permission; Claude Code plan usage is not available locally.

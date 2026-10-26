@@ -172,8 +172,13 @@ public enum ClaudeSwitch {
         return try? JSONSerialization.data(withJSONObject: acct, options: [.sortedKeys])
     }
 
+    /// Saving, switching and forgetting take turns: a save landing between a switch's two writes would store the
+    /// new login under the old account.
+    static let lock = NSRecursiveLock()
+
     /// Saves who Claude Code is signed in as now: its login and its account block.
     public static func saveCurrent(_ env: Env = .live, now: Date = Date()) -> Result<Saved, Failure> {
+        lock.lock(); defer { lock.unlock() }
         guard let id = ClaudeAccount.readIdentity(home: env.home), let uuid = id.accountUuid,
               let block = oauthAccountBlock(home: env.home), let live = liveLogin(env) else { return .failure(.notSignedIn) }
         let payload: [String: Any] = ["login": String(decoding: live.data, as: UTF8.self),
@@ -192,13 +197,17 @@ public enum ClaudeSwitch {
         return (Data(login.utf8), Data(acct.utf8))
     }
 
-    public static func forget(_ uuid: String, _ env: Env = .live) {
-        _ = runSecurity(["delete-generic-password", "-s", env.storeService, "-a", uuid])
+    /// Whether the saved login is gone: deleted now, or already missing (errSecItemNotFound).
+    public static func forget(_ uuid: String, _ env: Env = .live) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let (_, status) = runSecurity(["delete-generic-password", "-s", env.storeService, "-a", uuid])
+        return status == 0 || status == 44
     }
 
     /// Switches Claude Code to a saved account. `liveBusy`: some session is mid-step right now.
     public static func switchTo(_ target: Saved, liveBusy: Bool, env: Env = .live, backups: URL, now: Date = Date())
         -> Result<Saved, Failure> {
+        lock.lock(); defer { lock.unlock() }
         let home = env.home
         guard !liveBusy else { return .failure(.busy) }
         guard let saved = savedPayload(target.accountUuid, env) else { return .failure(.notSaved) }
@@ -206,21 +215,25 @@ public enum ClaudeSwitch {
         // 1. The outgoing account's newest login first, so its rotated token isn't lost.
         let outgoing = ClaudeAccount.readIdentity(home: home)?.accountUuid
         if outgoing != nil, outgoing != target.accountUuid, case .failure(let f) = saveCurrent(env, now: now) { return .failure(f) }
-        // 2. The new ~/.claude.json, computed before anything is written.
-        let claudeJSONURL = home.appendingPathComponent(".claude.json")
+        // 2. The new ~/.claude.json, computed before anything is written. Written through a symlink, not over it.
+        let claudeJSONURL = home.appendingPathComponent(".claude.json").resolvingSymlinksInPath()
         guard let current = try? Data(contentsOf: claudeJSONURL),
               let newJSON = withAccount(current, oauthAccount: saved.oauthAccount) else { return .failure(.claudeJSON) }
         // 3. The login, with this Mac's MCP logins kept.
         let live = liveLogin(env)
         guard let login = merged(target: saved.login, live: live?.data) else { return .failure(.notSaved) }
         let account = live?.item.account ?? env.user
-        let (_, status) = runSecurity(["-i"], stdin: securityLine(service: env.claudeService, account: account,
-                                                                 label: nil, value: String(decoding: login, as: UTF8.self)))
-        guard status == 0 else { return .failure(.keychain("couldn't write Claude Code's login (status \(status))")) }
-        // 4. ~/.claude.json, with a copy of the old one kept.
+        // 4. ~/.claude.json first, with a copy of the old one kept: if it can't be written, nothing has changed.
         try? FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)
         try? current.write(to: backups.appendingPathComponent("claude.json.\(Int(now.timeIntervalSince1970))"))
         guard (try? newJSON.write(to: claudeJSONURL, options: .atomic)) != nil else { return .failure(.claudeJSON) }
+        // 5. Then the login; if the Keychain refuses, the old ~/.claude.json goes back so the two still match.
+        let (_, status) = runSecurity(["-i"], stdin: securityLine(service: env.claudeService, account: account,
+                                                                 label: nil, value: String(decoding: login, as: UTF8.self)))
+        guard status == 0 else {
+            try? current.write(to: claudeJSONURL, options: .atomic)
+            return .failure(.keychain("couldn't write Claude Code's login (status \(status)), so nothing was changed"))
+        }
         var t = target
         t.savedAt = now
         return .success(t)

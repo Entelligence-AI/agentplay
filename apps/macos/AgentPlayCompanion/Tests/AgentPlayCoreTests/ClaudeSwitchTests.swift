@@ -84,6 +84,61 @@ import Testing
         #expect(ClaudeSwitch.savedPayload("uB", env) != nil)
         #expect((try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent("bk").path).count) == 1)
     }
+
+    /// A ~/.claude.json that can't be written leaves the login alone; a symlinked one stays a symlink; forget reports.
+    @Test func failedOrLinkedClaudeJSONAndForget() throws {
+        let tag = UUID().uuidString.prefix(8)
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("cs-\(tag)")
+        let dots = FileManager.default.temporaryDirectory.appendingPathComponent("cs-dots-\(tag)")
+        for d in [home, dots] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
+        let env = ClaudeSwitch.Env(home: home, claudeService: "AgentPlay-test-claude-\(tag)",
+                                   storeService: "AgentPlay-test-store-\(tag)", user: "tester")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: home.path)
+            for args in [["-s", env.claudeService, "-a", "tester"], ["-s", env.storeService, "-a", "uA"], ["-s", env.storeService, "-a", "uB"]] {
+                _ = ClaudeSwitch.runSecurity(["delete-generic-password"] + args)
+            }
+            for d in [home, dots] { try? FileManager.default.removeItem(at: d) }
+        }
+        let now = Date()
+        func signIn(_ uuid: String, _ email: String, token: String) throws {
+            let login = String(decoding: try JSONSerialization.data(withJSONObject: [
+                "claudeAiOauth": ["accessToken": token, "refreshToken": "r\(token)", "refreshTokenExpiresAt": (now.timeIntervalSince1970 + 86400) * 1000]],
+                options: [.sortedKeys]), as: UTF8.self)
+            _ = ClaudeSwitch.runSecurity(["-i"], stdin: ClaudeSwitch.securityLine(service: env.claudeService, account: "tester", label: nil, value: login))
+            try Data(#"{"oauthAccount":{"accountUuid":"\#(uuid)","emailAddress":"\#(email)"}}"#.utf8)
+                .write(to: home.appendingPathComponent(".claude.json").resolvingSymlinksInPath())
+        }
+        func liveToken() -> String? {
+            let o = ClaudeSwitch.liveLogin(env).flatMap { try? JSONSerialization.jsonObject(with: $0.data) as? [String: Any] }
+            return (o?["claudeAiOauth"] as? [String: Any])?["accessToken"] as? String
+        }
+        try signIn("uA", "a@example.com", token: "tokA")
+        let a = try ClaudeSwitch.saveCurrent(env).get()
+        try signIn("uB", "b@example.com", token: "tokB")
+        _ = try ClaudeSwitch.saveCurrent(env).get()
+
+        // A home that can't be written: the switch fails and Claude Code's login is still B's.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: home.path)
+        #expect(ClaudeSwitch.switchTo(a, liveBusy: false, env: env, backups: dots.appendingPathComponent("bk")) == .failure(.claudeJSON))
+        #expect(liveToken() == "tokB")
+        #expect(ClaudeAccount.readIdentity(home: home)?.email == "b@example.com")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: home.path)
+
+        // A dotfiles-style symlink: the switch writes its target and the link survives.
+        let link = home.appendingPathComponent(".claude.json"), target = dots.appendingPathComponent("claude.json")
+        try FileManager.default.moveItem(at: link, to: target)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        _ = try ClaudeSwitch.switchTo(a, liveBusy: false, env: env, backups: dots.appendingPathComponent("bk")).get()
+        #expect(liveToken() == "tokA")
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: link.path)) == target.path)
+        #expect(ClaudeAccount.readIdentity(home: home)?.email == "a@example.com")
+
+        // Forget says whether the saved login is gone; one that is already gone counts as gone.
+        #expect(ClaudeSwitch.forget("uA", env))
+        #expect(ClaudeSwitch.savedPayload("uA", env) == nil && ClaudeSwitch.savedPayload("uB", env) != nil)
+        #expect(ClaudeSwitch.forget("uA", env))
+    }
 }
 
 @Suite struct ClaudeLoginScriptTests {

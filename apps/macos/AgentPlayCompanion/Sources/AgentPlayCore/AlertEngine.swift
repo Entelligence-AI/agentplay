@@ -232,7 +232,6 @@ public enum AlertEngine {
             g.note = .init(title: "Runs ended with errors",
                            body: "\(unresolvedGroup.count) runs ended with unresolved errors.")
             out.append(g)
-            for p in unresolvedGroup.dropFirst() { h.delivered[p.id] = ctx.now }
         }
 
         let budget = max(0, settings.maxPerHour - h.recent.count)
@@ -241,6 +240,10 @@ public enum AlertEngine {
             h.delivered[p.id] = ctx.now
             h.patternLast[p.patternKey] = ctx.now
             h.recent.append(ctx.now)
+        }
+        // The runs folded into the summary count as told only once the summary itself goes out.
+        if unresolvedGroup.count > 1, send.contains(where: { $0.id == unresolvedGroup[0].id }) {
+            for p in unresolvedGroup.dropFirst() { h.delivered[p.id] = ctx.now }
         }
         // Over budget: not marked delivered, so it can go out next hour if still current.
         return (send, h)

@@ -38,16 +38,21 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
         "claude-code": "AGENTPLAY_CLAUDE_HOMES", "codex": "AGENTPLAY_CODEX_HOMES", "cursor": "AGENTPLAY_CURSOR_HOMES",
         "copilot": "AGENTPLAY_COPILOT_HOMES", "copilot-vscode": "AGENTPLAY_COPILOT_VSCODE_HOMES",
         "opencode": "AGENTPLAY_OPENCODE_HOMES", "kiro": "AGENTPLAY_KIRO_HOMES",
+        "gemini-cli": "AGENTPLAY_GEMINI_HOMES", "antigravity-cli": "AGENTPLAY_ANTIGRAVITY_HOMES",
     ]
 
     /// `AGENTPLAY_CLAUDE_HOMES` etc. for the core: the default home plus anything the user added.
     public var folderEnvironment: [String: String] {
         var env: [String: String] = [:]
-        let defaults: [String: String] = ["claude-code": "~/.claude", "codex": "~/.codex", "cursor": "~/.cursor",
-                                          "copilot": "~/.copilot", "kiro": "~/.kiro"]
+        // The macOS defaults `discover.Homes.default()` uses, so an added folder adds to them instead of hiding them.
+        let vscode = ["Code", "Code - Insiders", "VSCodium"].map { "~/Library/Application Support/\($0)/User" }
+        let defaults: [String: [String]] = ["claude-code": ["~/.claude"], "codex": ["~/.codex"], "cursor": ["~/.cursor"],
+                                            "copilot": ["~/.copilot"], "copilot-vscode": vscode,
+                                            "opencode": ["~/.local/share/opencode"], "kiro": ["~/.kiro"],
+                                            "gemini-cli": ["~/.gemini"], "antigravity-cli": ["~/.gemini/antigravity-cli"]]
         for (agent, paths) in customFolders where !paths.isEmpty {
             guard let key = Self.homesVariable[agent] else { continue }
-            let all = (defaults[agent].map { [$0] } ?? []) + paths
+            let all = (defaults[agent] ?? []) + paths
             env[key] = all.joined(separator: ",")
         }
         return env

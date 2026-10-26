@@ -97,7 +97,7 @@ public struct ClaudeBridge: Sendable {
             try prevData.write(to: previousJSONURL, options: .atomic)
         }
         if fm.fileExists(atPath: claudeSettings.path) && !fm.fileExists(atPath: backupURL.path) {
-            try fm.copyItem(at: claudeSettings, to: backupURL)
+            try fm.copyItem(at: claudeSettings.resolvingSymlinksInPath(), to: backupURL)
         }
         s["statusLine"] = ourStatusLine
         try write(s)
@@ -126,7 +126,8 @@ public struct ClaudeBridge: Sendable {
     func write(_ s: [String: Any]) throws {
         try FileManager.default.createDirectory(at: claudeSettings.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONSerialization.data(withJSONObject: s, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try data.write(to: claudeSettings, options: .atomic)
+        // Through a symlink (dotfiles), not over it: an atomic write would replace the link with a plain file.
+        try data.write(to: claudeSettings.resolvingSymlinksInPath(), options: .atomic)
     }
 
     static func pretty(_ v: Any?) -> String? {

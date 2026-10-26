@@ -159,6 +159,8 @@ final class CompanionModel: ObservableObject {
         switch result {
         case .success(let s):
             apply(s)
+            // ~/.claude/sessions may not have existed at launch.
+            if sessionsWatcher == nil { startLiveWatch() }
         case .failure(let e):
             lastError = e
             phase = snapshot == nil ? .failed(e) : .ready
@@ -427,8 +429,14 @@ final class CompanionModel: ObservableObject {
     }
 
     func forgetAccount(_ s: ClaudeSwitch.Saved) {
-        Task.detached { ClaudeSwitch.forget(s.accountUuid) }
-        prefs.claudeAccounts = (prefs.claudeAccounts ?? []).filter { $0.accountUuid != s.accountUuid }
+        Task {
+            // Kept in the list if its login is still in the Keychain, so it can be forgotten again.
+            guard await Task.detached(operation: { ClaudeSwitch.forget(s.accountUuid) }).value else {
+                toast = "Couldn't remove \(s.title)'s saved login from the Keychain."
+                return
+            }
+            prefs.claudeAccounts = (prefs.claudeAccounts ?? []).filter { $0.accountUuid != s.accountUuid }
+        }
     }
     @Published private(set) var accountFailure: ClaudeAccount.Failure?
     private var lastAccountFetch = Date.distantPast
@@ -464,13 +472,16 @@ final class CompanionModel: ObservableObject {
     /// At most every few minutes, never while Anthropic has asked us to wait, never for sample data.
     func refreshAccount(force: Bool) {
         let now = Date()
-        guard prefs.usesClaudeAccount, !isSample, !accountFetching, now >= accountBackoffUntil else { return }
+        guard prefs.usesClaudeAccount, !isSample, !accountFetching, !switching, now >= accountBackoffUntil else { return }
         guard force || now.timeIntervalSince(lastAccountFetch) >= 120 else { return }
         accountFetching = true
         let version = Self.claudeVersion()
+        let account = ClaudeAccount.readIdentity()?.accountUuid
         Task {
             let result = await Task.detached { await ClaudeAccount.fetch(claudeVersion: version) }.value
             accountFetching = false
+            // Switched or signed in to another account meanwhile: these numbers are the old one's. Ask again.
+            guard ClaudeAccount.readIdentity()?.accountUuid == account else { refreshAccount(force: true); return }
             lastAccountFetch = Date()
             switch result {
             case .success(let rows):

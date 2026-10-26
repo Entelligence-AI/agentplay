@@ -8,6 +8,7 @@ struct OnboardingView: View {
     @EnvironmentObject var model: CompanionModel
     @State var step = 1
     @State private var scanning = false
+    @State private var scanError: String?
     @State private var shown = 0          // learnings revealed so far
     @State private var opened = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -32,7 +33,7 @@ struct OnboardingView: View {
                 }
                 .accessibilityLabel("Step \(step) of 4")
                 Spacer()
-                if step > 1 && step != 2 { Button("Back") { go(step - 1) } }
+                if step > 1 && (step != 2 || scanError != nil) { Button("Back") { go(step - 1) } }
                 primary
             }
             .padding(.horizontal, 22).padding(.vertical, 16)
@@ -44,6 +45,7 @@ struct OnboardingView: View {
     @ViewBuilder var primary: some View {
         switch step {
         case 1: Button("Nice to Meet You") { go(2); scan() }.keyboardShortcut(.defaultAction)
+        case 2 where scanError != nil: Button("Retry") { scan() }.keyboardShortcut(.defaultAction)
         case 2: Button(scanning ? "Reading…" : "Continue") { go(3) }.keyboardShortcut(.defaultAction).disabled(scanning)
         case 3: Button("Continue") { go(4) }.keyboardShortcut(.defaultAction)
         default: Button("Start") { finish() }.keyboardShortcut(.defaultAction)
@@ -108,19 +110,27 @@ struct OnboardingView: View {
     var reading: some View {
         VStack(spacing: 14) {
             Spacer(minLength: 8)
-            pip(scanning ? .work : .cheer)
-            title(scanning ? "Reading your sessions…" : "All read.")
-            Text("\(found)")
-                .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
-                .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
-            Text(found == 1 ? "session" : "sessions").font(.headline).foregroundStyle(.secondary)
-            if !scanning, let s = model.snapshot, !s.foundSources.isEmpty {
-                body("From " + s.foundSources.map(\.label).joined(separator: ", ") + ".")
+            if let scanError {
+                pip(.sleep)
+                title("Couldn't read your sessions.")
+                Text(scanError).foregroundStyle(.red).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 420)
+                Spacer()
+            } else {
+                pip(scanning ? .work : .cheer)
+                title(scanning ? "Reading your sessions…" : "All read.")
+                Text("\(found)")
+                    .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
+                    .contentTransition(.numericText())
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
+                Text(found == 1 ? "session" : "sessions").font(.headline).foregroundStyle(.secondary)
+                if !scanning, let s = model.snapshot, !s.foundSources.isEmpty {
+                    body("From " + s.foundSources.map(\.label).joined(separator: ", ") + ".")
+                }
+                Label("Read on this Mac. Nothing leaves it.", systemImage: "lock.fill")
+                    .font(.callout).foregroundStyle(.secondary)
+                Spacer()
             }
-            Label("Read on this Mac. Nothing leaves it.", systemImage: "lock.fill")
-                .font(.callout).foregroundStyle(.secondary)
-            Spacer()
         }
         .padding(.horizontal, 24)
     }
@@ -210,9 +220,14 @@ struct OnboardingView: View {
     func scan() {
         guard !model.isSample else { return }
         scanning = true
+        scanError = nil
         Task {
             await model.runFirstScan()
             scanning = false
+            // Failed, or no core to read with: say why and offer Retry instead of "All read."
+            if case .failed(let e) = model.phase { scanError = e.localizedDescription; return }
+            if let e = model.lastError { scanError = e.localizedDescription; return }
+            if model.snapshot == nil { scanError = "AgentPlay couldn't start reading. Try again in a moment."; return }
             // A beat on "All read." before the reveal.
             try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 900))
             if step == 2 { go(3) }
@@ -220,8 +235,11 @@ struct OnboardingView: View {
     }
 
     func finish() {
-        if model.isSample { model.leaveSample() }
+        let wasSample = model.isSample
+        if wasSample { model.leaveSample() }
         model.finishOnboarding()
+        // The sample skipped the first read of this Mac's sessions: do it now, in the background.
+        if wasSample { Task { await model.runFirstScan() } }
         Windows.close(.welcome)
     }
 }

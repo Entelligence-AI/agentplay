@@ -600,6 +600,8 @@ public enum AgentNames {
         case "copilot-vscode": "Copilot (VS Code)"
         case "opencode": "OpenCode"
         case "kiro": "Kiro"
+        case "gemini-cli": "Gemini CLI"
+        case "antigravity-cli": "Antigravity CLI"
         case let a?: a
         case nil: "Unknown agent"
         }
