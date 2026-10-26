@@ -46,6 +46,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers.cursor_store 
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.gemini import parse_gemini
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.kiro import parse_kiro
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.opencode import parse_opencode
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.windsurf import parse_windsurf
 
 __all__ = [
     "AgentType",
@@ -60,4 +61,5 @@ __all__ = [
     "parse_gemini",
     "parse_kiro",
     "parse_opencode",
+    "parse_windsurf",
 ]

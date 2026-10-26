@@ -9,7 +9,7 @@
   <a href="https://github.com/Entelligence-AI/agentplay/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Entelligence-AI/agentplay?style=social"></a>
 </p>
 
-**See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro, Gemini CLI and Antigravity CLI.**
+**See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro, Gemini CLI, Antigravity CLI and Windsurf.**
 
 ```bash
 uvx agentplay
@@ -142,6 +142,7 @@ Every view is a URL, so a link to a moment in a session reopens it for anyone wh
 | **Kiro** | `~/.kiro/sessions/*/*` | main lane only | per turn, where recorded | Sub-executions merged into the session |
 | **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl` | main lane only | per turn | The project folder is read from the CLI's `.project_root` file |
 | **Antigravity CLI** (`agy`) | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl` | main lane only | per turn | Project folder and subagent links from `conversation_summaries.db`, copied and read locally, read-only. Subagents are listed as separate subagent sessions. Model not recorded yet |
+| **Windsurf** (Cascade) | `~/.codeium/windsurf` | main lane only | per turn | Trajectory step streams and Cascade session documents |
 
 "Main lane only" means the session's own tool calls are all there, but subagent work is not split out into separate lanes on the map.
 
@@ -235,10 +236,10 @@ The format is deliberately independent of this tool. If you build an agent, an o
 ## How it works
 
 ```
- ~/.claude  ~/.codex  ~/.cursor  ~/.copilot  VS Code  opencode.db  ~/.kiro
-      │         │         │          │          │          │          │
+ ~/.claude  ~/.codex  ~/.cursor  ~/.copilot  VS Code  opencode.db  ~/.kiro  ~/.codeium/windsurf
+      │         │         │          │          │          │          │              │
       │         │   materialize.py (decode SQLite / dir stores → NDJSON cache, read-only)
-      ▼         ▼         ▼          ▼          ▼          ▼          ▼
+      ▼         ▼         ▼          ▼          ▼          ▼          ▼              ▼
  _core parsers (one per agent) ──► spans ──► builder.py ──► agentplay/v1 documents
  (Claude Code is read straight from JSONL by builder.py for subagents + per-request tokens)
                                                │
@@ -277,6 +278,7 @@ All configuration is through environment variables. The examples in this README 
 | `AGENTPLAY_KIRO_HOMES` | `~/.kiro` | Kiro homes |
 | `AGENTPLAY_GEMINI_HOMES` | `~/.gemini` | Gemini CLI homes |
 | `AGENTPLAY_ANTIGRAVITY_HOMES` | `~/.gemini/antigravity-cli` | Antigravity CLI homes |
+| `AGENTPLAY_WINDSURF_HOMES` | `~/.codeium/windsurf` | Windsurf homes |
 | `AGENTPLAY_HMAC_KEY` | unset | key for `--path-mode hashed` |
 | `DO_NOT_TRACK`, `AGENTPLAY_NO_NETWORK` | unset | set either to turn off the email signup and its one network call |
 | `AGENTPLAY_SIGNUP_URL` | built in | where the signup sends an email (for testing; see [docs/signup-endpoint.md](docs/signup-endpoint.md)) |

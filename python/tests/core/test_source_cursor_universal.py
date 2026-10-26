@@ -26,6 +26,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     cursor_store,
     kiro,
     opencode,
+    windsurf,
 )
 
 
@@ -183,6 +184,26 @@ def _copilot() -> list[dict]:
     ]
 
 
+def _windsurf() -> list[dict]:
+    return [
+        {"type": "windsurf_session", "cwd": "/w"},
+        {"step_id": 1, "step_type": 19, "timestamp": "2026-09-01T00:00:01Z", "user_input": "hi"},
+        {
+            "step_id": 2,
+            "step_type": 3,
+            "timestamp": "2026-09-01T00:00:02Z",
+            "tool_calls": [{"tool_id": "t1", "tool_name": "read_file", "params": {}}],
+        },
+        {
+            "step_id": 3,
+            "step_type": 21,
+            "timestamp": "2026-09-01T00:00:03Z",
+            "tool_id": "t1",
+            "tool_result": "ok",
+        },
+    ]
+
+
 _PARSERS = {
     # name: (parser, fixture, expected kind, (turn line index, tool line index))
     # — the fixture line each anchor MUST come from: the line that opened the
@@ -205,6 +226,7 @@ _PARSERS = {
     ),
     "cursor_store": (cursor_store.parse_cursor_store, _cursor_store, "sqlite", None),
     "copilot": (copilot.parse_copilot, _copilot, "jsonl", (1, 3)),
+    "windsurf": (windsurf.parse_windsurf, _windsurf, "jsonl", (1, 2)),
 }
 
 
