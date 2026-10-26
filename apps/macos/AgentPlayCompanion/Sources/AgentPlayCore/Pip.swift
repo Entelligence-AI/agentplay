@@ -102,6 +102,7 @@ public enum Pip {
             case goTo(sessionId: String, pid: Int32?)
             case fix(Insights.Fix)
             case usagePage
+            case usage
             case insights
             case none
         }
@@ -127,6 +128,11 @@ public enum Pip {
         if let f = s.insights?.fixes.first {
             let pts = f.points.map { " (+\(Format.points($0)) points)" } ?? ""
             out.append(Tip(text: f.title.replacingOccurrences(of: "`", with: "") + pts + ".", action: .fix(f)))
+        }
+        if let month = s.usage?.last30Days, let m = month.byModel?.first, month.tokens.total > 0 {
+            let share = Int((Double(m.tokens.total) / Double(month.tokens.total) * 100).rounded())
+            let cost = m.isUnpriced ? "" : ", about \(Format.money(m.costUsd))"
+            out.append(Tip(text: "\(Format.modelName(m.key)) did \(share)% of your work this month\(cost).", action: .usage))
         }
         if let sig = s.usage?.signals, let now_ = sig.current.correctionRate, let before = sig.previous.correctionRate,
            now_ - before >= 2 {
@@ -156,7 +162,7 @@ public enum Pip {
         }
         if let m = week?.byModel?.first, let total = week, total.tokens.total > 0 {
             let share = Int((Double(m.tokens.total) / Double(total.tokens.total) * 100).rounded())
-            out.append(Learning(symbol: "cpu", text: "\(m.key) does \(share)% of it."))
+            out.append(Learning(symbol: "cpu", text: "\(Format.modelName(m.key)) does \(share)% of it."))
         }
         if let f = s.insights?.fixes.first {
             out.append(Learning(symbol: "wrench.and.screwdriver", text: f.pattern.replacingOccurrences(of: "`", with: "") + " I can show you why."))

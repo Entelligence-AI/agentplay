@@ -112,6 +112,25 @@ public enum Format {
         return f.string(from: date)
     }
 
+    /// A model id as people say it: `claude-opus-5-5` is "Opus 5.5", `gpt-5.5-codex` is "GPT 5.5 Codex",
+    /// `claude-sonnet-5` is "Sonnet 5". Date stamps (`20250514`) are dropped. Unknown shapes come back as they are.
+    public static func modelName(_ id: String) -> String {
+        var parts = id.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).map(String.init)
+        if parts.first == "claude" { parts.removeFirst() }
+        guard !parts.isEmpty else { return id }
+        var words: [String] = []
+        var version: [String] = []
+        for p in parts {
+            let digits = p.filter(\.isNumber)
+            if digits.count >= 8 { continue }
+            if p.allSatisfy({ $0.isNumber || $0 == "." }) { version.append(p); continue }
+            if !version.isEmpty { words.append(version.joined(separator: ".")); version = [] }
+            words.append(p == "gpt" ? "GPT" : p.prefix(1).uppercased() + p.dropFirst())
+        }
+        if !version.isEmpty { words.append(version.joined(separator: ".")) }
+        return words.joined(separator: " ")
+    }
+
     /// Middle-truncate a label (`payments-…-api`). Repo names are shown truncated by default.
     public static func truncate(_ s: String?, max: Int = 22) -> String {
         guard let s, !s.isEmpty else { return "" }
