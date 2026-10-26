@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from agentplay import builder, cli, companion, discover, pipeline
-from agentplay.store import Store
+from agentplay.store import INDEX_VERSION, Store
 
 NOW = datetime(2026, 10, 23, 12, 0, 0, tzinfo=UTC)
 SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schema" / "agentplay-companion-v1.schema.json"
@@ -780,3 +780,122 @@ def test_companion_fix_commands_refuse_cleanly(store, empty_homes):
         companion.fix_action(store, "preview", "no-such-fix")
     with pytest.raises(fixes.FixError):
         companion.fix_action(store, "undo", "no-such-entry")
+
+
+# ---------------------------------------------------------------- malformed input and privacy at the edges
+def test_codex_context_skips_malformed_fields(tmp_path):
+    good = {"timestamp": "2026-10-23T11:40:00Z", "type": "event_msg", "payload": {
+        "type": "token_count", "info": {"last_token_usage": {"input_tokens": 1000}, "model_context_window": 4000}}}
+    bad_info = {"timestamp": "2026-10-23T11:50:00Z", "type": "event_msg", "payload": {"type": "token_count", "info": "oops"}}
+    bad_usage = {"timestamp": "2026-10-23T11:55:00Z", "type": "event_msg", "payload": {
+        "type": "token_count", "info": {"last_token_usage": [1, 2], "model_context_window": 4000}}}
+    p = tmp_path / "a.jsonl"
+    p.write_text("\n".join(json.dumps(r) for r in (good, bad_info, bad_usage)) + "\n")
+    ctx = companion.codex_context(str(p))
+    assert ctx["value"] == {"tokens": 1000, "limit": 4000, "percent": 25.0}  # the newest well-formed count
+    p.write_text(json.dumps(bad_info) + "\n")
+    assert companion.codex_context(str(p)) is None
+
+
+def test_hook_cause_names_commands_without_arguments_or_paths(fake_home):
+    claude = fake_home / ".claude"
+    claude.mkdir()
+    (claude / "settings.json").write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
+        {"type": "command", "command": '"/Users/me/PRIVATE DIR/hooks/notify.sh" --token SECRET-HOOK-ARG'},
+        {"type": "command", "command": 'TOKEN=SECRET-ENV pnpm run lint'},
+        {"type": "command", "command": '"/Users/me/PRIVATE DIR/hook.sh'},  # an unbalanced quote
+    ]}]}}))
+    homes = discover.Homes(*([claude] if i == 0 else [fake_home / "none"] for i in range(len(dataclasses.fields(discover.Homes)))))
+    cause = companion.hook_cause(homes, "SessionStart:startup")
+    assert cause["commands"] == ["notify.sh", "pnpm run", "sh"]
+    assert cause["settingsFiles"] == ["~/.claude/settings.json"]
+    raw = json.dumps(cause)
+    for secret in ("SECRET-HOOK-ARG", "SECRET-ENV", "PRIVATE", "/Users/me", "--token"):
+        assert secret not in raw, secret
+
+
+def test_malformed_index_shape_is_reported_not_a_crash(store, empty_homes):
+    store.index_path.parent.mkdir(parents=True)
+    for sessions in ([], {"a": None}):
+        store.index_path.write_text(json.dumps({"version": INDEX_VERSION, "sessions": sessions}))
+        snap = _snap(Store(store.base), empty_homes)
+        assert snap["store"]["indexError"] and snap["runs"] == [] and snap["store"]["available"] is False
+        assert all(s["status"] == "error" and s["remedy"] for s in snap["sources"])
+    # An index from another version is empty, not broken: the next build rewrites it.
+    store.index_path.write_text(json.dumps({"version": INDEX_VERSION + 100, "sessions": []}))
+    assert _snap(Store(store.base), empty_homes)["store"]["indexError"] is None
+
+
+def test_idle_live_session_has_no_pending_tool(store, tmp_path):
+    home = tmp_path / ".claude"
+    (home / "sessions").mkdir(parents=True)
+    me = os.getpid()
+    rec = home / "sessions" / f"{me}.json"
+    homes = discover.Homes(*([home] if i == 0 else [tmp_path / "none"] for i in range(len(dataclasses.fields(discover.Homes)))))
+    src = tmp_path / "s.jsonl"
+    src.write_text("x")
+    os.utime(src, (NOW.timestamp(), NOW.timestamp()))
+    evs = [_exec(0, "ls", kind="exec"), _exec(1, "python", True, "no_result", kind="exec")]
+    _put(store, _doc("local:claude-code:a", evs), source=src, mtime=NOW.timestamp())
+    # Claude Code says the turn is over: the call with no result is neither running nor failed.
+    rec.write_text(json.dumps({"pid": me, "sessionId": "a", "status": "idle", "cwd": "/x/api"}))
+    run = companion.snapshot(store, now=NOW, homes=homes)["runs"][0]
+    assert run["liveStatus"] == "idle" and run["activity"]["value"] == "active"
+    assert run["pendingTool"] is None
+    assert run["lastEvent"]["pending"] is False and run["lastEvent"]["err"] is False
+    assert run["lastError"] is None
+    # Working, the same call is a running tool.
+    rec.write_text(json.dumps({"pid": me, "sessionId": "a", "status": "busy", "cwd": "/x/api"}))
+    run = companion.snapshot(Store(store.base), now=NOW, homes=homes)["runs"][0]
+    assert run["liveStatus"] == "busy" and run["pendingTool"] is not None and run["lastEvent"]["pending"]
+
+
+def test_usage_cache_holds_no_transcript_paths_and_ignores_the_old_format(store, tmp_path):
+    from agentplay import usage
+
+    home = tmp_path / ".claude"
+    proj = home / "projects" / "-Users-me-SECRET-PROJECT-DIR"
+    proj.mkdir(parents=True)
+    ts = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    f = proj / "s1.jsonl"
+    f.write_text(_claude_line(ts, "m1", "r1", 5))
+    cache = store.base / "cache" / "companion-claude-usage.json"
+    cache.parent.mkdir(parents=True)
+    # A cache from before keys were digests, with a path as its key: ignored and rebuilt, never a crash.
+    cache.write_text(json.dumps({"version": 5, "files": {str(f): {"size": 1, "mtime": 1.0, "offset": 0, "reqs": []}}}))
+    assert usage.report(store, NOW, claude_homes=[home])["today"]["requests"] == 1
+    text = cache.read_text()
+    for secret in (str(tmp_path), "SECRET-PROJECT-DIR", "s1.jsonl", "/"):
+        assert secret not in text, secret
+    assert "local:claude-code:s1" in text  # the session id, which the snapshot shows anyway
+    assert usage.report(Store(store.base), NOW, claude_homes=[home])["today"]["requests"] == 1  # the cache hit
+
+
+def test_usage_reads_a_transcript_line_by_line(store, tmp_path):
+    from agentplay import usage
+
+    home = tmp_path / ".claude"
+    proj = home / "projects" / "-Users-me-app"
+    proj.mkdir(parents=True)
+    ts = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    f = proj / "a.jsonl"
+    whole = _claude_line(ts, "m1", "r1", 5)
+    partial = _claude_line(ts, "m2", "r2", 7).rstrip("\n")  # still being written
+    f.write_text(whole + partial)
+    assert usage.report(store, NOW, claude_homes=[home])["today"]["requests"] == 1
+    (hit,) = json.loads((store.base / "cache" / "companion-claude-usage.json").read_text())["files"].values()
+    assert hit["offset"] == len(whole.encode())  # the next look starts at the unfinished line
+    with open(f, "a") as fh:
+        fh.write("\n")
+    assert usage.report(Store(store.base), NOW, claude_homes=[home])["today"]["requests"] == 2
+
+
+def test_merge_keeps_every_raw_request():
+    from agentplay import usage
+
+    sec = int(NOW.timestamp())
+    a = (sec, "claude-sonnet-5", 10, 100, 1000, 50, 0.01, "claude-code", "api", "local:claude-code:a")
+    b = (sec + 2, *a[1:])  # a distinct request that happens to match in model and token counts
+    copy = (sec + 1, *a[1:6], 0.01, "claude-code", "api", "local:claude-code:a")  # a map's copy of a
+    other = (sec + 60, *a[1:])
+    assert usage.merge([a, b], [copy, other]) == [a, b, other]

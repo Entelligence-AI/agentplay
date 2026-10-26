@@ -40,8 +40,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from . import __version__, discover
-from .store import Store
+from . import __version__, builder, discover
+from .store import INDEX_VERSION, Store
 
 SCHEMA = "agentplay.companion/v1"
 SCHEMA_VERSION = 1
@@ -332,8 +332,11 @@ def _num(v: Any) -> float | None:
 def codex_context(path: str) -> dict[str, Any] | None:
     """Context occupancy Codex itself reported for its latest request, or None."""
     for ts, payload in reversed(_codex_token_counts(path)):
-        info = payload.get("info") or {}
-        last = info.get("last_token_usage") or {}
+        # The record is Codex's own and undocumented: a field of the wrong shape skips to an earlier count.
+        info = payload.get("info")
+        last = info.get("last_token_usage") if isinstance(info, dict) else None
+        if not isinstance(last, dict):
+            continue
         used, limit = _num(last.get("input_tokens")), _num(info.get("model_context_window"))
         if used is None:
             continue
@@ -706,7 +709,8 @@ def learn_card(store: Store, rows: list[dict[str, Any]], now: datetime) -> dict[
 
 # --------------------------------------------------------------------------- runs
 def _run(doc: dict[str, Any], row: dict[str, Any], now: datetime, live: dict[str, str],
-         codex_ctx: dict[str, Any] | None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+         codex_ctx: dict[str, Any] | None, live_status: str | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """``live_status``: what Claude Code's own live record says (``busy``, ``waiting``, ``idle``), if it has one."""
     s = doc["session"]
     sid = s["id"]
     agent = s.get("agentTool") or row.get("agentTool")
@@ -747,7 +751,9 @@ def _run(doc: dict[str, Any], row: dict[str, Any], now: datetime, live: dict[str
     # its transcript, the result has most likely landed since: neither running nor failed.
     if trailing_no_result and (active or behind is not None):
         pending_seq = visible[-1].get("seq")
-    pending_is_live = active and behind is None
+    # A process Claude Code reports idle has finished its turn: nothing in it is still running, so a call
+    # with no result is treated like one on a lagging map, neither running nor failed.
+    pending_is_live = active and behind is None and live_status != "idle"
     tail = [session_event(e, files, t0, pending=pending_is_live and e.get("seq") == pending_seq)
             for e in visible[-TAIL_EVENTS:]]
     if pending_seq is not None and not pending_is_live and tail and tail[-1]["seq"] == pending_seq:
@@ -928,7 +934,10 @@ def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
             for g in groups if isinstance(groups, list) else []:
                 for h in (g.get("hooks") or []) if isinstance(g, dict) else []:
                     if isinstance(h, dict) and isinstance(h.get("command"), str):
-                        commands.append(h["command"][:160])
+                        # The command's name only, through the same tokenizer the maps use for shell
+                        # lines: arguments can carry secrets, and a path its folders. A line that can't
+                        # be tokenized (an unbalanced quote) is "sh", never a fragment of it.
+                        commands.append(builder._shell_verb(h["command"]))  # noqa: SLF001
                         files.append(_home_label(p))
     cause = None
     newest = 0.0
@@ -1027,10 +1036,18 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
     index_error = None
     if store.index_path.exists():
         try:
-            json.loads(store.index_path.read_text(encoding="utf-8"))
+            raw = json.loads(store.index_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise ValueError("the index is not an object")
+            # Valid JSON of the wrong shape would fail inside Store.rows(). An older version is not an
+            # error: the store treats it as empty and the next build rewrites it.
+            sessions = raw.get("sessions", {}) if raw.get("version") == INDEX_VERSION else {}
+            if not isinstance(sessions, dict) or not all(isinstance(r, dict) for r in sessions.values()):
+                raise ValueError("the index is not a map of session rows")
         except (OSError, ValueError):
             index_error = "The AgentPlay index can't be read. Rebuild it from Settings (Diagnostics)."
-    rows = [r for r in store.rows() if r.get("role") not in ("subagent", "helper") and r.get("calls")]
+    rows = ([] if index_error else
+            [r for r in store.rows() if r.get("role") not in ("subagent", "helper") and r.get("calls")])
     # Newest activity first: a long session started yesterday and still writing outranks one started an hour ago.
     def activity_key(r: dict[str, Any]) -> str:
         return max(r.get("endedAt") or "", r.get("startedAt") or "", iso(r.get("sourceMtime")) or "")
@@ -1065,8 +1082,8 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         ctx = None
         if r.get("agentTool") == "codex" and isinstance(r.get("sourcePath"), str):
             ctx = codex_context(r["sourcePath"])
-        run, run_alerts = _run(doc, r, now, live, ctx)
-        rec = status_by_sid.get(run["sessionId"])
+        rec = status_by_sid.get(r["sessionId"])
+        run, run_alerts = _run(doc, r, now, live, ctx, live_status=rec["status"] if rec else None)
         run["liveStatus"] = rec["status"] if rec else None
         runs.append(run)
         alerts.extend(run_alerts)

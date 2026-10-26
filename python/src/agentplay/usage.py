@@ -4,7 +4,8 @@ Every model request is counted once, from two sources:
 
 * Claude Code: its raw transcripts, main and subagent files, deduplicated on message id and request id the
   way ccusage counts. Maps can lag a live transcript or skip one that grew past the build limit, so the
-  totals don't depend on them. Each file is read incrementally from where the last snapshot stopped.
+  totals don't depend on them. Each file is read incrementally from where the last snapshot stopped, one
+  line at a time, so a transcript of any size costs the same memory.
 * Every other agent: the ``llm`` events maps already hold (``in``, ``cw``, ``cr``, ``out``, ``cost``,
   ``model``). A map request that repeats one already counted (same model and token counts within five
   seconds) is dropped: Claude Code copies earlier messages into a resumed session's transcript, and a
@@ -16,6 +17,7 @@ Nothing beyond counts, model names and repo folder names leaves this module.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
@@ -27,7 +29,7 @@ from typing import Any
 from .store import Store, _atomic_write
 
 CACHE_VERSION = 3
-RAW_CACHE_VERSION = 5
+RAW_CACHE_VERSION = 6  # 6: files keyed by a digest of their path, with the session id stored in the record
 BLOCK_HOURS = 5
 WINDOW_DAYS = 30
 DUP_SECONDS = 5
@@ -61,35 +63,34 @@ def _int(v: Any) -> int:
 
 
 # --------------------------------------------------------------------------- Claude Code, raw transcripts
-def _claude_lines(data: bytes) -> list[list[Any]]:
-    """``[key, sec, model, in, cw, cr, out, repo]`` for each assistant line that carries usage."""
-    out = []
-    for line in data.split(b"\n"):
-        if b'"usage"' not in line or b'"assistant"' not in line:
-            continue
-        try:
-            d = json.loads(line)
-        except ValueError:
-            continue
-        m = d.get("message")
-        if d.get("type") != "assistant" or not isinstance(m, dict) or not isinstance(m.get("usage"), dict):
-            continue
-        model = str(m.get("model") or "unknown")
-        if model == "<synthetic>":
-            continue  # Claude Code's own placeholder replies, not model requests
-        at = _parse(d.get("timestamp"))
-        if at is None:
-            continue
-        u = m["usage"]
-        key = f"{m.get('id') or ''}|{d.get('requestId') or ''}"
-        if key == "|":
-            key = f"{d.get('uuid') or ''}"  # no ids at all: the line itself is the unit
-        cwd = d.get("cwd")
-        repo = Path(cwd).name if isinstance(cwd, str) and cwd else None
-        out.append([key, round(at.timestamp()), model, _int(u.get("input_tokens")),
-                    _int(u.get("cache_creation_input_tokens")), _int(u.get("cache_read_input_tokens")),
-                    _int(u.get("output_tokens")), repo])
-    return out
+def _claude_line(line: bytes) -> list[Any] | None:
+    """``[key, sec, model, in, cw, cr, out, repo]`` for an assistant line that carries usage, else None."""
+    if b'"usage"' not in line or b'"assistant"' not in line:
+        return None
+    try:
+        d = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(d, dict):
+        return None
+    m = d.get("message")
+    if d.get("type") != "assistant" or not isinstance(m, dict) or not isinstance(m.get("usage"), dict):
+        return None
+    model = str(m.get("model") or "unknown")
+    if model == "<synthetic>":
+        return None  # Claude Code's own placeholder replies, not model requests
+    at = _parse(d.get("timestamp"))
+    if at is None:
+        return None
+    u = m["usage"]
+    key = f"{m.get('id') or ''}|{d.get('requestId') or ''}"
+    if key == "|":
+        key = f"{d.get('uuid') or ''}"  # no ids at all: the line itself is the unit
+    cwd = d.get("cwd")
+    repo = Path(cwd).name if isinstance(cwd, str) and cwd else None
+    return [key, round(at.timestamp()), model, _int(u.get("input_tokens")),
+            _int(u.get("cache_creation_input_tokens")), _int(u.get("cache_read_input_tokens")),
+            _int(u.get("output_tokens")), repo]
 
 
 # A reply that opens by turning the agent around: the signal behind "Corrections".
@@ -120,62 +121,60 @@ def _user_text(content: Any) -> str | None:
 _USER_LINE = re.compile(rb'"type"\s*:\s*"user"')
 
 
-def _signal_lines(data: bytes, seen_user: bool) -> tuple[list[list[Any]], bool]:
-    """``[sec, kind, key]`` steering signals (``key`` dedupes the copies a resumed session makes): ``msg`` (a message from the user), ``cor`` (one that corrects),
-    ``int`` (an interruption), ``ref`` (a refused tool call), ``call`` (a tool call). Read to classify, then
-    dropped: no text is kept. ``seen_user`` carries over between reads, so a session's first message is
-    never counted as a correction."""
+def _signal_line(line: bytes, seen_user: bool) -> tuple[list[list[Any]], bool]:
+    """``[sec, kind, key]`` steering signals in one line (``key`` dedupes the copies a resumed session makes):
+    ``msg`` (a message from the user), ``cor`` (one that corrects), ``int`` (an interruption), ``ref`` (a
+    refused tool call), ``call`` (a tool call). Read to classify, then dropped: no text is kept. ``seen_user``
+    carries over between lines and reads, so a session's first message is never counted as a correction."""
     out: list[list[Any]] = []
-    for line in data.split(b"\n"):
-        if not _USER_LINE.search(line) and b'"tool_use"' not in line:
-            continue
-        try:
-            d = json.loads(line)
-        except ValueError:
-            continue
-        at = _parse(d.get("timestamp")) if isinstance(d, dict) else None
-        if at is None or d.get("isSidechain"):
-            continue
-        sec = round(at.timestamp())
-        uid = str(d.get("uuid") or "")
-        m = d.get("message") if isinstance(d.get("message"), dict) else {}
-        content = m.get("content")
-        if d.get("type") == "assistant":
-            if isinstance(content, list):
-                out += [[sec, "call", str(b.get("id") or uid)] for b in content
-                        if isinstance(b, dict) and b.get("type") == "tool_use"]
-            continue
-        if d.get("type") != "user" or d.get("isMeta") or d.get("isCompactSummary"):
-            continue
+    if not _USER_LINE.search(line) and b'"tool_use"' not in line:
+        return out, seen_user
+    try:
+        d = json.loads(line)
+    except ValueError:
+        return out, seen_user
+    at = _parse(d.get("timestamp")) if isinstance(d, dict) else None
+    if at is None or d.get("isSidechain"):
+        return out, seen_user
+    sec = round(at.timestamp())
+    uid = str(d.get("uuid") or "")
+    m = d.get("message") if isinstance(d.get("message"), dict) else {}
+    content = m.get("content")
+    if d.get("type") == "assistant":
         if isinstance(content, list):
-            for b in content:
-                if isinstance(b, dict) and b.get("type") == "tool_result":
-                    body = b.get("content")
-                    body = body if isinstance(body, str) else json.dumps(body)[:400]
-                    if "doesn't want to proceed" in body or "user rejected" in body.lower():
-                        out.append([sec, "ref", str(b.get("tool_use_id") or uid)])
-        text = _user_text(content)
-        if text is None:
-            continue
-        t = text.lstrip()
-        if t.startswith("[Request interrupted"):
-            out.append([sec, "int", uid])
-            continue
-        if not t or t.startswith("<") or "[SYSTEM NOTIFICATION" in t:
-            continue  # harness turns, command output, notifications: not the user talking
-        # A program driving the Agent SDK (a pipeline, a test harness) sends prompts too. Editor panels mark
-        # what the user typed with origin.kind "human"; terminal sessions are typed unless marked otherwise.
-        origin = d.get("origin") if isinstance(d.get("origin"), dict) else {}
-        sdk = str(d.get("entrypoint") or "").startswith("sdk")
-        if origin.get("kind", "human" if not sdk else None) != "human":
-            continue
-        out.append([sec, "msg", uid])
-        if seen_user and (_CORRECTION.match(t) or _CORRECTION_ANYWHERE.search(t[:160])):
-            out.append([sec, "cor", uid])
-        if _FRUSTRATION.search(t):
-            out.append([sec, "fru", uid])
-        seen_user = True
-    return out, seen_user
+            out += [[sec, "call", str(b.get("id") or uid)] for b in content
+                    if isinstance(b, dict) and b.get("type") == "tool_use"]
+        return out, seen_user
+    if d.get("type") != "user" or d.get("isMeta") or d.get("isCompactSummary"):
+        return out, seen_user
+    if isinstance(content, list):
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "tool_result":
+                body = b.get("content")
+                body = body if isinstance(body, str) else json.dumps(body)[:400]
+                if "doesn't want to proceed" in body or "user rejected" in body.lower():
+                    out.append([sec, "ref", str(b.get("tool_use_id") or uid)])
+    text = _user_text(content)
+    if text is None:
+        return out, seen_user
+    t = text.lstrip()
+    if t.startswith("[Request interrupted"):
+        out.append([sec, "int", uid])
+        return out, seen_user
+    if not t or t.startswith("<") or "[SYSTEM NOTIFICATION" in t:
+        return out, seen_user  # harness turns, command output, notifications: not the user talking
+    # A program driving the Agent SDK (a pipeline, a test harness) sends prompts too. Editor panels mark
+    # what the user typed with origin.kind "human"; terminal sessions are typed unless marked otherwise.
+    origin = d.get("origin") if isinstance(d.get("origin"), dict) else {}
+    sdk = str(d.get("entrypoint") or "").startswith("sdk")
+    if origin.get("kind", "human" if not sdk else None) != "human":
+        return out, seen_user
+    out.append([sec, "msg", uid])
+    if seen_user and (_CORRECTION.match(t) or _CORRECTION_ANYWHERE.search(t[:160])):
+        out.append([sec, "cor", uid])
+    if _FRUSTRATION.search(t):
+        out.append([sec, "fru", uid])
+    return out, True
 
 
 def signals(entries: list[list[Any]], now: datetime, days: int = WINDOW_DAYS) -> dict[str, Any]:
@@ -225,6 +224,11 @@ def _session_of(path: Path) -> str:
     return f"local:claude-code:{path.stem}"
 
 
+def _file_key(path: Path) -> str:
+    """The cache key for a transcript: a digest of its path, so the cache on disk holds no path."""
+    return hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:32]
+
+
 def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = WINDOW_DAYS,
                     signals_out: list[list[Any]] | None = None) -> list[Request]:
     """Every Claude Code request in the last ``days``, each once, from the raw transcripts.
@@ -251,32 +255,38 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
                 continue
             if st.st_mtime < sig_since:
                 continue
-            p = str(f)
-            hit = cached.get(p)
+            key = _file_key(f)
+            hit = cached.get(key)
             start = 0
             reqs: list[list[Any]] = []
             sigs: list[list[Any]] = []
             seen_user = False
             if hit and hit.get("size") == st.st_size and hit.get("mtime") == st.st_mtime:
-                files[p] = hit
+                files[key] = hit
                 continue
             if hit and st.st_size >= hit.get("offset", 0):
                 start, reqs = hit.get("offset", 0), list(hit.get("reqs", []))  # appended since: read the tail
                 sigs, seen_user = list(hit.get("sig", [])), bool(hit.get("seenUser"))
+            root = "subagents" not in f.parts  # a subagent's prompts are the agent's, not the user's
+            end = start
             try:
                 with open(f, "rb") as fh:
                     fh.seek(start)
-                    data = fh.read()
+                    for line in fh:  # one line at a time: the file is never held whole
+                        if not line.endswith(b"\n"):
+                            break  # a line still being written waits for the next look
+                        end += len(line)
+                        r = _claude_line(line)
+                        if r is not None:
+                            reqs.append(r)
+                        if root:
+                            new_sigs, seen_user = _signal_line(line, seen_user)
+                            sigs += new_sigs
             except OSError:
                 continue
-            end = data.rfind(b"\n") + 1  # a line still being written waits for the next look
-            reqs += _claude_lines(data[:end])
-            if "subagents" not in f.parts:
-                new_sigs, seen_user = _signal_lines(data[:end], seen_user)
-                sigs += new_sigs
-            files[p] = {"size": st.st_size, "mtime": st.st_mtime, "offset": start + end,
-                        "reqs": [r for r in reqs if r[1] >= since],
-                        "sig": [s for s in sigs if s[0] >= sig_since], "seenUser": seen_user}
+            files[key] = {"session": _session_of(f), "size": st.st_size, "mtime": st.st_mtime, "offset": end,
+                          "reqs": [r for r in reqs if r[1] >= since],
+                          "sig": [s for s in sigs if s[0] >= sig_since], "seenUser": seen_user}
     if files != cached:
         try:
             body = json.dumps({"version": RAW_CACHE_VERSION, "files": files}, separators=(",", ":"))
@@ -286,9 +296,10 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
     # A response is written as several lines that share its ids, and output_tokens grows as it streams:
     # the line with the most output is the finished request, and the first line is when it started.
     best: dict[str, tuple[list[Any], str]] = {}
-    for p in sorted(files):
-        session = _session_of(Path(p))
-        for r in files[p]["reqs"]:
+    # In session order, so a request copied into a resumed session is credited the same way every time.
+    for hit in sorted(files.values(), key=lambda h: str(h.get("session") or "")):
+        session = str(hit.get("session") or "")
+        for r in hit.get("reqs", []):
             have = best.get(r[0])
             if have is None:
                 best[r[0]] = (list(r), session)
@@ -298,8 +309,8 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
             if r[6] > keep[6]:
                 keep[2:7] = r[2:7]
     if signals_out is not None:
-        for p in files:
-            signals_out += files[p].get("sig", [])
+        for hit in files.values():
+            signals_out += hit.get("sig", [])
     out: list[Request] = []
     for (_key, sec, model, i, cw, cr, o, repo), session in best.values():
         out.append((sec, model, i, cw, cr, o, _price(model, i, cw, cr, o), "claude-code", repo, session))
@@ -370,10 +381,15 @@ def map_requests(store: Store, now: datetime, days: int = WINDOW_DAYS) -> list[R
 
 
 def merge(first: list[Request], rest: list[Request]) -> list[Request]:
-    """``first`` in full, then each of ``rest`` that isn't a repeat of a request already kept."""
+    """``first`` in full, then each of ``rest`` that isn't a repeat of a request already kept.
+
+    ``first`` is already each request once, by id, so two of its requests that happen to match in model and
+    token counts within five seconds are both real and both kept. Only maps are deduplicated this way."""
     seen: dict[tuple[Any, ...], list[int]] = defaultdict(list)
-    out: list[Request] = []
-    for r in [*first, *rest]:
+    for r in first:
+        seen[r[1:6]].append(r[0])
+    out: list[Request] = list(first)
+    for r in rest:
         key = r[1:6]
         if any(abs(r[0] - t) <= DUP_SECONDS for t in seen[key]):
             continue

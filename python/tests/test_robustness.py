@@ -323,3 +323,20 @@ def test_failures_are_hidden_without_verbose(monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "_configure_logging", lambda verbose: None)
     assert cli.main(["build"]) == 0
     assert "s1: boom" not in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------- transcript size caps
+
+
+def test_oversized_non_claude_transcript_is_skipped_before_it_is_read(monkeypatch) -> None:
+    """The shared parser reads a file whole before checking its own cap; build_map refuses it first."""
+    from agentplay._core.ingestion.coding_agent._sources._base import MAX_SESSION_BYTES
+
+    class Source:
+        def get_spans_by_session(self, session_id: str) -> list[Any]:
+            raise AssertionError("read a transcript past the parser's cap")
+
+    c = discover.Candidate("local:codex:big", "codex", "/Users/me/.codex/sessions/big.jsonl", 0.0)
+    monkeypatch.setattr(discover, "source_bytes", lambda c: MAX_SESSION_BYTES + 1)
+    with pytest.raises(discover.SkipSession, match="too_large"):
+        discover.build_map(c, Source())

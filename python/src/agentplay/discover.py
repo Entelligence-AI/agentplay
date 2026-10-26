@@ -50,8 +50,11 @@ AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "openco
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
 # applies anyway; this keeps one pathological file from stalling a run). The size
 # counts a session's subagent transcripts too, and long agent-heavy sessions pass
-# 512 MB. The reader streams, so one just past that builds in about 10 s with a small
-# memory peak. Past the cap a map stops updating, so it is set well above real sessions.
+# 512 MB. The Claude Code reader streams and caps its events as it goes, so one just
+# past that builds in about 10 s with a small memory peak. Past the cap a map stops
+# updating, so it is set well above real sessions. Every other agent goes through the
+# shared parser, which reads a file whole and has its own 1 GB cap; `build_map`
+# applies that cap before the read.
 MAX_SOURCE_BYTES = 4 * 1024 * 1024 * 1024
 
 
@@ -269,12 +272,19 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
     Raises:
         SkipSession: the transcript is too large or has no parseable spans.
     """
-    if source_bytes(c) > MAX_SOURCE_BYTES:
+    size = source_bytes(c)
+    if size > MAX_SOURCE_BYTES:
         raise SkipSession("too_large")
     if c.agent == "claude-code" and c.path.endswith(".jsonl"):
         return builder.build_claude_code_map(
             Path(c.path), path_mode=path_mode, hmac_key=hmac_key, cli_version=version, resolver=resolver
         )
+    # The shared parser reads a transcript whole and only then checks its own cap, so a file past that
+    # cap is refused here, before the read, rather than loaded into memory to be rejected.
+    from ._core.ingestion.coding_agent._sources._base import MAX_SESSION_BYTES
+
+    if size > MAX_SESSION_BYTES:
+        raise SkipSession("too_large")
     spans = source.get_spans_by_session(c.session_id)
     if not spans:
         raise SkipSession("no_spans")
