@@ -814,18 +814,20 @@ final class CompanionModel: ObservableObject {
     }
 
     /// The preview: what will be written, where, the first-write notice, and the exact lines.
-    static func fixAlert(title: String, repo: String, file: String, granted: Bool, root: String?, added: [String]) -> NSAlert {
+    static func fixAlert(title: String, repo: String, file: String, granted: Bool, root: String?, added: [String],
+                         removed: [String] = [], remedy: String? = nil) -> NSAlert {
         let a = NSAlert()
         a.messageText = "Apply \u{201C}\(Plain.text(title))\u{201D}?"
-        var info = "Writes to \(file) in \(repo)."
+        var info = remedy.map { $0.replacingOccurrences(of: "Apply ", with: "This ") } ?? "Writes to \(file) in \(repo)."
         if !granted {
-            info += "\n\nAgentPlay hasn't written to \(repo) before. Applying lets it edit CLAUDE.md and .claude/settings there"
+            let what = repo == "~/.claude" ? "Claude Code's settings.json there" : "CLAUDE.md and .claude/settings there"
+            info += "\n\nAgentPlay hasn't written to \(repo) before. Applying lets it edit \(what)"
                 + (root.map { " (\($0))" } ?? "") + ". Every change is journaled and can be undone from Run Health."
         }
         a.informativeText = info
-        if !added.isEmpty {
+        if !added.isEmpty || !removed.isEmpty {
             let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 120))
-            text.string = added.map { "+ " + $0 }.joined(separator: "\n")
+            text.string = (removed.map { "- " + $0 } + added.map { "+ " + $0 }).joined(separator: "\n")
             text.isEditable = false
             text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
             let scroll = NSScrollView(frame: text.frame)
@@ -845,10 +847,14 @@ final class CompanionModel: ObservableObject {
             guard p.ok else { toast = p.message ?? "Couldn't preview that fix."; return }
             let repo = p.fields["repo"] ?? "this repo", file = p.fields["file"] ?? "a file"
             let granted = p.fields["granted"] == "true"
-            let before = Set((p.fields["before"] ?? "").components(separatedBy: "\n"))
-            let added = (p.fields["after"] ?? "").components(separatedBy: "\n").filter { !$0.isEmpty && !before.contains($0) }
+            let beforeLines = (p.fields["before"] ?? "").components(separatedBy: "\n")
+            let afterLines = (p.fields["after"] ?? "").components(separatedBy: "\n")
+            let before = Set(beforeLines), after = Set(afterLines)
+            let added = afterLines.filter { !$0.isEmpty && !before.contains($0) }
+            let removed = beforeLines.filter { !$0.isEmpty && !after.contains($0) }
             NSApp.activate()
-            let a = Self.fixAlert(title: f.title, repo: repo, file: file, granted: granted, root: p.fields["root"], added: added)
+            let a = Self.fixAlert(title: f.title, repo: repo, file: file, granted: granted, root: p.fields["root"],
+                                  added: added, removed: removed, remedy: f.hook?.remedy)
             let response: NSApplication.ModalResponse
             if filmMode, let host = Film.alertHost(for: a) {
                 // Filming drives the pointer from the main actor, which a modal loop would block: a sheet instead.
@@ -1010,6 +1016,17 @@ final class CompanionModel: ObservableObject {
         Task {
             _ = await Notifier.requestAuthorization()
             await refreshNotificationStatus()
+        }
+    }
+
+    /// A test notification, asking permission first if macOS hasn't been asked yet.
+    func sendTestNotification() {
+        Task {
+            if notificationStatus == .notDetermined { _ = await Notifier.requestAuthorization() }
+            await refreshNotificationStatus()
+            guard notificationStatus != .denied else { return }
+            Notifier.postTest()
+            toast = "Sent. If nothing showed, check System Settings → Notifications."
         }
     }
 

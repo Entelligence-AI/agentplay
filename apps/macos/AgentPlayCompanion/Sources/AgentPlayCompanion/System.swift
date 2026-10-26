@@ -102,6 +102,17 @@ enum Notifier {
         UNUserNotificationCenter.current().add(req)
     }
 
+    /// One notification on request, so people can see what one looks like before any alert is on.
+    static func postTest() {
+        guard available else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "AgentPlay Companion"
+        content.body = "This is how I'll reach you: a session waiting on you, or a plan window nearly spent."
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test|\(Int(Date().timeIntervalSince1970))",
+                                                                     content: content, trigger: nil))
+    }
+
     static let needsYouThread = "needsYou"
     static let needsYouCategory = "agentplay.needsYou"
     static let muteSessionAction = "agentplay.muteSession"

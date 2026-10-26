@@ -167,6 +167,11 @@ struct OnboardingView: View {
             Label("Read on this Mac. Nothing leaves it.", systemImage: "lock.fill")
                 .font(.callout).foregroundStyle(.secondary)
             permission.padding(.top, 8)
+            if scanning {
+                Text("macOS may ask about your Desktop or Documents folder: that's me checking which repo a session worked in. Allow keeps repo names; declining hides them.")
+                    .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 440).padding(.top, 2)
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 24)

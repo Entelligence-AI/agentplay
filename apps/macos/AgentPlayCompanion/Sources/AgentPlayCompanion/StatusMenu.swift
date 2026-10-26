@@ -390,10 +390,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(i)
 
         case .signals(let sig):
-            // The card people stop at: two numbers, their trend, one sentence. The four rates sit one level down.
-            let i = hosted(SteeringCard(signals: sig))
-            i.isEnabled = true  // so pointing at it opens the detail
-            i.setAccessibilityLabel("Steering. " + SteeringCard.sentence(sig))
+            // The card people stop at: two numbers, their trend, one sentence. Display-only, so it sits on the
+            // same left edge as the provider cards; the four rates are on the row under it.
+            let card = hosted(SteeringCard(signals: sig))
+            card.setAccessibilityLabel("How you steer. " + SteeringCard.sentence(sig))
+            menu.addItem(card)
+            let i = NSMenuItem(title: "Steering Details", action: nil, keyEquivalent: "")
+            setSubtitle("Corrections, frustration, interruptions, refusals, each against last month", on: i)
+            i.image = symbol("steeringwheel")
             let m = NSMenu()
             m.autoenablesItems = false
             m.addItem(hosted(SignalsCard(signals: sig)))
@@ -416,7 +420,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             // prompt that hands the whole case to Claude Code.
             if f.applicable {
                 let ap = item("Apply This Fix…") { [model] in model.applyFix(f) }
-                setSubtitle("You see the exact lines first; undo any time", on: ap)
+                setSubtitle(f.hook?.remedy ?? "You see the exact lines first; undo any time", on: ap)
                 ap.image = symbol("checkmark.circle.fill")
                 m.addItem(ap)
             }
@@ -492,7 +496,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         i.image = dot(s.dot)
         setSubtitle(s.detail, on: i)
-        i.toolTip = "Point here for what it's doing, and how to reach it."
         i.setAccessibilityLabel("\(s.title), \(dotLabel(s.dot))")
         return i
     }
@@ -807,10 +810,9 @@ struct SteeringCard: View {
         let c = signals.current, p = signals.previous
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Label("How you steer", systemImage: "steeringwheel").font(.headline).foregroundStyle(Ink.primary)
+                Text("How you steer").font(.headline).foregroundStyle(Ink.primary)
                 Spacer()
-                Text("\(c.messages) messages").font(.subheadline).foregroundStyle(Ink.secondary)
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary)
+                Text("\(c.messages) messages you typed").font(.subheadline).foregroundStyle(Ink.secondary)
             }
             HStack(alignment: .top, spacing: 14) {
                 figure("corrected", c.correctionRate, p.correctionRate, \.correctionRate)
@@ -852,14 +854,18 @@ struct SteeringCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// One sentence from the two rates: how often a message corrects the agent, and which way frustration went.
+    /// Two sentences from the rates: how often a message corrects the agent and what kind of correction it
+    /// mostly is (a result that didn't hold points at verification), else which way frustration went.
     static func sentence(_ s: Signals) -> String {
         var parts: [String] = []
-        if let r = s.current.correctionRate, r > 0 {
+        let c = s.current
+        if let r = c.correctionRate, r > 0 {
             let n = Int((100 / r).rounded())
             parts.append(n <= 1 ? "Nearly every message corrects the agent." : "1 in \(n) messages corrects the agent.")
         }
-        if let now = s.current.frustrationRate, let before = s.previous.frustrationRate {
+        if let nw = c.notWorking, c.corrections >= 5, Double(nw) / Double(c.corrections) >= 0.5 {
+            parts.append("Most of them say the result didn't hold, not \u{201C}do it differently\u{201D}: the agent is calling done too early.")
+        } else if let now = c.frustrationRate, let before = s.previous.frustrationRate {
             if now <= before - 2 { parts.append("Frustration is down from \(Format.percent(before)).") }
             else if now >= before + 2 { parts.append("Frustration is up from \(Format.percent(before)).") }
             else { parts.append("Frustration is about where it was.") }
@@ -944,8 +950,8 @@ struct SignalsCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("How often you steer").font(.headline).foregroundStyle(Ink.primary)
             Text("\(c.messages) messages you typed in the last \(signals.days) days").font(.subheadline).foregroundStyle(Ink.secondary)
-            row("Corrections", "of your messages turn the agent around", c.correctionRate, p.correctionRate, \.correctionRate)
-            row("Frustration", "of your messages swear or pile up ! and ?", c.frustrationRate, p.frustrationRate, \.frustrationRate)
+            row("Corrections", Self.correctionKinds(c), c.correctionRate, p.correctionRate, \.correctionRate)
+            row("Frustration", Self.frustrationKinds(c), c.frustrationRate, p.frustrationRate, \.frustrationRate)
             row("Interruptions", "of your messages stop the agent mid-step", c.interruptRate, p.interruptRate, \.interruptRate)
             row("Refusals", "of tool calls you said no to", c.refusalRate, p.refusalRate, \.refusalRate)
             Text("Counted from what you type in Claude Code; prompts a program sends don't count. No message text is kept.")
@@ -958,6 +964,17 @@ struct SignalsCard: View {
 
     /// Under 1%, one decimal: refusals are rare, and "0%" would hide them.
     func small(_ v: Double) -> String { v < 1 && v > 0 ? String(format: "%.1f%%", v) : Format.percent(v) }
+
+    /// What the corrections were: a result that didn't hold, or a change of direction.
+    static func correctionKinds(_ c: Signals.Rates) -> String {
+        guard let nw = c.notWorking, c.corrections > 0 else { return "of your messages turn the agent around" }
+        return "of your messages turn the agent around; \(nw) of \(c.corrections) said it still isn't working"
+    }
+
+    static func frustrationKinds(_ c: Signals.Rates) -> String {
+        guard let sw = c.swearing, let all = c.frustrated, all > 0 else { return "of your messages swear or pile up ! and ?" }
+        return "of your messages swear or pile up ! and ?; \(sw) swore, \(all - sw) piled up punctuation"
+    }
 
     func row(_ name: String, _ what: String, _ now: Double?, _ before: Double?, _ key: KeyPath<Signals.Day, Double?>) -> some View {
         HStack(alignment: .center, spacing: 10) {
@@ -988,7 +1005,8 @@ struct SignalsCard: View {
     }
 }
 
-/// A fix as three labelled lines: what happened, why, what to do. The actions sit right under it.
+/// A fix as three short labelled lines: what happened, why, what the fix gets you. The way to do it is the
+/// first row under the card, so nobody has to work it out from the text.
 struct FixDetail: View {
     var fix: Insights.Fix
 
@@ -1001,15 +1019,7 @@ struct FixDetail: View {
             }
             labelled("What happened", Plain.text(fix.pattern), Ink.primary)
             if let cause = fix.hook?.cause { labelled("Why", cause, Color(nsColor: .systemOrange)) }
-            labelled("Do this", todo, Ink.primary)
-            if let h = fix.hook, !h.commands.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("The hook runs").font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary)
-                    ForEach(h.commands, id: \.self) { c in
-                        Text(c).font(.system(.caption, design: .monospaced)).foregroundStyle(Ink.secondary).lineLimit(1).truncationMode(.middle)
-                    }
-                }
-            }
+            labelled("After the fix", Plain.text(fix.effect), Ink.primary)
             Text([Insights.componentName(fix.component), fix.repo, "seen in \(fix.sessions) session\(fix.sessions == 1 ? "" : "s")"]
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(.caption).foregroundStyle(Ink.tertiary)
@@ -1025,16 +1035,6 @@ struct FixDetail: View {
             Text(label).font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary)
             Text(text).font(.subheadline).foregroundStyle(color)
         }
-    }
-
-    /// The instruction, in one line, and what it buys.
-    var todo: String {
-        let effect = Plain.text(fix.effect)
-        if fix.applicable { return "Apply This Fix below writes the change; you see the lines first. \(effect)" }
-        if let file = fix.hook?.settingsFiles.first {
-            return "Change the hook's entry in \((file as NSString).lastPathComponent), or hand it to Claude Code with the prompt below. \(effect)"
-        }
-        return "Copy the prompt below into Claude Code and let it make the change. \(effect)"
     }
 
     /// A paste-ready prompt carrying the whole case, so a Claude Code session can make the change.

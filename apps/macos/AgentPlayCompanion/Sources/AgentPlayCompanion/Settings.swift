@@ -212,14 +212,18 @@ struct NotificationsPane: View {
 
     var body: some View {
         Section {
-            Text("Off unless you turn a preset on. Local notifications only: no server, no push service.")
-                .font(.caption).foregroundStyle(.secondary)
-            if model.notificationStatus == .denied {
-                HStack {
-                    Text("macOS has notifications off for AgentPlay.").foregroundStyle(.red)
-                    Button("Open System Settings") {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
-                    }
+            // Where things stand with macOS, and a way to see one, before any preset is on.
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(permissionTitle)
+                    Text("Local notifications only: no server, no push service. Nothing is sent until a preset below is on.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                switch model.notificationStatus {
+                case .denied: Button("Open System Settings") { model.openNotificationSettings() }
+                case .notDetermined: Button("Allow…") { model.requestNotifications() }
+                default: Button("Send a Test Notification") { model.sendTestNotification() }
                 }
             }
             ForEach(AlertPreset.allCases) { p in
@@ -292,6 +296,14 @@ struct NotificationsPane: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .task { await model.refreshNotificationStatus() }
+    }
+
+    var permissionTitle: String {
+        switch model.notificationStatus {
+        case .authorized, .provisional: "macOS allows notifications from AgentPlay"
+        case .denied: "macOS has notifications off for AgentPlay"
+        default: "macOS hasn't been asked yet"
+        }
     }
 
     private func loadQuiet() {

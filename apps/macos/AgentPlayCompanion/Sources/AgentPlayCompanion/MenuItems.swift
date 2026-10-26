@@ -206,6 +206,8 @@ enum MenuBuilder {
         let order: [LiveStatus: Int] = [.waiting: 0, .busy: 1, .idle: 2]
         let live = (s.live ?? []).sorted { (order[$0.status] ?? 3, $1.startedAt ?? .distantPast) < (order[$1.status] ?? 3, $0.startedAt ?? .distantPast) }
         for l in live {
+            // An agent idle for hours is a tab someone forgot, not a session happening: it stays off the menu.
+            if l.status == .idle, let since = l.statusSince, now.timeIntervalSince(since) > 6 * 3600 { continue }
             let run = runs[l.sessionId]
             let repo = run?.repo ?? l.project
             var d = [AgentNames.label(l.agentTool)]

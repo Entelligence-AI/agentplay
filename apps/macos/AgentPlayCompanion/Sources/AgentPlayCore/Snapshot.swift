@@ -427,6 +427,10 @@ public struct Signals: Codable, Sendable, Equatable {
         public var interrupts: Int
         public var refusals: Int
         public var frustrated: Int?
+        /// Of the corrections, those that say the result didn't hold ("still not working"); of the
+        /// frustration, the swearing rather than piles of punctuation.
+        public var notWorking: Int?
+        public var swearing: Int?
         public var correctionRate: Double?
         public var interruptRate: Double?
         public var frustrationRate: Double?
@@ -476,6 +480,8 @@ public struct Insights: Codable, Sendable, Equatable {
         public var commands: [String]
         public var settingsFiles: [String]
         public var cause: String?
+        /// What Apply would write, in one sentence, when the core can fix the hook itself.
+        public var remedy: String?
     }
     /// A change AgentPlay wrote (a fix applied by button, approval or Autotune), which can be undone.
     public struct Applied: Codable, Sendable, Equatable, Identifiable {
