@@ -291,6 +291,7 @@ final class CompanionModel: ObservableObject {
         case .goTo(let sid, let pid): goToSession(sessionId: sid, pid: pid, seq: nil)
         case .fix(let f): f.applicable ? applyFix(f) : openInsights()
         case .usagePage: if let u = URL(string: ClaudeAccount.usagePage) { NSWorkspace.shared.open(u) }
+        case .usage: openViewer()
         case .insights: openInsights()
         case .none: break
         }
@@ -996,6 +997,18 @@ final class CompanionModel: ObservableObject {
 
     func refreshNotificationStatus() async {
         notificationStatus = await Notifier.status()
+    }
+
+    /// The system prompt, from a button the user pressed. Nothing is delivered until a preset is on.
+    func requestNotifications() {
+        Task {
+            _ = await Notifier.requestAuthorization()
+            await refreshNotificationStatus()
+        }
+    }
+
+    func openNotificationSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
     }
 
     private func deliverAlerts(_ s: Snapshot) {

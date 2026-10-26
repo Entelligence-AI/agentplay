@@ -92,7 +92,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             button.title = ""
         }
         button.toolTip = model.pipEvent.map { "\($0.text). Click to \(actionWord($0)); right-click for the menu." }
-            ?? PipIcon.description(pose)
+            ?? "\(PipIcon.description(pose)). Right-click for Settings and Quit."
         var parts = ["AgentPlay"]
         if let s = bars.session { parts.append("session \(Int(s * 100)) percent used") }
         if let w = bars.weekly { parts.append("weekly \(Int(w * 100)) percent used") }
@@ -106,6 +106,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case .goTo: "Go to It"
         case .fix(let f): f.applicable ? "Apply This Fix…" : "Show Me the Fix…"
         case .usagePage: "Open My Usage Page"
+        case .usage: "See the Breakdown in AgentPlay"
         case .insights: "Open Run Health…"
         case .none: ""
         }
@@ -146,7 +147,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let right = event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true
         if !right, event?.modifierFlags.contains(.option) == true { model.openViewer(); return }
         if !right, let e = model.pipEvent { model.act(on: e); updateIcon(); return }
-        openMenu()
+        // While the line beside Pip shows, a left click acts on it, so right-click is the way to the menu.
+        if right { model.pipEvent != nil ? openMenu() : openContextMenu() } else { openMenu() }
+    }
+
+    /// Right-click: the app's own commands. The left-click menu is about the agents; this one is about AgentPlay.
+    func openContextMenu() {
+        guard let b = statusItem.button, let w = b.window else { return }
+        let m = NSMenu()
+        m.autoenablesItems = false
+        if nowOverride == nil { m.appearance = Self.systemAppearance }
+        let now = nowOverride ?? Date()
+        for e in MenuBuilder.contextMenu(hasStore: model.snapshot?.store.available == true) { add(e, to: m, now: now) }
+        let r = w.convertToScreen(b.convert(b.bounds, to: nil))
+        b.highlight(true)
+        m.popUp(positioning: nil, at: NSPoint(x: r.minX, y: r.minY - 4), in: nil)
+        b.highlight(false)
     }
 
     /// Light or Dark as set in System Settings, whatever the menu bar or wallpaper looks like.
@@ -193,6 +209,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     func rebuild(now: Date, trim: Int = 0) {
         menu.removeAllItems()
         for e in model.menuEntries(now: now, trim: trim) { add(e, to: menu, now: now) }
+        // The commands live on right-click; their shortcuts keep working here through hidden items.
+        for a in [MenuAction.openViewer, .refresh, .settings, .quit] {
+            let i = item(a.title, key: a.key) { [weak self] in self?.perform(a) }
+            i.isHidden = true
+            i.allowsKeyEquivalentWhenHidden = true
+            menu.addItem(i)
+        }
     }
 
     private func add(_ e: MenuEntry, to menu: NSMenu, now: Date) {
@@ -272,16 +295,25 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(i)
 
         case .session(let s):
-            menu.addItem(sessionItem(s))
-            // Option swaps in the replay, like the system menus' alternate items.
-            if s.pid != nil, s.openable {
-                let alt = item("Open Replay") { [model] in model.openViewer(sessionId: s.sessionId, seq: s.seq) }
-                alt.isAlternate = true
-                alt.keyEquivalentModifierMask = [.option]
-                alt.image = dot(s.dot)
-                setSubtitle(s.detail, on: alt)
-                menu.addItem(alt)
+            let i = sessionItem(s)
+            // Point at a session for what it's doing; the ways to reach it come first, since a row with a
+            // submenu doesn't take a click of its own.
+            let m = NSMenu()
+            m.autoenablesItems = false
+            if let pid = s.pid, let app = TerminalFocus.app(for: pid)?.localizedName {
+                let go = item("Go to \(app)") { _ = TerminalFocus.bringForward(pid: pid) }
+                go.image = symbol("arrow.up.forward.app")
+                m.addItem(go)
             }
+            let replay = item("Open Replay") { [model] in model.openViewer(sessionId: s.sessionId, seq: s.seq) }
+            replay.image = symbol("play.circle")
+            replay.isEnabled = s.openable
+            if !s.openable { setSubtitle("Appears after the next refresh", on: replay) }
+            m.addItem(replay)
+            m.addItem(.separator())
+            m.addItem(hosted(SessionDetail(line: s, now: now)))
+            i.submenu = m
+            menu.addItem(i)
 
         case .usage(let u):
             menu.addItem(hosted(UsageSummary(report: u)))
@@ -299,13 +331,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             // One row; the five parts are one level down.
             let score = Int((ins.score ?? 0).rounded())
             let i = NSMenuItem(title: "Run Health  \(score) / 100", action: nil, keyEquivalent: "")
+            // The lever first: what the fixes below are worth together. Then the trend.
             var bits: [String] = []
+            let gain = ins.fixes.compactMap(\.points).reduce(0, +)
+            if gain >= 0.5 {
+                bits.append("\(Int((min(100, (ins.score ?? 0) + gain)).rounded())) within reach from \(ins.fixes.count) fix\(ins.fixes.count == 1 ? "" : "es")")
+            }
             if let prev = ins.prevScore, abs((ins.score ?? 0) - prev) >= 0.5 {
                 let d = (ins.score ?? 0) - prev
-                bits.append("\(d > 0 ? "Up" : "Down") \(Format.points(abs(d)))")
+                bits.append("\(d > 0 ? "up" : "down") \(Format.points(abs(d)))")
             }
-            let weak = ins.components.filter { ($0.points ?? 20) < 10 }.map(\.name)
-            if !weak.isEmpty { bits.append("weakest: " + weak.prefix(2).joined(separator: ", ")) }
+            if bits.isEmpty {
+                let weak = ins.components.filter { ($0.points ?? 20) < 10 }.map(\.name)
+                if !weak.isEmpty { bits.append("weakest: " + weak.prefix(2).joined(separator: ", ")) }
+            }
             setSubtitle(bits.isEmpty ? "Last \(ins.days) days" : bits.joined(separator: " · "), on: i)
             i.image = symbol("heart.text.square")
             let m = NSMenu()
@@ -340,16 +379,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(i)
 
         case .signals(let sig):
-            let c = sig.current
-            let i = NSMenuItem(title: "Steering", action: nil, keyEquivalent: "")
-            var bits: [String] = []
-            if let r = c.correctionRate { bits.append("\(Format.percent(r)) corrections") }
-            if let r = c.frustrationRate { bits.append("\(Format.percent(r)) frustrated") }
-            setSubtitle(bits.joined(separator: " · "), on: i)
-            i.image = symbol("steeringwheel")
+            // The card people stop at: two numbers, their trend, one sentence. The four rates sit one level down.
+            let i = hosted(SteeringCard(signals: sig))
+            i.isEnabled = true  // so pointing at it opens the detail
+            i.setAccessibilityLabel("Steering. " + SteeringCard.sentence(sig))
             let m = NSMenu()
             m.autoenablesItems = false
             m.addItem(hosted(SignalsCard(signals: sig)))
+            m.addItem(.separator())
+            m.addItem(item("Open Insights in AgentPlay…") { [model] in model.openInsights(page: "overview") })
             i.submenu = m
             menu.addItem(i)
 
@@ -363,22 +401,33 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             m.autoenablesItems = false
             m.addItem(hosted(FixDetail(fix: f)))
             m.addItem(.separator())
+            // The way to get it done comes first. Apply when AgentPlay can write the change itself; otherwise a
+            // prompt that hands the whole case to Claude Code.
             if f.applicable {
-                let ap = item("Apply…") { [model] in model.applyFix(f) }
-                setSubtitle("Shows the exact change first; undo any time", on: ap)
-                ap.image = symbol("checkmark.circle")
+                let ap = item("Apply This Fix…") { [model] in model.applyFix(f) }
+                setSubtitle("You see the exact lines first; undo any time", on: ap)
+                ap.image = symbol("checkmark.circle.fill")
                 m.addItem(ap)
             }
+            let prompt = item("Copy a Prompt for Claude Code") { [model] in model.copyText(FixDetail.prompt(f)) }
+            setSubtitle("Paste it into a session; it makes the change and shows the diff", on: prompt)
+            prompt.image = symbol("text.badge.plus")
+            m.addItem(prompt)
             if let file = f.hook?.settingsFiles.first {
-                m.addItem(item("Show \((file as NSString).lastPathComponent) in Finder") { [model] in model.reveal(file) })
+                let name = (file as NSString).lastPathComponent
+                let open = item("Open \(name)") { NSWorkspace.shared.open(URL(fileURLWithPath: (file as NSString).expandingTildeInPath)) }
+                open.image = symbol("doc.text")
+                m.addItem(open)
+                let reveal = item("Show \(name) in Finder") { [model] in model.reveal(file) }
+                reveal.isAlternate = true
+                reveal.keyEquivalentModifierMask = [.option]
+                m.addItem(reveal)
+            }
+            m.addItem(.separator())
+            if let first = f.evidence.first {
+                m.addItem(item("Open a Session Where It Happened") { [model] in model.openViewer(sessionId: first) })
             }
             m.addItem(item("See It in AgentPlay…") { [model] in model.openInsights() })
-            if let first = f.evidence.first {
-                m.addItem(item("Open an Example Session") { [model] in model.openViewer(sessionId: first) })
-            }
-            m.addItem(item("Copy as Text") { [model] in
-                model.copyText("\(Plain.text(f.title))\n\(Plain.text(f.pattern))\n\(Plain.text(f.effect))")
-            })
             i.submenu = m
             menu.addItem(i)
 
@@ -430,12 +479,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             if s.openable { model.openViewer(sessionId: s.sessionId, seq: s.seq) }
             else { model.toast = "Its replay appears after the next refresh." }
         }
-        if let pid = s.pid, let app = TerminalFocus.app(for: pid)?.localizedName {
-            i.toolTip = "Click to go to \(app). Option-click for the replay."
-        }
         i.image = dot(s.dot)
         setSubtitle(s.detail, on: i)
-        if i.toolTip == nil { i.toolTip = s.pid != nil ? "Option-click for the replay." : "Click to open the replay." }
+        i.toolTip = "Point here for what it's doing, and how to reach it."
         i.setAccessibilityLabel("\(s.title), \(dotLabel(s.dot))")
         return i
     }
@@ -694,19 +740,30 @@ struct HealthCard: View {
                     .font(.subheadline)
                     .foregroundStyle(d <= -3 ? Color(nsColor: .systemOrange) : Ink.secondary)
             }
+            let gain = insights.fixes.compactMap(\.points).reduce(0, +)
+            if gain >= 0.5 {
+                Text("The fixes below would take it to \(Int(min(100, score + gain).rounded())).")
+                    .font(.subheadline).foregroundStyle(Ink.primary)
+            }
+            Text("Five parts, 20 points each. Every one counts something your sessions did.")
+                .font(.footnote).foregroundStyle(Ink.tertiary).padding(.top, 2)
             ForEach(insights.components) { c in
-                HStack(spacing: 8) {
-                    Text(c.name).font(.subheadline).foregroundStyle(Ink.primary).frame(width: 118, alignment: .leading)
-                    GeometryReader { g in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color(nsColor: .quaternaryLabelColor))
-                            Capsule().fill(tint(c)).frame(width: max(3, g.size.width * min(1, (c.points ?? 0) / 20)))
-                        }
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(c.name).font(.subheadline).foregroundStyle(Ink.primary)
+                        Text(Self.meaning[c.key] ?? "").font(.caption).foregroundStyle(Ink.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .frame(height: 4)
+                    Spacer(minLength: 4)
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color(nsColor: .quaternaryLabelColor))
+                        Capsule().fill(tint(c)).frame(width: max(3, 64 * min(1, (c.points ?? 0) / 20)))
+                    }
+                    .frame(width: 64, height: 4)
                     Text(c.points.map { Format.points($0) } ?? "–").font(.subheadline.monospacedDigit())
                         .foregroundStyle(Ink.secondary).frame(width: 30, alignment: .trailing)
                 }
+                .padding(.top, 3)
             }
         }
         .padding(.horizontal, Menu.inset)
@@ -715,9 +772,155 @@ struct HealthCard: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// What each part counts, as health.py computes it. Nothing here the core doesn't measure.
+    static let meaning: [String: String] = [
+        "shipping": "Sessions that edited code and ended in a PR",
+        "verification": "Sessions that ran a check after the last edit",
+        "efficiency": "Errors and retries per call, and cache hits",
+        "context": "Compactions, and files re-read after one",
+        "environment": "Denied, blocked or missing tools per call",
+    ]
+
     /// Weak parts stand out: under half their 20 points is orange.
     func tint(_ c: Insights.Component) -> Color {
         (c.points ?? 0) < 10 ? Color(nsColor: .systemOrange) : Color(nsColor: .controlAccentColor)
+    }
+}
+
+/// How you steer, as the row people stop at: corrections and frustration as two numbers with their trend and
+/// a sparkline, then one plain sentence. Pointing at it opens the four rates in full.
+struct SteeringCard: View {
+    var signals: Signals
+
+    var body: some View {
+        let c = signals.current, p = signals.previous
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("How you steer", systemImage: "steeringwheel").font(.headline).foregroundStyle(Ink.primary)
+                Spacer()
+                Text("\(c.messages) messages").font(.subheadline).foregroundStyle(Ink.secondary)
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary)
+            }
+            HStack(alignment: .top, spacing: 14) {
+                figure("corrected", c.correctionRate, p.correctionRate, \.correctionRate)
+                figure("frustrated", c.frustrationRate, p.frustrationRate, \.frustrationRate)
+            }
+            Text(Self.sentence(signals)).font(.subheadline).foregroundStyle(Ink.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 8)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+
+    func figure(_ what: String, _ now: Double?, _ before: Double?, _ key: KeyPath<Signals.Day, Double?>) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(now.map { Format.percent($0) } ?? "–")
+                        .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(Ink.primary)
+                    if let now, let before, abs(now - before) >= 0.5 {
+                        // Lower is better for both: up is orange.
+                        Image(systemName: now > before ? "arrow.up.right" : "arrow.down.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(now > before ? Color(nsColor: .systemOrange) : Color(nsColor: .systemGreen))
+                    }
+                }
+                Text(what).font(.caption).foregroundStyle(Ink.secondary)
+            }
+            Chart(signals.daily.filter { $0.messages > 0 }) { d in
+                LineMark(x: .value("Day", d.date), y: .value("Rate", d[keyPath: key] ?? 0))
+                    .foregroundStyle(Color(nsColor: .controlAccentColor))
+                    .interpolationMethod(.monotone)
+            }
+            .chartXAxis(.hidden).chartYAxis(.hidden)
+            .frame(width: 56, height: 26)
+            .accessibilityHidden(true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// One sentence from the two rates: how often a message corrects the agent, and which way frustration went.
+    static func sentence(_ s: Signals) -> String {
+        var parts: [String] = []
+        if let r = s.current.correctionRate, r > 0 {
+            let n = Int((100 / r).rounded())
+            parts.append(n <= 1 ? "Nearly every message corrects the agent." : "1 in \(n) messages corrects the agent.")
+        }
+        if let now = s.current.frustrationRate, let before = s.previous.frustrationRate {
+            if now <= before - 2 { parts.append("Frustration is down from \(Format.percent(before)).") }
+            else if now >= before + 2 { parts.append("Frustration is up from \(Format.percent(before)).") }
+            else { parts.append("Frustration is about where it was.") }
+        }
+        return parts.isEmpty ? "Counted from what you type; no text is kept." : parts.joined(separator: " ")
+    }
+}
+
+/// What one live session is doing: who runs it, which model, how far its context is, and its last few steps.
+struct SessionDetail: View {
+    var line: SessionLine
+    var now: Date
+
+    var body: some View {
+        let r = line.run
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(line.title).font(.headline).foregroundStyle(Ink.primary).lineLimit(1)
+                Spacer()
+                Text(status).font(.subheadline).foregroundStyle(line.dot == .waiting ? Color(nsColor: .systemOrange) : Ink.secondary)
+            }
+            Text(who).font(.subheadline).foregroundStyle(Ink.secondary)
+            if let pct = r?.context.value?.percent {
+                HStack(spacing: 8) {
+                    Text("Context").font(.subheadline).foregroundStyle(Ink.primary)
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color(nsColor: .quaternaryLabelColor))
+                        Capsule().fill(pct >= 90 ? Color(nsColor: .systemOrange) : Color(nsColor: .controlAccentColor))
+                            .frame(width: max(3, 120 * min(1, pct / 100)))
+                    }
+                    .frame(width: 120, height: 4)
+                    Text(Format.percent(pct)).font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+                }
+            }
+            if let c = r?.counts, let calls = c.calls {
+                Text([ "\(calls) tool calls", c.errors.map { "\($0) error\($0 == 1 ? "" : "s")" }, c.retries.map { "\($0) retr\($0 == 1 ? "y" : "ies")" }]
+                    .compactMap { $0 }.joined(separator: " · "))
+                    .font(.subheadline).foregroundStyle(Ink.secondary)
+            }
+            if let steps = r?.recentEvents.suffix(4), !steps.isEmpty {
+                Text("Last steps").font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary).padding(.top, 2)
+                ForEach(Array(steps.reversed())) { e in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(e.step).font(.caption).foregroundStyle(e.err ? Color(nsColor: .systemOrange) : Ink.primary).lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text(Format.relative(e.at, now: now)).font(.caption.monospacedDigit()).foregroundStyle(Ink.tertiary)
+                    }
+                }
+            } else if r == nil {
+                Text("Its map isn't built yet. The replay and its steps appear after the next refresh.")
+                    .font(.caption).foregroundStyle(Ink.tertiary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 8)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+
+    var status: String {
+        let since = line.live?.statusSince.map { Format.duration(now.timeIntervalSince($0)) }
+        switch line.dot {
+        case .waiting: return "Waiting on you" + (since.map { " · \($0)" } ?? "")
+        case .working: return "Working" + (since.map { " · \($0)" } ?? "")
+        default: return line.run?.liveStatus?.label ?? "Idle"
+        }
+    }
+
+    var who: String {
+        var bits = [AgentNames.label(line.live?.agentTool ?? line.run?.agentTool)]
+        if let models = line.run?.models, !models.isEmpty { bits.append(models.map(Format.modelName).joined(separator: ", ")) }
+        if let start = line.live?.startedAt ?? line.run?.startedAt { bits.append("started \(Format.relative(start, now: now))") }
+        return bits.joined(separator: " · ")
     }
 }
 
@@ -774,32 +977,67 @@ struct SignalsCard: View {
     }
 }
 
-/// A fix in full: what was seen, what fixing it changes, where, and what it's worth.
+/// A fix as three labelled lines: what happened, why, what to do. The actions sit right under it.
 struct FixDetail: View {
     var fix: Insights.Fix
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(Plain.text(fix.title)).font(.headline).foregroundStyle(Ink.primary)
-            Text(Plain.text(fix.pattern)).font(.body).foregroundStyle(Ink.primary)
-            if let h = fix.hook {
-                if let cause = h.cause { Text(cause).font(.body).foregroundStyle(Color(nsColor: .systemOrange)) }
-                if !h.commands.isEmpty {
-                    Text("Configured for it:").font(.subheadline).foregroundStyle(Ink.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(Plain.text(fix.title)).font(.headline).foregroundStyle(Ink.primary)
+                Spacer()
+                if let p = fix.points { Text("+\(Format.points(p))").font(.headline.monospacedDigit()).foregroundStyle(Color(nsColor: .systemGreen)) }
+            }
+            labelled("What happened", Plain.text(fix.pattern), Ink.primary)
+            if let cause = fix.hook?.cause { labelled("Why", cause, Color(nsColor: .systemOrange)) }
+            labelled("Do this", todo, Ink.primary)
+            if let h = fix.hook, !h.commands.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("The hook runs").font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary)
                     ForEach(h.commands, id: \.self) { c in
-                        Text(c).font(.system(.caption, design: .monospaced)).foregroundStyle(Ink.primary).lineLimit(2)
+                        Text(c).font(.system(.caption, design: .monospaced)).foregroundStyle(Ink.secondary).lineLimit(1).truncationMode(.middle)
                     }
                 }
             }
-            Text(Plain.text(fix.effect)).font(.body).foregroundStyle(Ink.secondary)
-            Text([fix.points.map { "+\(Format.points($0)) points" }, Insights.componentName(fix.component),
-                  fix.repo, "\(fix.sessions) session\(fix.sessions == 1 ? "" : "s")"].compactMap { $0 }.joined(separator: " · "))
-                .font(.subheadline).foregroundStyle(Ink.secondary)
+            Text([Insights.componentName(fix.component), fix.repo, "seen in \(fix.sessions) session\(fix.sessions == 1 ? "" : "s")"]
+                .compactMap { $0 }.joined(separator: " · "))
+                .font(.caption).foregroundStyle(Ink.tertiary)
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 8)
         .frame(width: Menu.width, alignment: .leading)
+    }
+
+    func labelled(_ label: String, _ text: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary)
+            Text(text).font(.subheadline).foregroundStyle(color)
+        }
+    }
+
+    /// The instruction, in one line, and what it buys.
+    var todo: String {
+        let effect = Plain.text(fix.effect)
+        if fix.applicable { return "Apply This Fix below writes the change; you see the lines first. \(effect)" }
+        if let file = fix.hook?.settingsFiles.first {
+            return "Change the hook's entry in \((file as NSString).lastPathComponent), or hand it to Claude Code with the prompt below. \(effect)"
+        }
+        return "Copy the prompt below into Claude Code and let it make the change. \(effect)"
+    }
+
+    /// A paste-ready prompt carrying the whole case, so a Claude Code session can make the change.
+    static func prompt(_ f: Insights.Fix) -> String {
+        var lines = ["Please fix this in my coding-agent setup, then show me the diff. Don't change anything else.", ""]
+        lines.append("Problem: \(Plain.text(f.pattern))")
+        if let cause = f.hook?.cause { lines.append("Cause: \(cause)") }
+        if let h = f.hook {
+            if !h.commands.isEmpty { lines.append("The hook currently runs: " + h.commands.joined(separator: " ; ")) }
+            if !h.settingsFiles.isEmpty { lines.append("Configured in: " + h.settingsFiles.joined(separator: ", ")) }
+        }
+        if let repo = f.repo { lines.append("Project: \(repo)") }
+        lines.append("What fixing it should change: \(Plain.text(f.effect))")
+        return lines.joined(separator: "\n")
     }
 }
 

@@ -16,7 +16,7 @@ enum MenuEntry: Equatable {
     case usageDetails(UsageReport)               // submenu: chart, 7 and 30 days, by model, by project
     case errors([ErrorLine])                     // each error, its details one level down
     case health(Insights)                        // run health, its parts, what was applied and what Autotune holds
-    case signals(Signals)                        // corrections, interruptions, frustration, refusals
+    case signals(Signals)                        // hosted card: how you steer, the four rates one level down
     case fix(Insights.Fix)                       // a fix, its details one level down
     case action(MenuAction)
     case separator
@@ -28,7 +28,7 @@ enum MenuAction: String, CaseIterable {
     var title: String {
         switch self {
         case .leaveSample: "Show My Data"
-        case .showAllSessions: "Show All Sessions…"
+        case .showAllSessions: "All Sessions…"
         case .refresh: "Refresh"
         case .openViewer: "Open AgentPlay"
         case .settings: "Settings…"
@@ -58,6 +58,8 @@ struct SessionLine: Equatable, Identifiable {
     var seq: Int?
     var openable: Bool         // false until its map exists
     var pid: Int32?            // set while an agent process runs it
+    var run: RunActivity?      // its map, for the detail one level down
+    var live: LiveSession?     // its process, while one runs
 }
 
 struct ErrorLine: Equatable, Identifiable {
@@ -102,7 +104,7 @@ enum MenuBuilder {
         if !isSample, prefs.showsPip { out += [.pip, .separator] }
 
         // 1. Sessions waiting on you: the one thing worth interrupting for.
-        let lines = sessionLines(s, prefs: prefs, now: now)
+        let lines = sessionLines(s, now: now)
         let waiting = lines.filter { $0.dot == .waiting }
         if !waiting.isEmpty {
             out.append(.header("Needs You"))
@@ -122,34 +124,39 @@ enum MenuBuilder {
         }
         if !providers.isEmpty { out.append(.separator) }
 
-        // 3. Everything else that ran recently.
-        let rest = lines.filter { $0.dot != .waiting }
-        out.append(.header("Sessions"))
-        if rest.isEmpty {
+        // 3. What's open now. Only live processes: finished runs live in All Sessions (right-click), not here.
+        let working = lines.filter { $0.dot != .waiting }
+        out.append(.header(waiting.isEmpty ? "Live Sessions" : "Also Open"))
+        if working.isEmpty {
             if !waiting.isEmpty {
-                // All of them are above.
-            } else if s.store.available {
-                out.append(.message(title: "No Recent Sessions", detail: nil))
+                out.append(.message(title: "Nothing else is running", detail: nil))
+            } else if let last = s.runs.max(by: { ($0.latestAt ?? .distantPast) < ($1.latestAt ?? .distantPast) }) {
+                let who = [last.agentLabel, last.repo].compactMap { $0 }.joined(separator: " in ")
+                out.append(.message(title: "No agent is running",
+                                    detail: "Last: \(who), \(Format.relative(last.latestAt, now: now)). Right-click Pip for all sessions."))
             } else if s.foundSources.isEmpty {
                 out.append(.message(title: "No Agents Found", detail: "Start Claude Code or Codex, then reopen."))
-            } else {
+            } else if !s.store.available {
                 out.append(.message(title: "No Sessions Indexed Yet", detail: "Refresh to scan \(s.foundSources.map(\.label).joined(separator: ", "))."))
+            } else {
+                out.append(.message(title: "No agent is running", detail: "Right-click Pip for all sessions."))
             }
         }
-        // Four when insights follow, fewer when the screen is short.
-        out += rest.prefix(max(1, (s.insights?.score != nil ? 4 : 5) - trim)).map(MenuEntry.session)
-        if s.store.available { out.append(.action(.showAllSessions)) }
+        // Idle processes are often forgotten tabs: two at most, the working ones always.
+        let busy = working.filter { $0.dot == .working }, idle = working.filter { $0.dot == .idle }
+        out += (busy + idle.prefix(2)).prefix(max(1, 5 - trim)).map(MenuEntry.session)
 
-        // 4. Insights: run health, the fixes that would raise it, and what keeps failing, details one level down.
+        // 4. Insights: how you steer first (the thing people react to), then run health and what would raise it.
         let errs = errorLines(s, prefs: prefs, now: now)
         let ins = s.insights.flatMap { $0.score == nil ? nil : $0 }
-        if ins != nil || !errs.isEmpty || (s.usage?.signals?.current.messages ?? 0) >= 20 {
+        let sig = s.usage?.signals.flatMap { $0.current.messages >= 20 ? $0 : nil }
+        if ins != nil || !errs.isEmpty || sig != nil {
             out.append(.separator)
             out.append(.header("Insights · Last \(s.insights?.days ?? 30) Days"))
+            if let sig { out.append(.signals(sig)) }
             if let ins { out.append(.health(ins)) }
-            if let sig = s.usage?.signals, sig.current.messages >= 20, trim < 4 { out.append(.signals(sig)) }
-            if let ins { out += ins.fixes.prefix(max(1, 3 - trim)).map(MenuEntry.fix) }
-            if !errs.isEmpty, trim < 3 { out.append(.errors(Array(errs.prefix(3)))) }
+            if let ins { out += ins.fixes.prefix(max(1, 2 - trim)).map(MenuEntry.fix) }
+            if !errs.isEmpty, trim < 2 { out.append(.errors(Array(errs.prefix(1)))) }
         }
 
         // 5. Estimated usage: two lines here, the rest one level down.
@@ -162,8 +169,16 @@ enum MenuBuilder {
         return out + footer()
     }
 
-    static func footer() -> [MenuEntry] {
-        [.separator, .action(.openViewer), .action(.refresh), .separator, .action(.settings), .action(.quit)]
+    /// The left-click menu ends with its content. Open, refresh, settings and quit live on right-click, where
+    /// menu-bar apps keep them; their key equivalents still work here through hidden items.
+    static func footer() -> [MenuEntry] { [] }
+
+    /// Right-click on Pip: the app's own commands, kept out of the way of what the agents are doing.
+    static func contextMenu(hasStore: Bool) -> [MenuEntry] {
+        var out: [MenuEntry] = [.action(.openViewer)]
+        if hasStore { out.append(.action(.showAllSessions)) }
+        out += [.action(.refresh), .separator, .action(.settings), .action(.quit)]
+        return out
     }
 
     static func shortReason(_ p: ProviderSummary) -> String {
@@ -175,38 +190,29 @@ enum MenuBuilder {
         }
     }
 
-    static func sessionLines(_ s: Snapshot, prefs: CompanionPrefs, now: Date) -> [SessionLine] {
+    /// The sessions with a live process: waiting first, then working. Idle processes and finished runs are
+    /// not rows here; the menu shows what is happening, All Sessions shows what happened.
+    static func sessionLines(_ s: Snapshot, now: Date) -> [SessionLine] {
         var out: [SessionLine] = []
-        var seen = Set<String>()
         let runs = Dictionary(s.runs.map { ($0.sessionId, $0) }, uniquingKeysWith: { a, _ in a })
         let order: [LiveStatus: Int] = [.waiting: 0, .busy: 1, .idle: 2]
         let live = (s.live ?? []).sorted { (order[$0.status] ?? 3, $1.startedAt ?? .distantPast) < (order[$1.status] ?? 3, $0.startedAt ?? .distantPast) }
-        for l in live where l.status != .idle {
+        for l in live {
             let run = runs[l.sessionId]
-            seen.insert(l.sessionId)
             let repo = run?.repo ?? l.project
-            var d = [AgentNames.label(l.agentTool), Format.truncate(detail(run, status: l.status, since: l.statusSince, now: now), max: 26)]
+            var d = [AgentNames.label(l.agentTool)]
+            if let m = run?.models?.first { d.append(Format.modelName(m)) }
+            if l.status == .idle {
+                // An open agent with nothing happening: still a terminal to jump to, so it stays, in grey.
+                d.append("Idle" + (l.statusSince.map { " \(Format.duration(now.timeIntervalSince($0)))" } ?? ""))
+            } else {
+                d.append(Format.truncate(detail(run, status: l.status, since: l.statusSince, now: now), max: 26))
+            }
             out.append(SessionLine(
                 id: l.sessionId, title: Format.truncate(repo ?? "Session", max: 32),
                 detail: d.filter { !$0.isEmpty }.joined(separator: " · "),
-                dot: l.status == .waiting ? .waiting : .working, sessionId: l.sessionId,
-                seq: run?.lastEvent?.seq, openable: l.inStore, pid: l.pid))
-        }
-        let pinned = prefs.pinnedSessions
-        let rest = s.runs.filter { !seen.contains($0.sessionId) }.sorted { a, b in
-            let pa = pinned.firstIndex(of: a.sessionId) ?? Int.max, pb = pinned.firstIndex(of: b.sessionId) ?? Int.max
-            if pa != pb { return pa < pb }
-            return (a.latestAt ?? .distantPast) > (b.latestAt ?? .distantPast)
-        }
-        for r in rest {
-            let dot: SessionLine.Dot = r.liveStatus == .idle ? .idle : r.state == .active ? .working
-                : r.state == .recent ? .recent : .ended
-            let pid = (s.live ?? []).first { $0.sessionId == r.sessionId }?.pid
-            let d = [r.agentLabel, Format.truncate(detail(r, status: r.liveStatus, since: nil, now: now), max: 26), Format.relative(r.latestAt, now: now)]
-            out.append(SessionLine(
-                id: r.sessionId, title: Format.truncate(r.repo ?? "Outside a repo", max: 32),
-                detail: d.filter { !$0.isEmpty }.joined(separator: " · "),
-                dot: dot, sessionId: r.sessionId, seq: r.lastEvent?.seq, openable: true, pid: pid))
+                dot: l.status == .waiting ? .waiting : l.status == .idle ? .idle : .working, sessionId: l.sessionId,
+                seq: run?.lastEvent?.seq, openable: l.inStore, pid: l.pid, run: run, live: l))
         }
         return out
     }
