@@ -806,6 +806,31 @@ final class CompanionModel: ObservableObject {
         Task { await refresh(.read) }
     }
 
+    /// The preview: what will be written, where, the first-write notice, and the exact lines.
+    static func fixAlert(title: String, repo: String, file: String, granted: Bool, root: String?, added: [String]) -> NSAlert {
+        let a = NSAlert()
+        a.messageText = "Apply \u{201C}\(Plain.text(title))\u{201D}?"
+        var info = "Writes to \(file) in \(repo)."
+        if !granted {
+            info += "\n\nAgentPlay hasn't written to \(repo) before. Applying lets it edit CLAUDE.md and .claude/settings there"
+                + (root.map { " (\($0))" } ?? "") + ". Every change is journaled and can be undone from Run Health."
+        }
+        a.informativeText = info
+        if !added.isEmpty {
+            let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 120))
+            text.string = added.map { "+ " + $0 }.joined(separator: "\n")
+            text.isEditable = false
+            text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            let scroll = NSScrollView(frame: text.frame)
+            scroll.documentView = text
+            scroll.hasVerticalScroller = true
+            a.accessoryView = scroll
+        }
+        a.addButton(withTitle: "Apply")
+        a.addButton(withTitle: "Cancel")
+        return a
+    }
+
     /// Preview the exact change, ask once per repo, then write it through the guarded, journaled writer.
     func applyFix(_ f: Insights.Fix) {
         Task {
@@ -816,26 +841,7 @@ final class CompanionModel: ObservableObject {
             let before = Set((p.fields["before"] ?? "").components(separatedBy: "\n"))
             let added = (p.fields["after"] ?? "").components(separatedBy: "\n").filter { !$0.isEmpty && !before.contains($0) }
             NSApp.activate()
-            let a = NSAlert()
-            a.messageText = "Apply \u{201C}\(Plain.text(f.title))\u{201D}?"
-            var info = "Writes to \(file) in \(repo)."
-            if !granted {
-                info += "\n\nAgentPlay hasn't written to \(repo) before. Applying lets it edit CLAUDE.md and .claude/settings there"
-                    + (p.fields["root"].map { " (\($0))" } ?? "") + ". Every change is journaled and can be undone from Run Health."
-            }
-            a.informativeText = info
-            if !added.isEmpty {
-                let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 120))
-                text.string = added.map { "+ " + $0 }.joined(separator: "\n")
-                text.isEditable = false
-                text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-                let scroll = NSScrollView(frame: text.frame)
-                scroll.documentView = text
-                scroll.hasVerticalScroller = true
-                a.accessoryView = scroll
-            }
-            a.addButton(withTitle: "Apply")
-            a.addButton(withTitle: "Cancel")
+            let a = Self.fixAlert(title: f.title, repo: repo, file: file, granted: granted, root: p.fields["root"], added: added)
             let response: NSApplication.ModalResponse
             if filmMode, let host = Film.alertHost(for: a) {
                 // Filming drives the pointer from the main actor, which a modal loop would block: a sheet instead.

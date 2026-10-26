@@ -19,7 +19,7 @@ enum Film {
 
     // MARK: setup
 
-    static func setUp(fixture: String) throws {
+    static func setUp(fixture: String, backdrop: Bool = true) throws {
         let defaults = UserDefaults(suiteName: PrefsStore.domain + ".film")!
         defaults.removePersistentDomain(forName: PrefsStore.domain + ".film")
         let m = CompanionModel(prefsStore: PrefsStore(defaults: defaults), isDevBuild: true)
@@ -35,7 +35,7 @@ enum Film {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.autosaveName = "film-pip"
         status = StatusItemController(model: m, statusItem: item)
-        showBackdrop()
+        if backdrop { showBackdrop() }
     }
 
     static func fixtureURL(_ name: String) -> URL {

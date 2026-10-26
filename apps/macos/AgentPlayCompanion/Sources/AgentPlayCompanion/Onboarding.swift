@@ -7,6 +7,8 @@ import SwiftUI
 struct OnboardingView: View {
     @EnvironmentObject var model: CompanionModel
     @State var step = 1
+    /// Filming: the first run plays itself, step by step, on the timings a viewer would take.
+    var filmAutoplay = false
     @State private var scanning = false
     @State private var shown = 0          // learnings revealed so far
     @State private var opened = Date()
@@ -41,6 +43,14 @@ struct OnboardingView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: step)
     }
 
+    /// Filming: advance on the view's own clock (onAppear never fires in a window parked off the screen).
+    func filmAdvance(_ now: Date) {
+        guard filmAutoplay else { return }
+        let el = now.timeIntervalSince(opened)
+        if step == 1, el > 3.6 { DispatchQueue.main.async { go(2); scan() } }   // reading, then learnt by itself
+        if step == 3, el > 7.0 { DispatchQueue.main.async { go(4) } }
+    }
+
     @ViewBuilder var primary: some View {
         switch step {
         case 1: Button("Nice to Meet You") { go(2); scan() }.keyboardShortcut(.defaultAction)
@@ -62,6 +72,7 @@ struct OnboardingView: View {
     func pip(_ pose: PipPose, wakeAfter: TimeInterval? = nil) -> some View {
         TimelineView(.periodic(from: .now, by: reduceMotion ? 3600 : 0.25)) { t in
             let tick = reduceMotion ? 0 : Int(t.date.timeIntervalSinceReferenceDate * 4)
+            let _ = filmAdvance(t.date)
             let awake = wakeAfter.map { t.date.timeIntervalSince(opened) > $0 } ?? true
             let p: PipPose = awake ? pose : .sleep
             let blink = awake && tick % 14 == 0 && p != .sleep

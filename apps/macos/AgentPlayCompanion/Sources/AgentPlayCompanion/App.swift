@@ -198,6 +198,13 @@ enum CompanionMain {
             while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
             exit(0)
         }
+        if LaunchOptions.isDev, let dir = LaunchOptions.value("--film-render") {
+            // Dev only: draw every piece a launch film needs, offscreen, as PNG sequences with alpha (see FilmRender.swift).
+            let sem = DispatchSemaphore(value: 0)
+            Task { @MainActor in await FilmRender.run(to: dir); sem.signal() }
+            while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+            exit(0)
+        }
         if LaunchOptions.isDev, let dir = LaunchOptions.value("--film-out") ?? (LaunchOptions.value("--film") != nil ? "/tmp/agentplay-film" : nil) {
             // Dev only: film a scripted take over a fixture (see Film.swift).
             MainActor.assumeIsolated {
