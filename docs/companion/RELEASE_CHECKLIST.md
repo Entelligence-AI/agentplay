@@ -7,7 +7,7 @@
 | G0 Repo audit | Done: REPO_AUDIT.md, MARKET_NOTES.md |
 | G1 Prototype review | Done with one gap: three working directions, light and dark screens, keyframe clips, scorecard. Live screen recordings not made (EXPERIMENTS.md §1) |
 | G2 Core integration | Done: real store, process-backed activity, ordering, deep link to the exact `seq` verified against the running viewer, no invented percentages |
-| G3 Alerts and privacy | Done: local notifications, presets off by default, dedupe, cooldown, budget, quiet hours, snooze, mutes, watermark; leak tests; no network unless Claude-account usage is turned on |
+| G3 Alerts and privacy | Done: local notifications, presets off by default, dedupe, cooldown, budget, quiet hours, snooze, mutes, watermark; leak tests; no network unless Claude-account usage is on (offered at setup, one click to decline) |
 | G4 Packaging | Dev and release `.app` and DMG build and pass `codesign --verify --deep --strict`. **Public release BLOCKED: no Developer ID identity, no notarization** |
 | G5 Pilot-ready | Not yet: needs a notarized build and the five-developer test |
 
@@ -79,6 +79,6 @@ end
 - Optional local alerts for a command failing three times in a row, and more, all off until you turn them on.
 - Context and plan usage only where the agent records them: Codex reports both; Claude Code records tokens but no limit, so the app says that instead of guessing.
 - One observed pattern across your recent runs, with its denominator.
-- Local by default: no AgentPlay account, no analytics. The only network request is to Anthropic for your Claude usage, and only if you turn that on. Your maps stay in `~/.agentplay`.
+- Local by default: no AgentPlay account, no analytics. The only network request is to Anthropic for your Claude usage; setup offers it switched on and you can decline there or turn it off in Settings. Your maps stay in `~/.agentplay`.
 
 Known limitations: Apple silicon only; refreshes take seconds on very large live transcripts and are spaced out to bound CPU; repos under Documents, Desktop or Downloads need a one-time macOS folder permission; Claude Code plan usage is not available locally.

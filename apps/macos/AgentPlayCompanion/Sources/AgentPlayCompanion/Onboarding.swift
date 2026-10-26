@@ -12,6 +12,10 @@ struct OnboardingView: View {
     var filmAutoplay = false
     @State private var scanning = false
     @State private var opened = Date()
+    // The three choices, on until switched off; Start applies them. Defaults nobody has to go looking for.
+    @State private var wantsAlerts = true
+    @State private var wantsAccount = true
+    @State private var wantsLogin = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let size = CGSize(width: 600, height: 560)
@@ -239,10 +243,9 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             Spacer()
             title("Three choices.")
-            body("Everything else has a sensible default. All of it can change in Settings later.").padding(.top, 12)
+            body("On, as I\u{2019}d suggest. Switch any off here, or change them in Settings later.").padding(.top, 12)
             Form {
-                Toggle(isOn: Binding(get: { model.prefs.alerts.enabled.contains(.needsYou) },
-                                     set: { model.setPreset(.needsYou, on: $0) })) {
+                Toggle(isOn: $wantsAlerts) {
                     Text("Tell me when a session needs me")
                     Text("A notification when an agent stops and waits for your answer.")
                 }
@@ -256,11 +259,11 @@ struct OnboardingView: View {
                         Button("Open System Settings") { model.openNotificationSettings() }
                     }
                 }
-                Toggle(isOn: Binding(get: { model.prefs.usesClaudeAccount }, set: { model.setClaudeAccount($0) })) {
+                Toggle(isOn: $wantsAccount) {
                     Text("Show Claude usage from my account")
-                    Text("The same numbers as claude.ai\u{2019}s usage page. macOS asks once.")
+                    Text("Live 5-hour and weekly limits, the same numbers as claude.ai\u{2019}s usage page. Reads the login Claude Code saved in your Keychain; macOS asks once.")
                 }
-                Toggle("Open AgentPlay when I log in", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
+                Toggle("Open AgentPlay when I log in", isOn: $wantsLogin)
             }
             .formStyle(.grouped).scrollDisabled(true).scrollContentBackground(.hidden)
             .frame(maxWidth: 500, maxHeight: model.notificationStatus == .denied ? 240 : 200)
@@ -287,6 +290,10 @@ struct OnboardingView: View {
 
     func finish() {
         if model.isSample { model.leaveSample() }
+        // The choices take effect now, not as they were toggled: Back and forth changes nothing until Start.
+        if wantsAlerts, model.notificationStatus != .denied { model.setPreset(.needsYou, on: true) }
+        if wantsAccount != model.prefs.usesClaudeAccount { model.setClaudeAccount(wantsAccount) }
+        if wantsLogin != model.loginItemEnabled { model.setLoginItem(wantsLogin) }
         model.finishOnboarding()
         Windows.close(.welcome)
     }

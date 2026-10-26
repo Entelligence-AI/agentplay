@@ -337,7 +337,7 @@ struct PrivacyPane: View {
         }
         Section("Network") {
             Text("None on its own: no updates check, no analytics, no fonts or scripts from the web. The viewer it opens is served from 127.0.0.1 on this Mac.")
-            Text("The one exception is yours to turn on: with \"Show Claude usage from my account\" on in Live Limits, it asks api.anthropic.com for your usage, with the login Claude Code saved. Links to a provider's usage page open in your browser only when you click them.")
+            Text("The one exception is \"Show Claude usage from my account\" (offered at setup, and in Live Limits): it asks api.anthropic.com for your usage, with the login Claude Code saved. Links to a provider's usage page open in your browser only when you click them.")
                 .foregroundStyle(.secondary)
         }
         Section("Local data") {
