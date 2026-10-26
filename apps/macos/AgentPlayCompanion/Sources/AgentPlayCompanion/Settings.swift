@@ -99,19 +99,29 @@ enum SettingsWindow {
 struct GeneralPane: View {
     @EnvironmentObject var model: CompanionModel
     var body: some View {
-        Section {
-            Toggle(isOn: $model.prefs.showActivityInMenuBar) {
-                Text("Show session % next to the icon")
-                Text("The icon's two bars are the 5-hour and weekly windows of your most constrained provider.")
-            }
+        Section("In the menu bar") {
+            // Each switch shows the thing it switches, drawn with the real icon code.
             Toggle(isOn: Binding(get: { model.prefs.showsPip }, set: { model.prefs.pipEnabled = $0 })) {
-                Text("Pip in the menu bar")
-                Text("Fills with your 5-hour usage, stands on the week, and its pose says what needs you. Off shows two plain bars.")
+                row("Pip in the menu bar",
+                    "Fills with your 5-hour usage and stands on the week; its pose says what's up. Off shows two plain bars.",
+                    preview: HStack(spacing: 6) {
+                        MenuBarStrip(pip: true)
+                        Text("or").font(.caption).foregroundStyle(.tertiary)
+                        MenuBarStrip(pip: false)
+                    })
+            }
+            Toggle(isOn: $model.prefs.showActivityInMenuBar) {
+                row("Show session % next to the icon",
+                    "How much of the 5-hour window is used, from your most constrained provider.",
+                    preview: MenuBarStrip(pip: model.prefs.showsPip, text: "34%"))
             }
             Toggle(isOn: Binding(get: { model.prefs.showsPipIsland }, set: { model.prefs.pipIslandEnabled = $0 })) {
-                Text("Say what happened next to the icon")
-                Text("\"docs-site needs you\" for a few seconds; click it to go there.")
+                row("Say what happened next to the icon",
+                    "The project's name for a few seconds when something changes; click it to go there.",
+                    preview: MenuBarStrip(pip: model.prefs.showsPip, pose: .wave, text: "docs-site"))
             }
+        }
+        Section {
             Toggle("Launch at login", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
             Toggle(isOn: $model.prefs.soundOnManualActions) {
                 Text("Soft sound on actions I take")
@@ -121,6 +131,39 @@ struct GeneralPane: View {
         if model.isDevBuild {
             Section("Developer") { Button("Load Sample Data") { model.loadSample() } }
         }
+    }
+
+    func row<P: View>(_ title: String, _ detail: String, preview: P) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            preview
+        }
+    }
+}
+
+/// A slice of menu bar with the status item as it would draw: Pip (or the two bars) and the line beside it.
+struct MenuBarStrip: View {
+    var pip = true
+    var pose: PipPose = .work
+    var text: String? = nil
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(nsImage: pip ? PipIcon.image(pose, session: 0.34, weekly: 0.58)
+                               : StatusIcon.image(session: 0.34, weekly: 0.58, stale: false, waiting: false, pulse: false))
+                .renderingMode(.template).interpolation(.none)
+            if let text { Text(text).font(.system(size: 12, weight: .medium)) }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 24)
+        .foregroundStyle(.primary)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(scheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)))
+        .accessibilityLabel(text.map { "Menu bar preview: \($0)" } ?? "Menu bar preview")
     }
 }
 
@@ -363,62 +406,99 @@ struct LiveLimitsPane: View {
     @State private var error: String?
 
     var body: some View {
+        Section {
+            HStack(alignment: .center, spacing: 14) {
+                LimitPreview()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("What you get").font(.subheadline.weight(.semibold))
+                    Text("Claude's 5-hour and weekly windows in the menu and in Pip's fill, live, the same numbers as claude.ai's usage page. Pick where they come from; either works, both is fine.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.vertical, 4)
+        }
         Section("From your Claude account") {
             Toggle(isOn: Binding(get: { model.prefs.usesClaudeAccount }, set: { model.setClaudeAccount($0) })) {
-                Text("Show Claude usage from my account")
-                Text("Works however you run Claude Code, editor agent panels included.")
+                Text("Ask my Claude account")
+                Text("Works however you run Claude Code, editor panels included. Uses the login Claude Code already saved in your Keychain; macOS asks once, choose Always Allow.")
             }
-            Text("Reads the login Claude Code saved in your Keychain (macOS asks once; choose Always Allow) and asks api.anthropic.com for your 5-hour and weekly usage, the numbers claude.ai shows. Every 5 minutes while AgentPlay runs, and when you open the menu. Nothing else is sent, and the login is never stored or renewed by AgentPlay.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if model.prefs.usesClaudeAccount {
                 if let f = model.accountFailure {
                     Text(f.message).foregroundStyle(.red)
                 } else if let w = model.accountLimits.first(where: { $0.window == "five_hour" }), let v = w.used.value {
-                    LabeledContent("Now", value: "Session \(Format.percent(v.usedPercent)) used")
+                    LabeledContent("Right now", value: "Session \(Format.percent(v.usedPercent)) used")
                 }
             }
         }
         Section("From Claude Code's status line") {
-            LabeledContent("Terminal Claude Code") {
-                Text(model.claudeBridgeOn ? "On" : "Off").foregroundStyle(model.claudeBridgeOn ? .green : .secondary)
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Save what Claude Code reports")
+                    Text("Claude Code tells its status line your usage after every reply. This keeps a copy for AgentPlay; your status line stays as it is.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                if model.claudeBridgeOn {
+                    Button("Turn Off") { model.disableClaudeBridge() }
+                } else if preview != nil {
+                    Button("Turn On") { model.enableClaudeBridge() }.buttonStyle(.borderedProminent)
+                }
             }
-            Text("Claude Code sends your 5-hour and weekly usage, and each session's context, to its status line (documented by Anthropic for Pro and Max). Turning this on points that status line at a small script that saves the report in ~/.agentplay/live and then runs your previous status line, so it looks the same.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let error { Text(error).foregroundStyle(.red) }
             if model.claudeBridgeOn {
-                Button("Turn Off") { model.disableClaudeBridge() }
-            }
-        }
-        if !model.claudeBridgeOn {
-            Section("The change to ~/.claude/settings.json") {
-                if let preview {
+                LabeledContent("Status") { Text("On").foregroundStyle(.green) }
+            } else if let preview {
+                DisclosureGroup("What changes in ~/.claude/settings.json") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Now").font(.caption).foregroundStyle(.secondary)
                         CodeBlock(text: preview.before)
                         Text("After").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
                         CodeBlock(text: preview.after)
+                        Text("Only the statusLine key. A backup is saved as settings.json.agentplay-backup; Turn Off restores it.")
+                            .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
                     }
-                    Text("A backup is saved as settings.json.agentplay-backup. Turning it off restores your previous status line.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack { Spacer(); Button("Turn On") { model.enableClaudeBridge() }.buttonStyle(.borderedProminent) }
-                } else if let error {
-                    Text(error).foregroundStyle(.red)
                 }
             }
-            .onAppear(perform: load)
         }
-        Section("Codex") {
-            Text("Codex writes its limits into its own session files, so they show without any setup when you've used Codex on this Mac.")
-                .font(.callout).foregroundStyle(.secondary)
-        }
-        Section("Others") {
-            Text("Cursor, Copilot, OpenCode and Kiro don't report plan limits locally. Their sessions and usage estimates still show.")
-                .font(.callout).foregroundStyle(.secondary)
+        .onAppear(perform: load)
+        Section("Other agents") {
+            Text("Codex shows its limits by itself. Cursor, Copilot, OpenCode and Kiro don't report plan limits; their sessions and estimated usage still show.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     func load() {
         do { preview = try model.claudeBridge.preview(); error = nil } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "Can't read Claude Code's settings."
+        }
+    }
+}
+
+/// The limits card as it appears in the menu, in miniature: two windows, two bars.
+struct LimitPreview: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            bar("Session", 0.34, "resets in 2h 18m")
+            bar("Week", 0.58, "resets Thu")
+        }
+        .padding(10)
+        .frame(width: 190)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.6)))
+        .accessibilityLabel("Preview: session 34 percent, week 58 percent")
+    }
+
+    func bar(_ name: String, _ used: Double, _ when: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(name).font(.caption.weight(.medium))
+                Spacer()
+                Text("\(Int((used * 100).rounded()))% · \(when)").font(.caption).foregroundStyle(.secondary)
+            }
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule().fill(Color.accentColor).frame(width: 170 * used)
+            }
+            .frame(height: 4)
         }
     }
 }
