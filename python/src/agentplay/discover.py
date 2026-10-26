@@ -15,6 +15,7 @@ OpenCode           ``~/.local/share/opencode/opencode.db``                decode
 Kiro               ``~/.kiro/sessions``                                   decoded
 Gemini CLI         ``~/.gemini/tmp/*/chats/session-*.jsonl``              file
 Antigravity CLI    ``~/.gemini/antigravity-cli/brain/*`` step logs        file
+Windsurf           ``~/.codeium/windsurf``                                file
 =================  =====================================================  ===========
 
 "Decoded" agents keep sessions in a database; :mod:`agentplay.materialize`
@@ -44,8 +45,18 @@ from ._util import captured
 
 logger = logging.getLogger("agentplay.discover")
 
-AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro", "gemini-cli",
-          "antigravity-cli")
+AGENTS = (
+    "claude-code",
+    "codex",
+    "cursor",
+    "copilot",
+    "copilot-vscode",
+    "opencode",
+    "kiro",
+    "gemini-cli",
+    "antigravity-cli",
+    "windsurf",
+)
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
 # applies anyway; this keeps one pathological file from stalling a run).
@@ -89,6 +100,7 @@ class Homes:
     kiro: list[Path]
     gemini_cli: list[Path]
     antigravity_cli: list[Path]
+    windsurf: list[Path]
 
     @classmethod
     def default(cls) -> Homes:
@@ -103,6 +115,7 @@ class Homes:
             kiro=_homes_from_env("AGENTPLAY_KIRO_HOMES", ["~/.kiro"]),
             gemini_cli=_homes_from_env("AGENTPLAY_GEMINI_HOMES", ["~/.gemini"]),
             antigravity_cli=_homes_from_env("AGENTPLAY_ANTIGRAVITY_HOMES", ["~/.gemini/antigravity-cli"]),
+            windsurf=_homes_from_env("AGENTPLAY_WINDSURF_HOMES", ["~/.codeium/windsurf"]),
         )
 
     def present(self) -> dict[str, list[Path]]:
@@ -118,6 +131,7 @@ class Homes:
             ("kiro", self.kiro),
             ("gemini-cli", self.gemini_cli),
             ("antigravity-cli", self.antigravity_cli),
+            ("windsurf", self.windsurf),
         ):
             found = [p for p in paths if p.is_dir()]
             if found:
@@ -199,6 +213,7 @@ def local_source(homes: Homes, agents: set[str]) -> Any:
         copilot_vscode_homes=pick("copilot-vscode", homes.copilot_vscode),
         gemini_homes=pick("gemini-cli", homes.gemini_cli),
         antigravity_homes=pick("antigravity-cli", homes.antigravity_cli),
+        windsurf_homes=pick("windsurf", homes.windsurf),
     )
 
 

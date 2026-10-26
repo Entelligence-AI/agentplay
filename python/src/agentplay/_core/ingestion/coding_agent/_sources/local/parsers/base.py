@@ -28,6 +28,7 @@ class AgentType(StrEnum):
     KIRO = "kiro"
     GEMINI_CLI = "gemini-cli"
     ANTIGRAVITY_CLI = "antigravity-cli"
+    WINDSURF = "windsurf"
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -47,7 +48,7 @@ def detect_agent(data: bytes) -> AgentType | None:
             continue
         try:
             obj = json.loads(raw_line)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
             # UnicodeDecodeError: a fixed-size byte head can split a
             # multi-byte UTF-8 char at the boundary (unicode
             # in transcripts). Skip the unparseable line, don't crash
@@ -61,6 +62,50 @@ def detect_agent(data: bytes) -> AgentType | None:
             continue
 
         line_type = obj.get("type", "")
+
+        # Windsurf / Cascade: session header or trajectory step record (supports snake_case and camelCase).
+        if line_type in (
+            "windsurf_session",
+            "windsurfSession",
+            "windsurf_trajectory",
+            "windsurfTrajectory",
+            "cascade_session",
+            "cascadeSession",
+        ):
+            return AgentType.WINDSURF
+        if "cascade_id" in obj or "cascadeId" in obj or "cascadeSession" in obj or "windsurfSession" in obj:
+            return AgentType.WINDSURF
+        if (
+            "step_id" in obj
+            or "stepId" in obj
+            or "step_type" in obj
+            or "stepType" in obj
+            or "cortex_step" in obj
+            or "cortexStep" in obj
+        ):
+            return AgentType.WINDSURF
+        if (
+            "user_input" in obj
+            or "userInput" in obj
+            or "user_message" in obj
+            or "userMessage" in obj
+            or "tool_calls" in obj
+            or "toolCalls" in obj
+            or "tool_name" in obj
+            or "toolName" in obj
+            or "tool_result" in obj
+            or "toolResult" in obj
+        ):
+            return AgentType.WINDSURF
+        # Role-based Windsurf record: top-level role + content/visible (distinct from Cursor's message.content or opencode's parts)
+        if (
+            obj.get("role") in ("user", "assistant")
+            and ("content" in obj or "visible" in obj)
+            and not isinstance(obj.get("message"), dict)
+            and "parts" not in obj
+            and "sessionId" not in obj
+        ):
+            return AgentType.WINDSURF
 
         # Cursor CLI/agent: synthesized header line, always first (see
         # agentplay.materialize.find_cursor_store_candidates).
@@ -166,6 +211,60 @@ def detect_agent(data: bytes) -> AgentType | None:
             and "content" in message
         ):
             return AgentType.CURSOR
+
+    # If line-by-line scanning did not match, check if data is a whole pretty-printed JSON document.
+    try:
+        text = data.decode("utf-8", errors="ignore").strip()
+        if text.startswith("{") and text.endswith("}"):
+            obj = json.loads(text)
+            if isinstance(obj, dict):
+                line_type = obj.get("type", "")
+                if line_type in (
+                    "windsurf_session",
+                    "windsurfSession",
+                    "windsurf_trajectory",
+                    "windsurfTrajectory",
+                    "cascade_session",
+                    "cascadeSession",
+                ):
+                    return AgentType.WINDSURF
+                if (
+                    "cascade_id" in obj
+                    or "cascadeId" in obj
+                    or "cascadeSession" in obj
+                    or "windsurfSession" in obj
+                    or "trajectorySteps" in obj
+                ):
+                    return AgentType.WINDSURF
+                if ("step_id" in obj or "stepId" in obj) and (
+                    "step_type" in obj
+                    or "stepType" in obj
+                    or "tool_calls" in obj
+                    or "toolCalls" in obj
+                    or "thinking" in obj
+                    or "user_input" in obj
+                    or "userInput" in obj
+                ):
+                    return AgentType.WINDSURF
+                steps = obj.get("steps") or obj.get("trajectorySteps")
+                if isinstance(steps, list) and steps:
+                    for s in steps:
+                        if isinstance(s, dict) and (
+                            "step_id" in s
+                            or "stepId" in s
+                            or "step_type" in s
+                            or "stepType" in s
+                            or "tool_calls" in s
+                            or "toolCalls" in s
+                            or "cortex_step" in s
+                            or "cortexStep" in s
+                            or ("role" in s and ("content" in s or "visible" in s))
+                            or "user_input" in s
+                            or "userInput" in s
+                        ):
+                            return AgentType.WINDSURF
+    except (json.JSONDecodeError, RecursionError):
+        pass
 
     return None
 

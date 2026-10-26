@@ -17,6 +17,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     gemini,
     kiro,
     opencode,
+    windsurf,
 )
 
 
@@ -30,6 +31,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
         (gemini, "gemini-cli"),
         (kiro, "kiro"),
         (opencode, "opencode"),
+        (windsurf, "windsurf"),
     ],
 )
 def test_every_parser_reads_the_shared_table(module, agent) -> None:
@@ -53,6 +55,9 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
         ("gemini-cli", "write_file", "Write"),
         ("kiro", "execute_bash", "Bash"),
         ("opencode", "todowrite", "TodoWrite"),
+        ("windsurf", "read_file", "Read"),
+        ("windsurf", "run_command", "Bash"),
+        ("windsurf", "edit", "Edit"),
     ],
 )
 def test_known_raw_names_resolve(agent, raw, canonical) -> None:
@@ -79,4 +84,5 @@ def test_table_sizes_are_pinned() -> None:
         "gemini-cli": 12,
         "kiro": 12,
         "opencode": 14,
+        "windsurf": 12,
     }
