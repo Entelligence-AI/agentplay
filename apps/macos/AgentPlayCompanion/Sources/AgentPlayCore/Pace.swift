@@ -42,13 +42,22 @@ public struct ProviderSummary: Identifiable, Equatable, Sendable {
     public var id: String { provider }
     public var label: String { AgentNames.label(provider) }
 
-    public var tightest: ProviderLimitWindow? {
-        windows.filter { $0.used.freshness != .stale }.max { ($0.used.value?.usedPercent ?? 0) < ($1.used.value?.usedPercent ?? 0) }
+    /// A reading older than this says nothing about now, whatever its producer called it; the provider card
+    /// greys it out at the same age. A window past its reset is spent history too.
+    public static let maxReadingAge: TimeInterval = 6 * 3600
+
+    static func isCurrent(_ w: ProviderLimitWindow, now: Date) -> Bool {
+        !w.used.isStale(now: now, maxAge: maxReadingAge) && (w.resetsAt.map { $0 > now } ?? true)
+    }
+
+    /// The most used window among current readings: what ranks this provider against the others.
+    public func tightest(now: Date) -> ProviderLimitWindow? {
+        windows.filter { Self.isCurrent($0, now: now) }.max { ($0.used.value?.usedPercent ?? 0) < ($1.used.value?.usedPercent ?? 0) }
     }
 
     public func window(_ name: String) -> ProviderLimitWindow? { windows.first { $0.window == name } }
 
-    public static func build(_ limits: [ProviderLimitWindow]) -> [ProviderSummary] {
+    public static func build(_ limits: [ProviderLimitWindow], now: Date = Date()) -> [ProviderSummary] {
         var order: [String] = []
         var groups: [String: [ProviderLimitWindow]] = [:]
         for l in limits {
@@ -63,10 +72,16 @@ public struct ProviderSummary: Identifiable, Equatable, Sendable {
                                    unavailable: real.isEmpty ? all.first : nil,
                                    conflictingPlans: all.compactMap(\.conflictingPlans).first)
         }
-        // Most constrained first; providers without numbers last.
+        // Most constrained first: current readings ahead of expired ones however high those were, and providers
+        // without numbers last.
+        func rank(_ p: ProviderSummary) -> (tier: Int, used: Double) {
+            if let t = p.tightest(now: now) { return (2, t.used.value?.usedPercent ?? 0) }
+            if let old = p.windows.map({ $0.used.value?.usedPercent ?? 0 }).max() { return (1, old) }
+            return (0, 0)
+        }
         return out.sorted { a, b in
-            let ua = a.tightest?.used.value?.usedPercent ?? -1, ub = b.tightest?.used.value?.usedPercent ?? -1
-            return ua > ub
+            let ra = rank(a), rb = rank(b)
+            return ra.tier != rb.tier ? ra.tier > rb.tier : ra.used > rb.used
         }
     }
 }

@@ -221,9 +221,11 @@ func fixture(_ name: String) throws -> Snapshot {
     @Test func childEnvironmentIsMinimal() {
         let env = childEnvironment(parent: ["HOME": "/Users/x", "AWS_SECRET_ACCESS_KEY": "s", "PYTHONPATH": "/evil",
                                             "AGENTPLAY_HOME": "/tmp/ap", "AGENTPLAY_NO_NETWORK": "0",
-                                            "AGENTPLAY_COMPANION_PYTHON": "/x"])
+                                            "AGENTPLAY_COMPANION_PYTHON": "/x", "XDG_DATA_HOME": "/data", "COPILOT_HOME": "/cp"])
         #expect(env["AWS_SECRET_ACCESS_KEY"] == nil && env["PYTHONPATH"] == nil)
         #expect(env["AGENTPLAY_HOME"] == "/tmp/ap")
+        // The two folder variables discovery reads come through; OpenCode lives under XDG_DATA_HOME.
+        #expect(env["XDG_DATA_HOME"] == "/data" && env["COPILOT_HOME"] == "/cp")
         #expect(env["AGENTPLAY_NO_NETWORK"] == "1" && env["DO_NOT_TRACK"] == "1")
         #expect(env["AGENTPLAY_COMPANION_PYTHON"] == nil)
     }
@@ -232,6 +234,24 @@ func fixture(_ name: String) throws -> Snapshot {
         for mode in [SnapshotService.Mode.read, .refresh, .fullScan] {
             #expect(SnapshotService.arguments(for: mode).first == "-I")
         }
+    }
+
+    @Test func bridgeOwnsOnlyTheExactCommandItInstalled() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent(".claude"), withIntermediateDirectories: true)
+        let b = ClaudeBridge(claudeSettings: dir.appendingPathComponent(".claude/settings.json"),
+                             agentplayHome: dir.appendingPathComponent(".agentplay"))
+        try b.install(script: "#!/bin/sh\n")
+        #expect(b.state() == .on)
+        // The user edited the command after install: it still names our script, but it is theirs now.
+        var s = try JSONSerialization.jsonObject(with: Data(contentsOf: b.claudeSettings)) as! [String: Any]
+        let edited = "/bin/sh '\(b.scriptURL.path)' | tee /tmp/line.log"
+        s["statusLine"] = ["type": "command", "command": edited]
+        try JSONSerialization.data(withJSONObject: s).write(to: b.claudeSettings)
+        #expect(b.state() == .otherStatusLine(edited))
+        #expect(throws: ClaudeBridge.BridgeError.notOurs) { try b.uninstall() }
+        let after = try JSONSerialization.jsonObject(with: Data(contentsOf: b.claudeSettings)) as! [String: Any]
+        #expect((after["statusLine"] as? [String: Any])?["command"] as? String == edited)
     }
 }
 

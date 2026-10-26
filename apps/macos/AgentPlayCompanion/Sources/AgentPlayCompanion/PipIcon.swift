@@ -31,8 +31,8 @@ enum PipIcon {
             let outline = NSBezierPath(roundedRect: body, xRadius: 2.5, yRadius: 2.5)
             outline.append(NSBezierPath(roundedRect: body.insetBy(dx: 1, dy: 1), xRadius: 1.5, yRadius: 1.5).reversed)
             ink.setFill(); outline.fill()
-            // The fill is the 5-hour session.
-            let level = pose == .limit ? 1 : min(1, max(0, session ?? 0))
+            // The fill is the 5-hour session, whatever the pose: a spent week shows as the hourglass, not a full jar.
+            let level = min(1, max(0, session ?? 0))
             if level > 0 { NSBezierPath(roundedRect: px(10, 8, 20, 18 * level), xRadius: 0.5, yRadius: 0.5).fill() }
             // Eyes.
             let ctx = NSGraphicsContext.current

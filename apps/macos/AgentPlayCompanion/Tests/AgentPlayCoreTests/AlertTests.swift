@@ -186,6 +186,20 @@ func failure(_ sig: String, pattern: String = "aaaaaaaaaaaaaaaa", session: Strin
         #expect(run(s, settings([.unresolvedEnd]), h, at: now.addingTimeInterval(7200 - 61)).0.isEmpty)
     }
 
+    @Test func groupHeldByTheBudgetIsNotMarkedDelivered() throws {
+        var s = try liveSnapshot(now: now)
+        s.alerts = [failure("1111111111111111", pattern: "p1", session: "a", at: now.addingTimeInterval(-60), rule: .unresolvedEnd),
+                    failure("2222222222222222", pattern: "p1", session: "b", at: now.addingTimeInterval(-50), rule: .unresolvedEnd)]
+        var st = settings([.unresolvedEnd]); st.maxPerHour = 1
+        var h = AlertHistory(watermark: start); h.recent = [now.addingTimeInterval(-60)]
+        let (out, h2) = run(s, st, h)
+        #expect(out.isEmpty && h2.delivered.isEmpty)
+        // An hour on, the budget is back and the whole group goes out.
+        let (later, h3) = run(s, st, h2, at: now.addingTimeInterval(3600))
+        #expect(later.count == 1 && later[0].note.body.hasPrefix("2 runs"))
+        #expect(h3.delivered["1111111111111111"] != nil && h3.delivered["2222222222222222"] != nil)
+    }
+
     @Test func purgeKeepsWatermarkMovingForward() {
         var h = AlertHistory(watermark: start)
         h.delivered["x"] = now
@@ -207,10 +221,27 @@ func failure(_ sig: String, pattern: String = "aaaaaaaaaaaaaaaa", session: Strin
 
     @Test func customFoldersUseTheCoreVariables() {
         var p = CompanionPrefs()
-        p.customFolders = ["claude-code": ["/Volumes/work/.claude"], "opencode": ["/x/oc"]]
-        let env = p.folderEnvironment
+        p.customFolders = ["claude-code": ["/Volumes/work/.claude"], "opencode": ["/x/oc"], "gemini-cli": ["/x/gem"],
+                           "copilot-vscode": ["/x/vsc"], "cursor": []]
+        let env = p.folderEnvironment(parent: [:])
         #expect(env["AGENTPLAY_CLAUDE_HOMES"] == "~/.claude,/Volumes/work/.claude")
-        #expect(env["AGENTPLAY_OPENCODE_HOMES"] == "/x/oc")
+        // The core's own default stays in front of the added folder, for every agent Settings offers.
+        #expect(env["AGENTPLAY_OPENCODE_HOMES"] == "~/.local/share/opencode,/x/oc")
+        #expect(env["AGENTPLAY_GEMINI_HOMES"] == "~/.gemini,/x/gem")
+        #expect(env["AGENTPLAY_COPILOT_VSCODE_HOMES"]?.hasSuffix("VSCodium/User,/x/vsc") == true)
+        #expect(env["AGENTPLAY_CURSOR_HOMES"] == nil)
+        #expect(Set(CompanionPrefs.homesVariable.keys).isSuperset(of: ["gemini-cli", "antigravity-cli", "copilot-vscode", "opencode"]))
+    }
+
+    @Test func customFoldersKeepWhatTheUserAlreadySet() {
+        var p = CompanionPrefs()
+        p.customFolders = ["codex": ["/x/codex"], "copilot": ["/x/cp"], "opencode": ["/x/oc"]]
+        let env = p.folderEnvironment(parent: ["AGENTPLAY_CODEX_HOMES": "/mnt/c/.codex, /other/.codex",
+                                               "COPILOT_HOME": "/srv/copilot", "XDG_DATA_HOME": "/data"])
+        // An override the user exported replaces the defaults, as in the core, and the added folder joins it.
+        #expect(env["AGENTPLAY_CODEX_HOMES"] == "/mnt/c/.codex,/other/.codex,/x/codex")
+        #expect(env["AGENTPLAY_COPILOT_HOMES"] == "/srv/copilot,/x/cp")
+        #expect(env["AGENTPLAY_OPENCODE_HOMES"] == "/data/opencode,/x/oc")
     }
 
     @Test func learnDismissalExpires() {

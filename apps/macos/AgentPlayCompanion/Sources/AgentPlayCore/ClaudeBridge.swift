@@ -53,10 +53,12 @@ public struct ClaudeBridge: Sendable {
         }
     }
 
+    /// Ours only when the command is exactly the one `install` writes: a command that merely mentions the script
+    /// (edited after install, or wrapped by another tool) belongs to the user, and removal must leave it alone.
     public func state() -> State {
         guard let s = try? readSettings(), let line = s["statusLine"] as? [String: Any],
               let cmd = line["command"] as? String else { return .off }
-        return cmd.contains(scriptURL.path) ? .on : .otherStatusLine(cmd)
+        return cmd == ourStatusLine["command"] as? String ? .on : .otherStatusLine(cmd)
     }
 
     /// The exact change, for the confirmation sheet: `(before, after)` of the `statusLine` entry.

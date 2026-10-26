@@ -34,20 +34,50 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
     }
 
     /// The variables `discover.Homes.default()` reads (python/src/agentplay/discover.py), comma-separated.
+    /// Every agent the core knows is here, so a folder added for any source in Settings reaches it.
     public static let homesVariable: [String: String] = [
         "claude-code": "AGENTPLAY_CLAUDE_HOMES", "codex": "AGENTPLAY_CODEX_HOMES", "cursor": "AGENTPLAY_CURSOR_HOMES",
         "copilot": "AGENTPLAY_COPILOT_HOMES", "copilot-vscode": "AGENTPLAY_COPILOT_VSCODE_HOMES",
         "opencode": "AGENTPLAY_OPENCODE_HOMES", "kiro": "AGENTPLAY_KIRO_HOMES",
+        "gemini-cli": "AGENTPLAY_GEMINI_HOMES", "antigravity-cli": "AGENTPLAY_ANTIGRAVITY_HOMES",
     ]
 
-    /// `AGENTPLAY_CLAUDE_HOMES` etc. for the core: the default home plus anything the user added.
-    public var folderEnvironment: [String: String] {
+    /// Where the core looks when nothing overrides it, as `Homes.default()` works it out on a Mac. The core
+    /// expands `~` itself; `COPILOT_HOME` and `XDG_DATA_HOME` are the two other variables it consults.
+    static func defaultHomes(_ agent: String, parent: [String: String]) -> [String] {
+        switch agent {
+        case "claude-code": return ["~/.claude"]
+        case "codex": return ["~/.codex"]
+        case "cursor": return ["~/.cursor"]
+        case "copilot":
+            let home = parent["COPILOT_HOME"]?.trimmingCharacters(in: .whitespaces) ?? ""
+            return [home.isEmpty ? "~/.copilot" : home]
+        case "copilot-vscode":
+            return ["Code", "Code - Insiders", "VSCodium"].map { "~/Library/Application Support/\($0)/User" }
+        case "opencode":
+            let xdg = parent["XDG_DATA_HOME"] ?? ""
+            return [(xdg.isEmpty ? "~/.local/share" : xdg) + "/opencode"]
+        case "kiro": return ["~/.kiro"]
+        case "gemini-cli": return ["~/.gemini"]
+        case "antigravity-cli": return ["~/.gemini/antigravity-cli"]
+        default: return []
+        }
+    }
+
+    /// `AGENTPLAY_CLAUDE_HOMES` etc. for the core: what it would scan anyway, plus anything the user added.
+    public var folderEnvironment: [String: String] { folderEnvironment(parent: ProcessInfo.processInfo.environment) }
+
+    /// The homes the core already has (an `AGENTPLAY_<AGENT>_HOMES` the user set, else its defaults) come first,
+    /// so adding a folder never takes one away. Only agents with an added folder get a variable; the rest keep
+    /// whatever the parent environment passes through.
+    public func folderEnvironment(parent: [String: String]) -> [String: String] {
         var env: [String: String] = [:]
-        let defaults: [String: String] = ["claude-code": "~/.claude", "codex": "~/.codex", "cursor": "~/.cursor",
-                                          "copilot": "~/.copilot", "kiro": "~/.kiro"]
         for (agent, paths) in customFolders where !paths.isEmpty {
             guard let key = Self.homesVariable[agent] else { continue }
-            let all = (defaults[agent].map { [$0] } ?? []) + paths
+            let inherited = (parent[key] ?? "").split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            var all = inherited.isEmpty ? Self.defaultHomes(agent, parent: parent) : inherited
+            for p in paths where !all.contains(p) { all.append(p) }
             env[key] = all.joined(separator: ",")
         }
         return env

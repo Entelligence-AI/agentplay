@@ -183,9 +183,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         // important rows until it fits.
         let bottom = ((w.screen ?? NSScreen.main)?.visibleFrame.minY ?? 0) + 8
         let room = top - bottom
-        for trim in 0...MenuBuilder.maxTrim {
-            rebuild(now: nowOverride ?? Date(), trim: trim)
+        // Keep trimming while a step still changes the menu: past MenuBuilder.maxTrim each step drops one
+        // waiting row, so the count of steps depends on the data, not a constant.
+        let now = nowOverride ?? Date()
+        var previous: [MenuEntry]?
+        for trim in 0...64 {
+            let entries = model.menuEntries(now: now, trim: trim)
+            if entries == previous { break }  // nothing left to drop
+            rebuild(entries, now: now)
             if menu.size.height <= room { break }
+            previous = entries
         }
         b.highlight(true)
         menu.popUp(positioning: nil, at: NSPoint(x: r.minX, y: top), in: nil)
@@ -207,8 +214,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     // MARK: building
 
     func rebuild(now: Date, trim: Int = 0) {
+        rebuild(model.menuEntries(now: now, trim: trim), now: now)
+    }
+
+    func rebuild(_ entries: [MenuEntry], now: Date) {
         menu.removeAllItems()
-        for e in model.menuEntries(now: now, trim: trim) { add(e, to: menu, now: now) }
+        for e in entries { add(e, to: menu, now: now) }
         // The commands live on right-click; their shortcuts keep working here through hidden items.
         for a in [MenuAction.openViewer, .refresh, .settings, .quit] {
             let i = item(a.title, key: a.key) { [weak self] in self?.perform(a) }

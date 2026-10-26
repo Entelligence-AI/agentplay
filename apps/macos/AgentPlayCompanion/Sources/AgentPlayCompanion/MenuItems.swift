@@ -77,7 +77,9 @@ struct ErrorLine: Equatable, Identifiable {
 }
 
 enum MenuBuilder {
-    /// How far `trim` goes: each step drops a row of the least important sections so the menu fits a short screen.
+    /// Each `trim` step drops a row of the least important sections so the menu fits a short screen. Past this
+    /// many, the only rows left to drop are the waiting sessions, one per step; StatusMenu keeps going until the
+    /// menu fits or another step changes nothing.
     static let maxTrim = 4
 
     static func entries(snapshot s: Snapshot?, phase: Phase, prefs: CompanionPrefs, lastError: SnapshotError?,
@@ -107,14 +109,17 @@ enum MenuBuilder {
         let lines = sessionLines(s, now: now)
         let waiting = lines.filter { $0.dot == .waiting }
         if !waiting.isEmpty {
-            out.append(.header("Needs You"))
-            out += waiting.map(MenuEntry.session)
+            // These rows go last: only once everything else is as short as it gets, and never below one. The
+            // header carries the count when some are hidden; Pip's own line names them too.
+            let keep = max(1, waiting.count - max(0, trim - maxTrim))
+            out.append(.header(keep < waiting.count ? "Needs You · \(waiting.count)" : "Needs You"))
+            out += waiting.prefix(keep).map(MenuEntry.session)
             out.append(.separator)
         }
 
         // 2. Plan limits, most constrained provider first; only agents this Mac uses.
         // Claude always (its card carries the account and the switcher); others only with numbers to show.
-        let providers = ProviderSummary.build(s.limits).filter { p in
+        let providers = ProviderSummary.build(s.limits, now: now).filter { p in
             !p.windows.isEmpty || (p.provider == "claude-code" && s.sources.contains { $0.agent == p.provider && $0.status == .found })
         }
         for p in providers {
@@ -150,13 +155,16 @@ enum MenuBuilder {
         let errs = errorLines(s, prefs: prefs, now: now)
         let ins = s.insights.flatMap { $0.score == nil ? nil : $0 }
         let sig = s.usage?.signals.flatMap { $0.current.messages >= 20 ? $0 : nil }
-        if ins != nil || !errs.isEmpty || sig != nil {
+        var insights: [MenuEntry] = []
+        if let sig { insights.append(.signals(sig)) }
+        if let ins { insights.append(.health(ins)) }
+        if let ins { insights += ins.fixes.prefix(max(1, 2 - trim)).map(MenuEntry.fix) }
+        if !errs.isEmpty, trim < 2 { insights.append(.errors(Array(errs.prefix(1)))) }
+        // The section exists only for the rows the trim left it; never a header over nothing.
+        if !insights.isEmpty {
             out.append(.separator)
             out.append(.header("Insights · Last \(s.insights?.days ?? 30) Days"))
-            if let sig { out.append(.signals(sig)) }
-            if let ins { out.append(.health(ins)) }
-            if let ins { out += ins.fixes.prefix(max(1, 2 - trim)).map(MenuEntry.fix) }
-            if !errs.isEmpty, trim < 2 { out.append(.errors(Array(errs.prefix(1)))) }
+            out += insights
         }
 
         // 5. Estimated usage: two lines here, the rest one level down.

@@ -21,8 +21,9 @@ public struct Runtime: Sendable, Equatable {
     }
 }
 
-/// The environment the core runs with: no network, no tracking, a plain PATH (for `lsof`), and only the
-/// AgentPlay variables the user set. Nothing else from the parent leaks in.
+/// The environment the core runs with: no network, no tracking, a plain PATH (for `lsof`), the AgentPlay
+/// variables the user set, and the two folder variables discovery reads (`COPILOT_HOME`, `XDG_DATA_HOME`).
+/// Nothing else from the parent leaks in.
 public func childEnvironment(parent: [String: String], extra: [String: String] = [:]) -> [String: String] {
     var env: [String: String] = [
         "HOME": parent["HOME"] ?? NSHomeDirectory(),
@@ -36,6 +37,7 @@ public func childEnvironment(parent: [String: String], extra: [String: String] =
     ]
     for (k, v) in parent where k.hasPrefix("AGENTPLAY_") && k != "AGENTPLAY_COMPANION_PYTHON" { env[k] = v }
     if let v = parent["COPILOT_HOME"] { env["COPILOT_HOME"] = v }
+    if let v = parent["XDG_DATA_HOME"] { env["XDG_DATA_HOME"] = v }  // OpenCode keeps its database under it
     for (k, v) in extra { env[k] = v }
     env["AGENTPLAY_NO_NETWORK"] = "1"
     env["DO_NOT_TRACK"] = "1"

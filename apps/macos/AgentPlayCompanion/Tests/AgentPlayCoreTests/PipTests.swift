@@ -10,12 +10,37 @@ import Testing
                     startedAt: nil, statusSince: now, inStore: true)
     }
 
-    func window(_ name: String, used: Double, minutes: Int, resetsIn: TimeInterval) -> ProviderLimitWindow {
-        ProviderLimitWindow(provider: "claude-code", window: name, windowMinutes: minutes, plan: nil, limitId: nil,
+    func window(_ name: String, used: Double, minutes: Int, resetsIn: TimeInterval, provider: String = "claude-code",
+                observedAgo: TimeInterval = 0) -> ProviderLimitWindow {
+        ProviderLimitWindow(provider: provider, window: name, windowMinutes: minutes, plan: nil, limitId: nil,
                             resetsAt: now.addingTimeInterval(resetsIn), usageUrl: nil,
                             used: DataPoint(value: LimitValue(usedPercent: used, leftPercent: 100 - used),
-                                            kind: .providerReported, source: .officialProviderAPI, observedAt: now,
+                                            kind: .providerReported, source: .officialProviderAPI,
+                                            observedAt: now.addingTimeInterval(-observedAgo),
                                             window: .fiveHour, explanation: "", freshness: .fresh))
+    }
+
+    @Test func limitTitleNamesTheWindowThePoseIsAbout() {
+        // A session window spent an hour ago has reset since; the week is what is actually out.
+        let lim = [window("five_hour", used: 100, minutes: 300, resetsIn: -60),
+                   window("weekly", used: 100, minutes: 10080, resetsIn: 86400)]
+        #expect(Pip.pose(live: [], limits: lim, recent: nil, now: now) == .limit)
+        #expect(Pip.sentence(.limit, live: [], limits: lim, recent: nil, now: now).title.hasPrefix("Out of weekly usage until "))
+        // Only the reset session: nothing is spent any more.
+        #expect(Pip.pose(live: [], limits: [lim[0]], recent: nil, now: now) == .sleep)
+    }
+
+    @Test func oldReadingsDoNotOutrankCurrentOnes() {
+        // Codex reported 95% two days ago and nothing since; Claude is at 40% right now.
+        let lim = [window("weekly", used: 95, minutes: 10080, resetsIn: 3 * 86400, provider: "codex", observedAgo: 2 * 86400),
+                   window("five_hour", used: 40, minutes: 300, resetsIn: 3600)]
+        let ranked = ProviderSummary.build(lim, now: now)
+        #expect(ranked.map(\.provider) == ["claude-code", "codex"])
+        #expect(ranked[1].tightest(now: now) == nil)
+        #expect(Pip.levels(lim, now: now).session == 0.4)
+        // Seen two days ago, when both readings were current, Codex led.
+        let then = now.addingTimeInterval(-2 * 86400)
+        #expect(ProviderSummary.build(lim, now: then).first?.provider == "codex")
     }
 
     @Test func poseFollowsWhatMattersMost() {

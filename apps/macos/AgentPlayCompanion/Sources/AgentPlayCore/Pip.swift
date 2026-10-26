@@ -43,18 +43,26 @@ public enum Pip {
     /// a fresh event shows its own pose for a moment.
     public static func pose(live: [LiveSession], limits: [ProviderLimitWindow], recent: PipEvent?, now: Date) -> PipPose {
         if live.contains(where: { $0.status == .waiting }) { return .wave }
-        let fresh = limits.filter { $0.used.isAvailable && $0.used.freshness != .stale && ($0.resetsAt.map { $0 > now } ?? true) }
-        if fresh.contains(where: { ($0.used.value?.usedPercent ?? 0) >= 100 }) { return .limit }
+        if spentWindow(limits, now: now) != nil { return .limit }
         if let recent { return recent.pose }
-        if hotWindow(fresh, now: now) != nil { return .sweat }
+        if hotWindow(limits, now: now) != nil { return .sweat }
         if live.contains(where: { $0.status == .busy }) { return .work }
         return .sleep
+    }
+
+    /// The first window with nothing left that still counts: a reading its producer calls current, with its
+    /// reset ahead. The pose and the sentence both use this, so the title names the window the pose is about.
+    public static func spentWindow(_ limits: [ProviderLimitWindow], now: Date) -> ProviderLimitWindow? {
+        limits.first {
+            $0.used.isAvailable && $0.used.freshness != .stale && ($0.resetsAt.map { $0 > now } ?? true)
+                && ($0.used.value?.usedPercent ?? 0) >= 100
+        }
     }
 
     /// What Pip says at the top of the menu: one line about now, one with the numbers.
     public static func sentence(_ pose: PipPose, live: [LiveSession], limits: [ProviderLimitWindow],
                                 recent: PipEvent?, now: Date) -> (title: String, detail: String?) {
-        let lv = levels(limits)
+        let lv = levels(limits, now: now)
         var nums: [String] = []
         if let s = lv.session { nums.append("Session \(Format.percent(s * 100))") }
         if let w = lv.weekly { nums.append("week \(Format.percent(w * 100))") }
@@ -66,7 +74,7 @@ public enum Pip {
             let names = waiting.compactMap(\.project).prefix(2).joined(separator: ", ")
             return ("\(waiting.count) waiting on you" + (names.isEmpty ? "" : ": \(names)"), detail)
         case .limit:
-            let spent = limits.first { ($0.used.value?.usedPercent ?? 0) >= 100 }
+            let spent = spentWindow(limits, now: now)
             return ("Out of \(spent.map { $0.window == "five_hour" ? "session" : "weekly" } ?? "plan") usage"
                     + (spent?.resetsAt.map { " until \(Format.clock($0))" } ?? ""), detail)
         case .oops:
@@ -178,8 +186,8 @@ public enum Pip {
     }
 
     /// The fill and the ground: the most constrained provider's session and weekly fractions.
-    public static func levels(_ limits: [ProviderLimitWindow]) -> (session: Double?, weekly: Double?) {
-        guard let p = ProviderSummary.build(limits).first(where: { !$0.windows.isEmpty }) else { return (nil, nil) }
+    public static func levels(_ limits: [ProviderLimitWindow], now: Date = Date()) -> (session: Double?, weekly: Double?) {
+        guard let p = ProviderSummary.build(limits, now: now).first(where: { !$0.windows.isEmpty }) else { return (nil, nil) }
         return (p.window("five_hour")?.used.value.map { $0.usedPercent / 100 },
                 p.window("weekly")?.used.value.map { $0.usedPercent / 100 })
     }
