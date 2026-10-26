@@ -18,7 +18,7 @@ Redaction contract (raw transcripts never leave the machine):
 * ``path_mode`` = ``dirs_only`` drops file names, ``hashed`` HMACs every segment.
 
 Claude Code is read directly from its JSONL (main transcript plus
-``<session>/subagents/agent-*.jsonl``) because the shared span parser does not
+``<session>/subagents/**/agent-*.jsonl``) because the shared span parser does not
 emit subagent tool calls and only keeps per-turn token totals. Every other agent
 goes through the shared ``LocalSource`` spans (``build_map_from_spans``).
 """
@@ -1658,9 +1658,6 @@ class MapBuilder:
     def add(self, ev: dict[str, Any], ts: float | None) -> dict[str, Any]:
         ev["_ts"] = ts
         ev.setdefault("err", False)
-        if len(self.events) >= MAX_EVENTS:
-            self.truncated = True
-            return ev
         self.events.append(ev)
         return ev
 
@@ -1962,22 +1959,18 @@ class MapBuilder:
             e for e in self.events if e.get("_ts") is None
         ]
         evs.sort(key=lambda e: e["_ts"] if e["_ts"] is not None else float("inf"))
-        derived = self._derive(evs)
-        room = max(MAX_EVENTS - len(evs), 0)  # raw events are already capped in add()
-        if len(derived) > room:
-            derived = derived[:room]
-            self.truncated = True
-        evs.extend(derived)
+        evs.extend(self._derive(evs))
         evs.sort(key=lambda e: e["_ts"] if e["_ts"] is not None else float("inf"))
         switches = self._assign_models(evs)
-        room = max(MAX_EVENTS - len(evs), 0)
-        if len(switches) > room:
-            switches = switches[:room]
-            self.truncated = True
         if switches:
             evs.extend(switches)
             evs.sort(key=lambda e: e["_ts"] if e["_ts"] is not None else float("inf"))
+        all_evs = evs
+        if len(evs) > MAX_EVENTS:
+            evs = evs[:MAX_EVENTS]
+            self.truncated = True
         t0 = next((e["_ts"] for e in evs if e["_ts"] is not None), None)
+        t_end = next((e["_ts"] for e in reversed(all_evs) if e["_ts"] is not None), None)
         last_t = 0
         for i, e in enumerate(evs):
             for private in ("_intents", "_cwd", "_prIntent"):
@@ -2001,9 +1994,9 @@ class MapBuilder:
                 e["ref"] = ref["seq"]
         self._mark_retries(evs)
         tasks = self._assign_tasks(evs, t0)
-        # A PR-creating call past MAX_EVENTS never got a home (add() drops it without a
-        # seq once truncated) — the PR still happened, but there's no event to link it
-        # to, so it's dropped from the list rather than crashing the whole build.
+        # A PR-creating call past the MAX_EVENTS cut has no seq — the PR still happened,
+        # but there's no event to link it to, so it's dropped from the list rather than
+        # crashing the whole build.
         kept: list[dict[str, Any]] = []
         for pr in self.prs_created:
             ev_ref = pr.pop("_ev")
@@ -2027,7 +2020,7 @@ class MapBuilder:
                 outcome=classify_outcome(mine, self.last_agent_text.get(a["id"], "")),
             )
         agents = [a for a in self.agents if "start" in a]
-        llm = [e for e in evs if e["kind"] == "llm"]
+        llm = [e for e in all_evs if e["kind"] == "llm"]
         prs = [dict(pr) for pr in self.prs_created]
         created_numbers = [pr["number"] for pr in prs]
         for pr in prs:
@@ -2041,11 +2034,11 @@ class MapBuilder:
                 elif created_numbers.count(pr["number"]) != 1:
                     continue  # a repo-less outcome is only attributable when unambiguous
                 pr["state"] = "merged" if e["kind"] == "pr_merge" else "closed"
-        users = [e for e in evs if e["kind"] == "user" and e["agent"] == "main"]
+        users = [e for e in all_evs if e["kind"] == "user" and e["agent"] == "main"]
 
         def _n(kind: str, **match: Any) -> int:
             return sum(
-                1 for e in evs if e["kind"] == kind and all(e.get(k) == v for k, v in match.items())
+                1 for e in all_evs if e["kind"] == kind and all(e.get(k) == v for k, v in match.items())
             )
 
         doc = {
@@ -2053,25 +2046,25 @@ class MapBuilder:
             "session": {
                 **session,
                 "startedAt": _iso(t0) if t0 else session.get("startedAt"),
-                "durationMs": evs[-1]["t"] if evs else 0,
+                "durationMs": int((t_end - t0) * 1000) if t0 is not None and t_end is not None else 0,
                 "models": sorted({e["model"] for e in llm if e.get("model")}),
                 "pathMode": self.path_mode,
                 "truncated": self.truncated,
                 "outcome": classify_outcome(evs, self.last_agent_text.get("main", "")),
             },
             "totals": {
-                "calls": sum(1 for e in evs if e["kind"] not in _NON_CALL_KINDS),
+                "calls": sum(1 for e in all_evs if e["kind"] not in _NON_CALL_KINDS),
                 "requests": len(llm),
-                "userTurns": sum(1 for e in evs if e["kind"] == "user"),
+                "userTurns": sum(1 for e in all_evs if e["kind"] == "user"),
                 "subagents": len(agents) - 1 if agents else 0,
-                "errors": sum(1 for e in evs if e.get("err")),
+                "errors": sum(1 for e in all_evs if e.get("err")),
                 "tokens": sum(e["in"] + e["cw"] + e["cr"] + e["out"] for e in llm),
                 "costUsd": round(sum(e.get("cost", 0.0) for e in llm), 4),
                 "filesTouched": len(self.files),
                 "prsCreated": len(prs),
                 "filesCreated": sum(1 for f in self.files.values() if f.get("op") == "create"),
                 "filesDeleted": sum(1 for f in self.files.values() if f.get("op") == "delete"),
-                **_signal_totals(evs),
+                **_signal_totals(all_evs),
                 "tasks": len(tasks),
                 "commits": _n("commit"),
                 "prsMerged": _n("pr_merge"),
@@ -2573,43 +2566,43 @@ def build_claude_code_map(
     tasks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a map for one Claude Code session file (plus its subagent transcripts)."""
+    from agentplay._core.ingestion.coding_agent._sources.local.source import claude_code_subagent_files
+
     transcript = Path(transcript)
     b = MapBuilder(path_mode=path_mode, hmac_key=hmac_key, resolver=resolver)
     b.task_specs = tasks
     links: dict[str, str] = {}
     _read_claude_transcript(b, transcript, "main", links)
-    sub_dir = transcript.with_suffix("") / "subagents"
-    if sub_dir.is_dir():
-        for f in sorted(sub_dir.glob("agent-*.jsonl")):
-            raw_id = f.stem[len("agent-") :]
-            if raw_id.startswith("acompact-"):
-                # Auto-compaction snapshots re-record parent API messages, not an agent's
-                # work: a subagent would be fake and its llm events would double-count them.
-                # The compaction call itself stays billed on the parent.
-                continue
-            aid = links.get(raw_id) or ("sa-" + raw_id[:12])
-            sub_type, model = "general", ""
-            meta = f.with_suffix(".meta.json")
-            if meta.exists():
-                try:
-                    m = json.loads(meta.read_text(encoding="utf-8"))
-                    sub_type = str(m.get("agentType") or m.get("subagent_type") or sub_type)[:40]
-                    model = str(m.get("model") or "")[:60]
-                except (ValueError, OSError):
-                    pass
-            launch = next((e for e in b.events if e.get("child") == aid), None)
-            if launch is not None:
-                sub_type = launch.get("subagentType", sub_type)
-            b.agents.append(
-                {
-                    "id": aid,
-                    "parent": "main",
-                    "kind": "subagent",
-                    "subagentType": sub_type,
-                    **({"model": model} if model else {}),
-                }
-            )
-            _read_claude_transcript(b, f, aid, {})
+    for f in claude_code_subagent_files(transcript):
+        raw_id = f.stem[len("agent-") :]
+        if raw_id.startswith("acompact-"):
+            # Auto-compaction snapshots re-record parent API messages, not an agent's
+            # work: a subagent would be fake and its llm events would double-count them.
+            # The compaction call itself stays billed on the parent.
+            continue
+        aid = links.get(raw_id) or ("sa-" + raw_id[:12])
+        sub_type, model = "general", ""
+        meta = f.with_suffix(".meta.json")
+        if meta.exists():
+            try:
+                m = json.loads(meta.read_text(encoding="utf-8"))
+                sub_type = str(m.get("agentType") or m.get("subagent_type") or sub_type)[:40]
+                model = str(m.get("model") or "")[:60]
+            except (ValueError, OSError):
+                pass
+        launch = next((e for e in b.events if e.get("child") == aid), None)
+        if launch is not None:
+            sub_type = launch.get("subagentType", sub_type)
+        b.agents.append(
+            {
+                "id": aid,
+                "parent": "main",
+                "kind": "subagent",
+                "subagentType": sub_type,
+                **({"model": model} if model else {}),
+            }
+        )
+        _read_claude_transcript(b, f, aid, {})
     doc = b.finish(
         session={
             "id": f"local:claude-code:{transcript.stem}",

@@ -1245,14 +1245,20 @@ def _has_cursor_store_header(head: bytes) -> bool:
     return False
 
 
-def _claude_code_subagent_files(transcript: Path) -> list[Path]:
-    """List child transcripts; missing directory is normal, read errors are not."""
-    directory = transcript.with_suffix("") / "subagents"
-    try:
-        with os.scandir(directory) as entries:
-            return sorted(Path(e.path) for e in entries if Path(e.name).match("agent-*.jsonl"))
-    except FileNotFoundError:
-        return []
+def claude_code_subagent_files(transcript: Path, *, strict: bool = True) -> list[Path]:
+    """Subagent transcripts under ``<session>/subagents/**``. ``strict`` raises on an
+    unreadable folder; otherwise that folder is skipped and its readable siblings kept."""
+
+    def _raise_unless_missing(err: OSError) -> None:
+        if strict and not isinstance(err, FileNotFoundError):
+            raise err
+
+    return sorted(
+        Path(root, name)
+        for root, _dirs, names in os.walk(transcript.with_suffix("") / "subagents", onerror=_raise_unless_missing)
+        for name in names
+        if Path(name).match("agent-*.jsonl")
+    )
 
 
 def _with_claude_code_subagents(
@@ -1268,7 +1274,7 @@ def _with_claude_code_subagents(
         {
             child
             for parent in (transcript, *related_parents)
-            for child in _claude_code_subagent_files(parent)
+            for child in claude_code_subagent_files(parent)
         }
     )
     parts = [data]
@@ -1721,7 +1727,11 @@ class LocalSource:
         # be newer than the parent (parent killed mid-subagent, so no
         # tool_result line ever advanced it) -- the session's activity clock
         # is the newest write across the whole family.
-        for sub in _claude_code_subagent_files(jsonl_file):
+        try:
+            subs = claude_code_subagent_files(jsonl_file)
+        except OSError:
+            subs = []  # the build reports the unreadable folder against this session alone
+        for sub in subs:
             try:
                 mtime = max(mtime, datetime.fromtimestamp(sub.stat().st_mtime, tz=UTC))
             except OSError:

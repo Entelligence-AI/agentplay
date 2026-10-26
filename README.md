@@ -133,7 +133,7 @@ Every view is a URL, so a link to a moment in a session reopens it for anyone wh
 
 | Agent | Reads from (defaults) | Subagent lanes | Tokens | Notes |
 |---|---|---|---|---|
-| **Claude Code** | `~/.claude/projects/**/*.jsonl` and `…/subagents/agent-*.jsonl` | yes | per request | Highest fidelity: read straight from the JSONL, including hooks, compactions, stop reasons and latency |
+| **Claude Code** | `~/.claude/projects/**/*.jsonl` and `…/subagents/**/agent-*.jsonl` | yes | per request | Highest fidelity: read straight from the JSONL, including hooks, compactions, stop reasons and latency |
 | **Codex** (CLI, IDE) | `~/.codex/sessions/**/*.jsonl` | main lane only | per turn | |
 | **Cursor** (agent CLI and IDE composer) | `~/.cursor` agent transcripts, `~/.cursor/chats/*/*/store.db`, IDE `state.vscdb` | main lane only | not recorded, see limitations | SQLite stores are copied and decoded locally, read-only |
 | **GitHub Copilot CLI** | `~/.copilot/session-state/**` | main lane only | per turn | |
@@ -194,8 +194,8 @@ agentplay agents      show which agents were found on this machine
 
 | Flag | On | Meaning |
 |---|---|---|
-| `--since 30d` | build, view | only sessions changed in the window (`12h`, `2w`, `2026-09-01`) |
-| `--agents claude-code,codex` | build, view | limit to these agents |
+| `--since 30d` | build, view, list | only sessions changed in the window (`12h`, `2w`, `2026-09-01`); list uses the stored transcript modification time, or the start time when that time is unavailable |
+| `--agents claude-code,codex` | build, view, list | limit to these agents |
 | `--rebuild` | build, view | rebuild even unchanged sessions |
 | `--path-mode dirs_only` | build, view | see [Privacy](#privacy) |
 | `--limit N` | build, view, list | newest N sessions |
