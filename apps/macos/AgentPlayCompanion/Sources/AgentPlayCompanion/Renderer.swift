@@ -46,9 +46,23 @@ enum Renderer {
         let failed = fixtureModel("no-agents"); failed.setPhaseForRender(.failed(.coreTooOld("agentplay 0.2.3")))
         menu("state-error", failed)
 
+        // The film fixture is the one with steering, a score and fixes; two-active has none of those.
+        menu("menu-insights", fixtureModel("film"))
+
         var shots: [(String, AnyView)] = []
         if let u = fixtureModel("two-active").snapshot?.usage {
             shots.append(("submenu-usage-details", AnyView(UsageDetail(report: u))))
+        }
+        if let s = fixtureModel("film").snapshot {
+            if let sig = s.usage?.signals {
+                shots.append(("card-steering", AnyView(SteeringCard(signals: sig))))
+                shots.append(("submenu-steering", AnyView(SignalsCard(signals: sig))))
+            }
+            if let ins = s.insights { shots.append(("submenu-run-health", AnyView(HealthCard(insights: ins)))) }
+            if let f = s.insights?.fixes.first { shots.append(("submenu-fix", AnyView(FixDetail(fix: f)))) }
+            if let line = MenuBuilder.sessionLines(s, now: fixedNow).first {
+                shots.append(("submenu-session", AnyView(SessionDetail(line: line, now: fixedNow))))
+            }
         }
         for step in 1...4 {
             let view = AnyView(OnboardingView(step: step).environmentObject(fixtureModel("two-active")))

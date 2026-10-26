@@ -59,7 +59,7 @@ Result: 44 MB app, 19 MB DMG, about 1.6 s for the first snapshot after launch an
 
 From a terminal: `sh scripts/companion-uninstall.sh`. By hand:
 
-1. Quit it (Settings → General → Quit). That stops the viewer it started.
+1. Quit it (right-click Pip → Quit AgentPlay). That stops the viewer it started.
 2. Delete `/Applications/AgentPlay Companion.app`. Its login item goes with it.
 3. Optional, to remove its settings: `defaults delete ai.entelligence.agentplay.companion` and `rm -rf ~/Library/Caches/ai.entelligence.agentplay.companion`.
 4. Notification permission: System Settings → Notifications.

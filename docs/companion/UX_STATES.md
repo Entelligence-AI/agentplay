@@ -10,16 +10,18 @@ Order follows attention:
 
 1. **Needs You**, only when a session is waiting on input.
 2. **Plan limits**, one card per provider this Mac uses, most constrained first.
-3. **Sessions**, up to five, then Show All Sessions…
-4. **Usage**: Today and Last 30 Days, then Usage Details › and Recent Errors ›.
-5. Open AgentPlay ⌘O, Refresh ⌘R (its subtitle says when), Settings… ⌘,, Quit ⌘Q.
+3. **Live Sessions**: only sessions with a live process (waiting, working, or idle in grey), up to five. Finished runs are not rows here; when no agent process is open, one line says so and names the last run ("Last: Claude Code in agentplay, 2h ago").
+4. **Insights · Last 30 Days**: How you steer (a card), Run Health, up to two fixes, one error or pattern.
+5. **Usage**: Today and Last 30 Days, then Usage Details ›.
+
+The left-click menu ends with its content. AgentPlay's own commands are on **right-click**: Open AgentPlay ⌘O, All Sessions…, Refresh ⌘R (its subtitle says when), Settings… ⌘,, Quit ⌘Q. The shortcuts also work while the left-click menu is open.
 
 | Input | Does |
 |---|---|
-| Click a session | Brings its terminal app forward (the tooltip names it) (Terminal, iTerm, Ghostty, VS Code, Cursor), found by walking up from the agent's process. Opens the replay when there is no terminal app to find: an ended run, tmux, ssh |
-| Option-click a session | Opens its replay instead |
+| Point at a session › | Its detail: status and how long, agent and model, when it started, context as a bar, tool calls and errors, its last four steps. On top: Go to Terminal (the app is named: Terminal, iTerm, Ghostty, VS Code, Cursor, found by walking up from the agent's process) and Open Replay |
+| Point at How you steer › | The four rates in full, each against the 30 days before, and Open Insights in AgentPlay… |
 | Usage Details › | Submenu: 14-day chart, 7 and 30 days, by model, by project |
-| Recent Errors › | Submenu: each error or pattern; click opens the replay at that step |
+| An error or pattern › | Submenu: its details; click opens the replay at that step |
 | Turn On Live Limits… | Settings → Live Limits, which shows the exact change before applying it |
 
 ## Menu-bar icon: Pip
@@ -42,7 +44,7 @@ When something happens, a short line appears beside Pip for 8 s: which session o
 |---|---|
 | Click while the line shows | Acts on it: go to the waiting or finished session's terminal, open the replay at a failure, open the usage page for a spent window |
 | Click otherwise | Opens the menu |
-| Right-click or Control-click | Always opens the menu |
+| Right-click or Control-click | Opens the app's own commands: Open AgentPlay, All Sessions…, Refresh, Settings…, Quit. While the line beside Pip shows (a left click acts on it), right-click opens the menu instead |
 | Option-click | Opens AgentPlay |
 
 Nothing moves under Reduce Motion or in Low Power Mode, and no timer runs while Pip is still. Settings → General turns Pip off (two plain bars instead) and the line off separately. The menu opens with Pip at twice the size and one sentence: "1 waiting on you: docs-site", "Going fast, 2h 10m left in this session", "All quiet", with session and week below.
@@ -71,10 +73,11 @@ Notifications for "Session needs you" carry Go to Terminal, Snooze 15 Minutes an
 | Conflicting plan reports | "Recent sessions reported Plus and Pro. They may be different accounts." | conflicting |
 | Usage | Today and Last 30 Days, cost then tokens. Costs are estimates at API list prices; unpriced models say "unpriced", never $0 | menu |
 | Usage details | Submenu with the chart and breakdowns | usage details |
-| Steering | "Steering · 12% corrections · 9% frustrated": its submenu shows Blume's signal rates from the messages you type in Claude Code (corrections, frustration, interruptions, refusals per tool call), each against the 30 days before with a 30-day trend. Prompts a program sends (an SDK pipeline, a test harness) don't count; no text is kept | (real data only) |
-| Apply a fix | Apply… previews the exact lines and file; the first write to a repo asks once; it goes through the journaled writer from #19. Run Health lists what AgentPlay applied, each with Undo, and what Autotune is holding, with Approve and Dismiss. A failing hook's fix names the commands configured for it and why it fails, with Show settings.json in Finder | (real data only) |
-| Insights | "Insights · Last 30 Days": Run Health "72 / 100", with "Down 4 · weakest: Verification"; its submenu has the five 20-point parts as bars and Open Run Health in AgentPlay. Then up to three fixes from the Run health report ("Fix the PreToolUse hook", "+3 points · Environment health"), each with what was seen, what fixing it changes and where, and Preview and Apply in AgentPlay, Open an Example Session, Copy as Text. Then up to three errors, each with its details: for a single run, the agent, project, count, reason, start and whether it passed later, and Open Replay at the Failure; for a pattern, its denominator, whether it passed later, and every run it failed in, each opening the replay at the failing step | (real data only) |
-| Many sessions | Five rows, then "Show All Sessions…" | many |
+| How you steer | The first card under Insights: "7% corrected" and "5% frustrated" as two large numbers, each with a trend arrow (up is orange, both are better lower) and a 30-day sparkline, then one sentence: "1 in 14 messages corrects the agent. Frustration is down from 9%." Pointing at it opens the four rates in full (corrections, frustration, interruptions, refusals per tool call), each against the 30 days before. Counted from the messages you type in Claude Code; prompts a program sends (an SDK pipeline, a test harness) don't count; no text is kept | menu-insights, card-steering, submenu-steering |
+| Run Health | "Run Health 73 / 100" with the lever first: "82 within reach from 3 fixes · up 4.5". Its submenu says what the fixes would take it to, then the five 20-point parts as bars, each with one line on what it counts (Shipping: sessions that edited code and ended in a PR; Verification: sessions that ran a check after the last edit; Efficiency: errors and retries per call, and cache hits; Context hygiene: compactions and files re-read after one; Environment health: denied, blocked or missing tools per call), what AgentPlay applied (each with Undo), what Autotune is holding (Approve, Dismiss), and Open Run Health in AgentPlay… | submenu-run-health |
+| A fix | A row per fix, up to two ("Fix the SessionStart:startup hook", "+4.4 points · Environment health · payments-api"). Its submenu is three labelled lines, What happened / Why (orange, for a hook that answers the wrong event) / Do this, the hook's commands, then the actions: Apply This Fix… when AgentPlay can write the change itself (it previews the exact lines and file; the first write to a repo asks once; it goes through the journaled writer from #19), Copy a Prompt for Claude Code (a paste-ready prompt carrying the problem, cause, commands, file and intended effect), Open settings.json (Option: show it in Finder), Open a Session Where It Happened, See It in AgentPlay… | submenu-fix |
+| An error or pattern | One row: for a single run, the agent, project, count, reason, start and whether it passed later, and Open Replay at the Failure; for a pattern, its denominator, whether it passed later, and every run it failed in, each opening the replay at the failing step | (real data only) |
+| Nothing running | "No agent is running", "Last: Claude Code in agentplay, 2h ago. Right-click Pip for all sessions." | detected-idle |
 | Core too old / runtime missing | "Can't Read Your Sessions" and the reason | error |
 | Last refresh failed | The last good data stays, with "Last Refresh Failed" and the reason on top | (inline) |
 | Sample data | "Sample Data, Not Yours" header, then "Show My Data" at the top of the menu; cards say "Sample data", not an update time; sample data never notifies and never draws the icon's bars | menu |
@@ -86,10 +89,10 @@ The standard Mac settings window: toolbar tabs (General, Live Limits, Sources, N
 
 ## Onboarding (four steps, told by Pip)
 
-1. **Meet Pip**: Pip wakes (asleep, then blinks and waves): "Hi, I'm Pip."
-2. **Reading your sessions**: Pip types while a live counter climbs as the first scan indexes; "Read on this Mac. Nothing leaves it." It moves on by itself when done.
-3. **What I learnt**: three facts from this Mac's own sessions fade in one by one: where the work goes, which model does it, the biggest fix.
-4. **Find me in the menu bar**: the pose legend (needs you, finished, keeps failing, going fast, limit reached) and three choices: needs-you alerts, Claude usage from your account, open at login.
+1. **Meet Pip**: Pip wakes (asleep, then blinks and waves): "Hi, I'm Pip." Three tiles say what it does (see what's running, know when it needs you, watch your plan), a row says which agents it works with (Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro) and that plan limits come from Claude Code and Codex only. "Read My Sessions" starts the scan.
+2. **Reading your sessions**: Pip types while a live counter climbs as the first scan indexes; "Read on this Mac. Nothing leaves it." Under it, the one permission worth asking for while there's time to answer: "May I notify you?" with Allow (the system prompt), or "Notifications allowed", or, when macOS has them off, "Open System Settings". It moves on by itself when done.
+3. **What I learnt**: three facts from this Mac's own sessions fade in one by one: where the work goes, which model does it (named as people say it: "Opus 5.5"), the biggest fix.
+4. **Find me in the menu bar**: "Click me for the details, right-click me for Settings and Quit", the pose legend (needs you, finished, keeps failing, going fast, limit reached) with room between the poses, and three choices: needs-you alerts (with Open System Settings inline when notifications are off), Claude usage from your account, open at login.
 
 Progress dots, no step counter. Every animation follows Reduce Motion.
 
@@ -97,4 +100,4 @@ Progress dots, no step counter. Every animation follows Reduce Motion.
 
 - **Point at Pip** in the menu bar: it looks up at you (tracking-area events, no timer).
 - **In the menu** Pip blinks, types while agents work and waves while one waits, on a quarter-second beat that exists only while the menu is open.
-- **Click Pip** in the menu: it hops and moves to its next suggestion, drawn from your data: what's waiting, a window running hot, the top fix, a jump in corrections, a pattern that's only retrying. The row under it does the suggestion: Go to It, Apply This Fix…, Open My Usage Page, Open Run Health…
+- **Click Pip** in the menu: it hops and moves to its next suggestion, drawn from your data: what's waiting, a window running hot, the top fix, which model did most of the month's work and what it cost, a jump in corrections, a pattern that's only retrying. The row under it does the suggestion: Go to It, Apply This Fix…, Open My Usage Page, See the Breakdown in AgentPlay, Open Run Health…
