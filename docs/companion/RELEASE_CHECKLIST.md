@@ -7,7 +7,7 @@
 | G0 Repo audit | Done: REPO_AUDIT.md, MARKET_NOTES.md |
 | G1 Prototype review | Done with one gap: three working directions, light and dark screens, keyframe clips, scorecard. Live screen recordings not made (EXPERIMENTS.md §1) |
 | G2 Core integration | Done: real store, process-backed activity, ordering, deep link to the exact `seq` verified against the running viewer, no invented percentages |
-| G3 Alerts and privacy | Done: local notifications, presets off by default, dedupe, cooldown, budget, quiet hours, snooze, mutes, watermark; leak tests; no network |
+| G3 Alerts and privacy | Done: local notifications, presets off by default, dedupe, cooldown, budget, quiet hours, snooze, mutes, watermark; leak tests; no network unless Claude-account usage is turned on |
 | G4 Packaging | Dev and release `.app` and DMG build and pass `codesign --verify --deep --strict`. **Public release BLOCKED: no Developer ID identity, no notarization** |
 | G5 Pilot-ready | Not yet: needs a notarized build and the five-developer test |
 
@@ -46,7 +46,7 @@ Not available yet. `ARCHS="arm64 x86_64" scripts/companion-build.sh release` fai
 
 ## Updates
 
-No updater ships. The app makes no network requests, so it never checks for updates; users update by installing a newer DMG or with Homebrew. Adding Sparkle would need a signed appcast, an EdDSA key, and an explicit "Check for updates" setting that is off by default.
+No updater ships. The app makes no network requests on its own (the one opt-in request is to Anthropic for Claude-account usage), so it never checks for updates; users update by installing a newer DMG or with Homebrew. Adding Sparkle would need a signed appcast, an EdDSA key, and an explicit "Check for updates" setting that is off by default.
 
 ## Homebrew cask (draft, after a notarized release exists)
 
@@ -79,6 +79,6 @@ end
 - Optional local alerts for a command failing three times in a row, and more, all off until you turn them on.
 - Context and plan usage only where the agent records them: Codex reports both; Claude Code records tokens but no limit, so the app says that instead of guessing.
 - One observed pattern across your recent runs, with its denominator.
-- Local only: no account, no network, no analytics. Your maps stay in `~/.agentplay`.
+- Local by default: no AgentPlay account, no analytics. The only network request is to Anthropic for your Claude usage, and only if you turn that on. Your maps stay in `~/.agentplay`.
 
 Known limitations: Apple silicon only; refreshes take seconds on very large live transcripts and are spaced out to bound CPU; repos under Documents, Desktop or Downloads need a one-time macOS folder permission; Claude Code plan usage is not available locally.

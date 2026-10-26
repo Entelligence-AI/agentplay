@@ -324,8 +324,8 @@ struct PrivacyPane: View {
                 .foregroundStyle(.secondary)
         }
         Section("Network") {
-            Text("None. The companion makes no network requests: no updates check, no analytics, no fonts or scripts from the web. The viewer it opens is served from 127.0.0.1 on this Mac.")
-            Text("Links in the Limits tab open your provider's usage page in your browser only when you click them.")
+            Text("None on its own: no updates check, no analytics, no fonts or scripts from the web. The viewer it opens is served from 127.0.0.1 on this Mac.")
+            Text("The one exception is yours to turn on: with \"Show Claude usage from my account\" on in Live Limits, it asks api.anthropic.com for your usage, with the login Claude Code saved. Links to a provider's usage page open in your browser only when you click them.")
                 .foregroundStyle(.secondary)
         }
         Section("Local data") {
@@ -419,7 +419,7 @@ struct LiveLimitsPane: View {
         }
         Section("From your Claude account") {
             Toggle(isOn: Binding(get: { model.prefs.usesClaudeAccount }, set: { model.setClaudeAccount($0) })) {
-                Text("Ask my Claude account")
+                Text("Show Claude usage from my account")
                 Text("Works however you run Claude Code, editor panels included. Uses the login Claude Code already saved in your Keychain; macOS asks once, choose Always Allow.")
             }
             if model.prefs.usesClaudeAccount {
