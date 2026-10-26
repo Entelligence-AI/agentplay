@@ -231,7 +231,13 @@ public enum ClaudeSwitch {
         let (_, status) = runSecurity(["-i"], stdin: securityLine(service: env.claudeService, account: account,
                                                                  label: nil, value: String(decoding: login, as: UTF8.self)))
         guard status == 0 else {
-            guard (try? current.write(to: claudeJSONURL, options: .atomic)) != nil else {
+            // Put back only the old account block: Claude Code may have written other keys since step 4.
+            let oldAccount = (try? JSONSerialization.jsonObject(with: current) as? [String: Any])?["oauthAccount"]
+                .flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+            let restored = (try? Data(contentsOf: claudeJSONURL)).flatMap { latest in
+                oldAccount.flatMap { withAccount(latest, oauthAccount: $0) }
+            } ?? current
+            guard (try? restored.write(to: claudeJSONURL, options: .atomic)) != nil else {
                 return .failure(.keychain("couldn't write Claude Code's login (status \(status)), and couldn't restore "
                                           + "~/.claude.json; its previous copy is in \(backups.path)"))
             }

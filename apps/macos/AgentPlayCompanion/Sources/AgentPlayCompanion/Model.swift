@@ -481,7 +481,8 @@ final class CompanionModel: ObservableObject {
             let result = await Task.detached { await ClaudeAccount.fetch(claudeVersion: version) }.value
             accountFetching = false
             // Switched or signed in to another account meanwhile: these numbers are the old one's. Ask again.
-            guard ClaudeAccount.readIdentity()?.accountUuid == account else { refreshAccount(force: true); return }
+            // A failure (rate limit, Keychain denied) still applies below, so its backoff holds.
+            if ClaudeAccount.readIdentity()?.accountUuid != account, case .success = result { refreshAccount(force: true); return }
             lastAccountFetch = Date()
             switch result {
             case .success(let rows):

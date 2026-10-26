@@ -916,3 +916,15 @@ def test_hook_executable_with_unbalanced_quotes_shows_nothing():
     # A whitespace split would cut the quoted folder and show "PRIVATE-DIR/x" as the program.
     assert companion._hook_executable('"/Users/me/PRIVATE DIR/hook.sh --a') is None
     assert companion._hook_executable("TOKEN=x /bin/hook.sh --a") == "hook.sh"
+
+
+def test_hook_executable_names_the_script_not_the_launcher():
+    f = companion._hook_executable
+    assert f("cd /x && ./h.sh") == "h.sh"
+    assert f("env K=v hook") == "hook"
+    assert f("bash ~/x.sh") == "x.sh"
+    assert f("/Users/me/my proj/h.sh") == "h.sh"
+    assert f("uv run python ~/hooks/check.py --fast") == "check.py"
+    assert f("python3.12 /opt/a/notify.py > /tmp/LOG.txt") == "notify.py"
+    assert f("my-hook 2>&1 | tee /tmp/out") == "my-hook"
+    assert f("lint; notify.sh > /tmp/x.log") == "notify.sh"

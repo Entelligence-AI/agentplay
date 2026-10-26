@@ -925,21 +925,44 @@ _WRONG_EVENT = re.compile(r"expected '(\w+)' but got '(\w+)'")
 _ENV_ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
+# Launchers a hook runs its program through; the program is the next word ("bash ~/x.sh" -> "x.sh").
+_HOOK_WRAPPERS = {"env", "exec", "command", "sudo", "nohup", "time", "bash", "sh", "zsh", "fish", "python", "python3",
+                  "node", "bun", "deno", "ruby", "perl", "npx", "uvx", "uv", "run", "pnpm", "npm", "yarn"}
+
+
 def _hook_executable(command: Any) -> str | None:
     """The file name of the program a hook command runs ("TOKEN=x /bin/hook.sh --a" -> "hook.sh").
 
     Only that: environment assignments, arguments and the folder can hold secrets or private paths.
+    The last command of a chain is the hook ("cd /x && ./h.sh" -> "h.sh"), launchers are skipped, and a
+    script file name wins over other words ("/Users/me/my proj/h.sh" unquoted -> "h.sh", not "my").
     """
     if not isinstance(command, str):
         return None
     try:
-        tokens = shlex.split(command)
+        lex = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        tokens = list(lex)
     except ValueError:  # unbalanced quotes: a whitespace split could cut a quoted folder and show part of it
         return None
-    exe = next((t for t in tokens if not _ENV_ASSIGN.match(t)), None)
-    if exe is None:
-        return None
-    return os.path.basename(exe.rstrip("/"))[:160] or None
+    seg: list[str] = []
+    skip_next = piped = False
+    for t in tokens:
+        if t == "|":
+            piped = True  # "hook | tee log": the hook is the pipeline's first command
+        elif t and set(t) <= set("&|;()"):
+            seg, piped, skip_next = [], False, False  # a new command starts
+        elif skip_next or piped:
+            skip_next = False
+        elif "<" in t or ">" in t:
+            skip_next = not t.endswith("&")  # a redirection's target is a file ("2>&1" has none)
+        else:
+            seg.append(t)
+    names = [os.path.basename(t.rstrip("/")) for t in seg if not _ENV_ASSIGN.match(t) and not t.startswith("-")]
+    names = [n for n in names if n]
+    script = next((n for n in names if "." in n.strip(".") and n.split(".")[0] not in _HOOK_WRAPPERS), None)
+    exe = script or next((n for n in names if n not in _HOOK_WRAPPERS), None) or (names[0] if names else None)
+    return exe[:160] if exe else None
 
 
 def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
@@ -960,7 +983,8 @@ def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
                 for h in (g.get("hooks") or []) if isinstance(g, dict) else []:
                     exe = _hook_executable(h.get("command")) if isinstance(h, dict) else None
                     if exe:
-                        commands.append(exe)
+                        if exe not in commands:
+                            commands.append(exe)
                         files.append(_home_label(p))
     cause = None
     newest = 0.0
