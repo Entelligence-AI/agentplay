@@ -15,7 +15,9 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
     public var customFolders: [String: [String]] = [:]
     /// Opt-in Claude usage from the user's Claude account (ClaudeAccount). Optional so older saved prefs decode.
     public var claudeAccountUsage: Bool? = nil
-    public var usesClaudeAccount: Bool { claudeAccountUsage == true }
+    /// On unless switched off: the limits are the first thing people open the menu for, and sessions run from
+    /// an editor's agent panel have no other source for them.
+    public var usesClaudeAccount: Bool { claudeAccountUsage ?? true }
     /// Pip in the menu bar (else the two plain bars), and the line beside it when something happens.
     public var pipEnabled: Bool? = nil
     public var pipIslandEnabled: Bool? = nil
