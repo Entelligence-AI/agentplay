@@ -74,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             status = StatusItemController(model: m)
             StatusItemController.current = status
             m.start(fixture: LaunchOptions.fixture)
+            Updater.shared.start()
             if !m.prefs.onboardingDone, LaunchOptions.fixture == nil { Windows.show(.welcome) }
         }
     }

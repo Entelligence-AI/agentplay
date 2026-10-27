@@ -24,7 +24,7 @@ enum MenuEntry: Equatable {
 }
 
 enum MenuAction: String, CaseIterable {
-    case leaveSample, showAllSessions, refresh, openViewer, settings, quit
+    case leaveSample, showAllSessions, refresh, openViewer, checkUpdates, settings, quit
 
     var title: String {
         switch self {
@@ -32,6 +32,7 @@ enum MenuAction: String, CaseIterable {
         case .showAllSessions: "All Sessions…"
         case .refresh: "Refresh"
         case .openViewer: "Open AgentPlay"
+        case .checkUpdates: "Check for Updates…"
         case .settings: "Settings…"
         case .quit: "Quit AgentPlay"
         }
@@ -43,7 +44,7 @@ enum MenuAction: String, CaseIterable {
         case .openViewer: "o"
         case .settings: ","
         case .quit: "q"
-        case .showAllSessions, .leaveSample: ""
+        case .showAllSessions, .leaveSample, .checkUpdates: ""
         }
     }
 }
@@ -184,10 +185,12 @@ enum MenuBuilder {
     static func footer() -> [MenuEntry] { [] }
 
     /// Right-click on Pip: the app's own commands, kept out of the way of what the agents are doing.
-    static func contextMenu(hasStore: Bool) -> [MenuEntry] {
+    @MainActor static func contextMenu(hasStore: Bool) -> [MenuEntry] {
         var out: [MenuEntry] = [.action(.openViewer)]
         if hasStore { out.append(.action(.showAllSessions)) }
-        out += [.action(.refresh), .separator, .action(.settings), .action(.quit)]
+        out += [.action(.refresh), .separator]
+        if Updater.shared.available { out.append(.action(.checkUpdates)) }
+        out += [.action(.settings), .action(.quit)]
         return out
     }
 

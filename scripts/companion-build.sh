@@ -71,7 +71,17 @@ mkdir -p "$STAGE"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources/Fixtures"
 cp "$BIN" "$STAGE/Contents/MacOS/AgentPlayCompanion"
 cp "$PKG/Resources/AppIcon.icns" "$STAGE/Contents/Resources/AppIcon.icns"
-sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD_NUMBER/g" "$PKG/Resources/Info.plist" > "$STAGE/Contents/Info.plist"
+# The updater's public key goes into Info.plist; without it the app never checks for updates (Updater.available).
+# Release builds take it from SPARKLE_PUBLIC_KEY or apps/macos/AgentPlayCompanion/Resources/sparkle_public_key.txt.
+SPARKLE_KEY="${SPARKLE_PUBLIC_KEY:-$(cat "$PKG/Resources/sparkle_public_key.txt" 2>/dev/null || true)}"
+sed -e "s/__VERSION__/$VERSION/g" -e "s/__BUILD__/$BUILD_NUMBER/g" -e "s|__SPARKLE_PUBLIC_KEY__|${SPARKLE_KEY:-__SPARKLE_PUBLIC_KEY__}|g" \
+    "$PKG/Resources/Info.plist" > "$STAGE/Contents/Info.plist"
+# Sparkle's framework, from the package SwiftPM resolved; the binary links it from ../Frameworks.
+SPARKLE_FW="$(find "$BUILD/artifacts" -path '*Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework' -maxdepth 6 | head -1)"
+[ -d "$SPARKLE_FW" ] || { echo "Sparkle.framework not found under $BUILD/artifacts" >&2; exit 1; }
+mkdir -p "$STAGE/Contents/Frameworks"
+cp -R "$SPARKLE_FW" "$STAGE/Contents/Frameworks/"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$STAGE/Contents/MacOS/AgentPlayCompanion" 2>/dev/null || true
 cp "$PKG/Resources/PRIVACY.txt" "$STAGE/Contents/Resources/PRIVACY.txt"
 cp "$PKG/Resources/claude-statusline-bridge.sh" "$STAGE/Contents/Resources/claude-statusline-bridge.sh"
 # The sample a user can ask for ("Try a sample") ships in every build; dev builds carry every fixture.
@@ -110,6 +120,12 @@ if [ "$IDENTITY" != "-" ]; then
   ENT="--entitlements $PKG/Resources/Companion.entitlements"
 fi
 find "$PYDEST" -type f \( -name '*.so' -o -name '*.dylib' \) -print0 | xargs -0 -n 50 codesign $SIGN_FLAGS --sign "$IDENTITY"
+# Sparkle, inside out, as its docs ask: the XPC services, the updater app, then the framework.
+SPK="$STAGE/Contents/Frameworks/Sparkle.framework/Versions/B"
+for x in "$SPK"/XPCServices/*.xpc; do codesign $SIGN_FLAGS --options runtime --sign "$IDENTITY" "$x"; done
+codesign $SIGN_FLAGS --options runtime --sign "$IDENTITY" "$SPK/Autoupdate"
+codesign $SIGN_FLAGS --options runtime --sign "$IDENTITY" "$SPK/Updater.app"
+codesign $SIGN_FLAGS --options runtime --sign "$IDENTITY" "$STAGE/Contents/Frameworks/Sparkle.framework"
 for exe in "$PYDEST/bin/python$PYV"; do
   # shellcheck disable=SC2086
   codesign $SIGN_FLAGS $ENT --sign "$IDENTITY" "$exe"

@@ -46,7 +46,33 @@ Not available yet. `ARCHS="arm64 x86_64" scripts/companion-build.sh release` fai
 
 ## Updates
 
-No updater ships. The app makes no network requests on its own (the one opt-in request is to Anthropic for Claude-account usage), so it never checks for updates; users update by installing a newer DMG or with Homebrew. Adding Sparkle would need a signed appcast, an EdDSA key, and an explicit "Check for updates" setting that is off by default.
+## Updates (Sparkle)
+
+Installed copies check once a day for a newer release and offer it; nothing installs without a click. The feed is `https://github.com/Entelligence-AI/agentplay/releases/latest/download/appcast.xml`, so publishing a release is publishing the update. Every update is checked against the EdDSA public key built into the app, so a tampered DMG is refused. Off in Settings → General; Check for Updates… on right-click. Dev builds and builds without a public key never check.
+
+## One-time setup (about an hour, then every tag ships itself)
+
+1. **Apple Developer Program** for Entelligence AI ($99 a year). Create a *Developer ID Application* certificate, export it with its key as a `.p12`.
+2. **Sparkle keys**, once, on a trusted Mac:
+   ```sh
+   .build/companion-release/artifacts/sparkle/Sparkle/bin/generate_keys      # prints the public key, stores the private one in the Keychain
+   .build/companion-release/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle-private.key
+   ```
+   Commit the public key to `apps/macos/AgentPlayCompanion/Resources/sparkle_public_key.txt`. Keep `sparkle-private.key` out of the repo. Losing it means no installed copy can be updated, so store it in the team password manager too.
+3. **GitHub secrets** on the repo:
+
+   | Secret | Value |
+   |---|---|
+   | `DEVELOPER_ID_P12` | `base64 -i cert.p12` |
+   | `DEVELOPER_ID_P12_PASSWORD` | the `.p12` password |
+   | `NOTARY_APPLE_ID` | the Apple ID email |
+   | `NOTARY_TEAM_ID` | the 10-character team id |
+   | `NOTARY_PASSWORD` | an app-specific password for that Apple ID |
+   | `SPARKLE_PRIVATE_KEY` | the contents of `sparkle-private.key` |
+
+## Shipping a version
+
+Bump `python/pyproject.toml` and `agentplay/__init__.py`, tag `vX.Y.Z`, push the tag. The `release` workflow publishes the Python package and, in the `companion` job, builds, signs, notarizes and staples the DMG, writes `appcast.xml`, and attaches both to the GitHub release. Every installed copy offers the update within a day. Until the secrets exist the job skips with a notice, and the Python release is unaffected.
 
 ## Homebrew cask (draft, after a notarized release exists)
 

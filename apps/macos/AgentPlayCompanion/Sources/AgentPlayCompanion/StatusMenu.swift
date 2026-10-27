@@ -475,6 +475,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case .refresh: model.scheduleRefresh(reason: .manual)
         case .openViewer, .showAllSessions: model.openViewer()
         case .settings: Windows.show(.settings)
+        case .checkUpdates: Updater.shared.checkNow()
         case .quit: NSApp.terminate(nil)
         }
     }

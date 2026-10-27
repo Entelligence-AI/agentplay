@@ -112,6 +112,12 @@ struct GeneralPane: View {
         }
         Section {
             Toggle("Open at login", isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
+            if Updater.shared.available {
+                Toggle(isOn: Binding(get: { Updater.shared.checksAutomatically }, set: { Updater.shared.checksAutomatically = $0 })) {
+                    Text("Check for updates once a day")
+                    Text(Updater.shared.lastChecked.map { "Last checked \(Format.relative($0, now: Date()))." } ?? "Asks github.com for the latest release; you decide whether to install it.")
+                }
+            }
             Toggle("Soft sound when I click something", isOn: $model.prefs.soundOnManualActions)
         }
         Section("Agents") {
