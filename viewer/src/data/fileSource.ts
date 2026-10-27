@@ -54,7 +54,8 @@ export function fileSource(): FileSource {
           out.added.push(row.sessionId);
         } catch (err) {
           const code = err instanceof SessionExplorerError ? err.code : '';
-          out.failed.push({ name: f.name, reason: REASON[code] ?? 'could not be read' });
+          const reason = code === 'invalid_map' ? (err as Error).message : REASON[code];
+          out.failed.push({ name: f.name, reason: reason ?? 'could not be read' });
         }
       }
       if (out.added.length) generation++;

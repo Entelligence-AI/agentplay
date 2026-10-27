@@ -727,6 +727,19 @@ def test_built_maps_validate_against_published_schema(env):
     jsonschema.validate(doc, schema)
 
 
+def test_demo_maps_validate_against_published_schema():
+    jsonschema = pytest.importorskip("jsonschema")
+    root = Path(__file__).resolve().parents[2]
+    schema_path = root / "schema" / "agentplay-v1.schema.json"
+    if not schema_path.is_file():
+        pytest.skip("schema/ and the demo maps are only in a repo checkout, not the sdist")
+    schema = json.loads(schema_path.read_text())
+    demos = [p for p in (root / "viewer" / "public" / "demo").glob("*.json") if p.name != "index.json"]
+    assert len(demos) >= 3
+    for path in demos:
+        jsonschema.validate(json.loads(path.read_text()), schema)
+
+
 def test_cli_import_roundtrip(env, capsys, monkeypatch, tmp_path):
     _write_claude_session(env["home"], "55555555-0000-0000-0000-000000000005", env["repo"])
     monkeypatch.chdir(tmp_path)
