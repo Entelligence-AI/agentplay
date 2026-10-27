@@ -207,8 +207,9 @@ enum MenuBuilder {
             if l.status == .idle, let since = l.statusSince, now.timeIntervalSince(since) > 6 * 3600 { continue }
             let run = runs[l.sessionId]
             let repo = run?.repo ?? l.project
-            var d = [AgentNames.label(l.agentTool)]
-            if let m = run?.models?.first { d.append(Format.modelName(m)) }
+            // Named by Claude Code's own title when it has one; the repo moves to the line under it.
+            var d = l.name != nil ? [repo ?? AgentNames.label(l.agentTool)] : [AgentNames.label(l.agentTool)]
+            if l.name == nil, let m = run?.models?.first { d.append(Format.modelName(m)) }
             if l.status == .idle {
                 // An open agent with nothing happening: still a terminal to jump to, so it stays, in grey.
                 d.append("Idle" + (l.statusSince.map { " \(Format.duration(now.timeIntervalSince($0)))" } ?? ""))
@@ -216,7 +217,7 @@ enum MenuBuilder {
                 d.append(Format.truncate(detail(run, status: l.status, since: l.statusSince, now: now), max: 26))
             }
             out.append(SessionLine(
-                id: l.sessionId, title: Format.truncate(repo ?? "Session", max: 32),
+                id: l.sessionId, title: Format.truncate(l.name ?? repo ?? "Session", max: 40),
                 detail: d.filter { !$0.isEmpty }.joined(separator: " · "),
                 dot: l.status == .waiting ? .waiting : l.status == .idle ? .idle : .working, sessionId: l.sessionId,
                 seq: run?.lastEvent?.seq, openable: l.inStore, pid: l.pid, run: run, live: l))

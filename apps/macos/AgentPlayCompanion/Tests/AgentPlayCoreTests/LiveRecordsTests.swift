@@ -19,8 +19,10 @@ import Testing
         #expect(!s.isSDK)
         #expect(try #require(LiveRecords.parse(record(["entrypoint": "sdk-ts"]))).isSDK)
         #expect(s.statusSince == Date(timeIntervalSince1970: 1_792_000_100))
+        // The title is kept for the menu; the full path and the socket are not.
+        #expect(s.name == "SECRET-NAME")
         let raw = String(decoding: try JSONEncoder().encode(s), as: UTF8.self)
-        for secret in ["SECRET-DIR", "SECRET-NAME", "SECRET-SOCK"] { #expect(!raw.contains(secret)) }
+        for secret in ["SECRET-DIR", "SECRET-SOCK"] { #expect(!raw.contains(secret)) }
     }
 
     @Test func rejectsWhatIsNotALiveRecord() {

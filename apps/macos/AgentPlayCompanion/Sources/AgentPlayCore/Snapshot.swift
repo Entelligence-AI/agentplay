@@ -258,6 +258,9 @@ public struct LiveSession: Codable, Sendable, Equatable, Identifiable {
     /// Started from an editor's agent panel (the Agent SDK): no statusline, so no plan usage report.
     public var isSDK: Bool { entrypoint?.hasPrefix("sdk") == true }
     public var project: String?
+    /// Claude Code's own title for the session, as `/resume` shows it. Read only by the app, on this Mac, for the
+    /// menu's session rows; never in notifications, the copied summary or anything sent.
+    public var name: String? = nil
     public var startedAt: Date?
     public var statusSince: Date?
     public var inStore: Bool

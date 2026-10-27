@@ -4,8 +4,8 @@ import Foundation
 ///
 /// The core's snapshot reads the same files, but only when it runs (every minute or so). These are a few
 /// hundred bytes each, so the app re-reads them the moment the folder changes: a session that starts waiting
-/// on you shows up in about a second, without running the core. Same privacy rule as the core: only the
-/// folder name of `cwd` is kept; the path, the session name and the socket are never read in.
+/// on you shows up in about a second, without running the core. Kept: the folder name of `cwd` and Claude Code's
+/// title for the session (the menu names rows by it). The full path and the socket are never read in.
 public enum LiveRecords {
     /// One record, or nil when it is not a live Claude Code session record.
     public static func parse(_ data: Data) -> LiveSession? {
@@ -22,6 +22,9 @@ public enum LiveRecords {
                             pid: Int32(pid), project: project, startedAt: ms(rec["startedAt"]),
                             statusSince: ms(rec["statusUpdatedAt"]) ?? ms(rec["updatedAt"]), inStore: false)
         s.entrypoint = rec["entrypoint"] as? String
+        if let n = (rec["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
+            s.name = String(n.prefix(80))
+        }
         return s
     }
 

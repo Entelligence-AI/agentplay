@@ -25,14 +25,14 @@ Otherwise the app makes no requests of its own: no update check, no telemetry SD
 | The tail of Codex transcripts | Only the numeric `token_count` record: context window and plan windows |
 | Claude Code's record of a failing hook (`attachment` on a system line) | The event it ran for, the one it answered as, and the command it ran, read to find the hook's entry in `~/.claude/settings.json`. The snapshot and the menu carry the command's name only; the full command stays in the process that applies the fix |
 | `lsof` output for recent transcripts | Which agent processes are live |
-| Claude Code's live-process records, `~/.claude/sessions/<pid>.json` | Which sessions are working, idle or waiting on you. The app re-reads them the moment the folder changes, so "needs you" shows in about a second. Only `pid`, `sessionId`, `status`, the start and status times, and the folder name of `cwd` are kept; the full path, the session name and the socket path are never read in (`LiveRecordsTests.parsesAndKeepsOnlyTheFolderName`) |
+| Claude Code's live-process records, `~/.claude/sessions/<pid>.json` | Which sessions are working, idle or waiting on you. The app re-reads them the moment the folder changes, so "needs you" shows in about a second. Only `pid`, `sessionId`, `status`, the start and status times, the folder name of `cwd`, and Claude Code's own title for the session (`name`, what `/resume` shows) are kept; the full path and the socket path are never read in (`LiveRecordsTests.parsesAndKeepsOnlyTheFolderName`). The title names the session's row in the menu, on this Mac; it is never put in a notification, the copied summary or the snapshot the core writes |
 | The parent processes of a live session's `pid` | To find the terminal app a click should bring forward. Process ids only, through `sysctl` |
 
 Not requested: Full Disk Access, Accessibility, Screen Recording, Contacts, browser data. Keychain only with the opt-in above, for that one item. The app is not sandboxed, so it can read the agent folders the user already owns; it uses no entitlement beyond the hardened runtime.
 
 ## What it never shows, stores or sends
 
-Prompt text, session titles and task labels (both are prompt text in the index), assistant or reasoning text, file contents, command arguments, tool inputs and outputs, repo remotes, PR URLs. Transcript paths are never shown or sent; they are stored only on this Mac (see "What it writes").
+Prompt text, session titles and task labels from the index (the one exception: the menu's live-session rows show Claude Code's own title for a running session, read from its live record, see above; never in notifications or anything sent), assistant or reasoning text, file contents, command arguments, tool inputs and outputs, repo remotes, PR URLs. Transcript paths are never shown or sent; they are stored only on this Mac (see "What it writes").
 
 These are never read into the snapshot in the first place: the Python core does not pass them through (`companion.py`), and the Swift side has nothing to leak. Tests:
 
