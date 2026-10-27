@@ -148,7 +148,7 @@ extension Renderer {
             }
             // The Insights window, each section, as a real window.
             NSApp.appearance = NSAppearance(named: .darkAqua)
-            for section in InsightsSection.allCases {
+            for section in [InsightsSection.overview, .steering] {
                 m.insightsSection = section
                 let w = InsightsWindow.make(model: m)
                 captureWindow(w, to: dir.appendingPathComponent("live-insights-\(section.rawValue).png"), wait: 0.8)

@@ -309,7 +309,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             setSubtitle("Opens Claude's sign-in; AgentPlay saves the new account by itself", on: add)
             add.isEnabled = !model.addingAccount
             sub.addItem(add)
-            sub.addItem(item("Manage Accounts…") { [model] in model.settingsPane = .account; Windows.show(.settings) })
+            sub.addItem(item("Manage Accounts…") { [model] in model.settingsPane = .claude; Windows.show(.settings) })
             i.submenu = sub
             menu.addItem(i)
 

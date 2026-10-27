@@ -36,8 +36,8 @@ enum InsightsWindow {
         w.title = "AgentPlay Insights"
         w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         w.titlebarAppearsTransparent = true
-        w.setContentSize(NSSize(width: 860, height: 600))
-        w.minSize = NSSize(width: 720, height: 480)
+        w.setContentSize(NSSize(width: 720, height: 680))
+        w.minSize = NSSize(width: 620, height: 480)
         return w
     }
 }
@@ -48,39 +48,28 @@ struct InsightsView: View {
     var insights: Insights? { model.snapshot?.insights }
 
     var body: some View {
-        NavigationSplitView {
-            List(InsightsSection.allCases, selection: Binding(get: { model.insightsSection }, set: { model.insightsSection = $0 ?? .overview })) { s in
-                Label(s.title, systemImage: s.symbol)
-                    .badge(badge(s))
-                    .tag(s)
-            }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-        } detail: {
+        ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    switch model.insightsSection {
-                    case .overview: OverviewPane(insights: insights)
-                    case .fixes: FixesPane(insights: insights)
-                    case .applied: AppliedPane(insights: insights)
-                    case .autotune: AutotunePane(insights: insights)
-                    case .steering: SteeringPane(signals: model.snapshot?.usage?.signals)
-                    case .usage: UsagePane(report: model.snapshot?.usage)
-                    }
+                VStack(alignment: .leading, spacing: 34) {
+                    section(.overview) { OverviewPane(insights: insights) }
+                    section(.fixes) { FixesPane(insights: insights) }
+                    if !(insights?.applied ?? []).isEmpty { section(.applied) { AppliedPane(insights: insights) } }
+                    section(.autotune) { AutotunePane(insights: insights) }
+                    section(.steering) { SteeringPane(signals: model.snapshot?.usage?.signals) }
+                    section(.usage) { UsagePane(report: model.snapshot?.usage) }
                 }
-                .padding(28)
-                .frame(maxWidth: 640, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 36).padding(.top, 40).padding(.bottom, 48)
+                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
+            .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo(model.insightsSection, anchor: .top) } }
+            .onChange(of: model.insightsSection) { withAnimation { proxy.scrollTo(model.insightsSection, anchor: .top) } }
         }
+        .frame(minWidth: 620, minHeight: 480)
     }
 
-    func badge(_ s: InsightsSection) -> Int {
-        switch s {
-        case .fixes: insights?.fixes.count ?? 0
-        case .applied: insights?.applied?.count ?? 0
-        case .autotune: insights?.autotune?.pending.count ?? 0
-        default: 0
-        }
+    func section<C: View>(_ id: InsightsSection, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 12) { content() }.id(id)
     }
 }
 
@@ -90,9 +79,9 @@ struct PaneTitle: View {
     var title: String
     var subtitle: String?
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.largeTitle.weight(.semibold))
-            if let subtitle { Text(subtitle).font(.title3).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.title2.weight(.semibold))
+            if let subtitle { Text(subtitle).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
     }
 }
@@ -101,9 +90,9 @@ struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 10) { content }
-            .padding(18)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -122,7 +111,7 @@ struct Labelled: View {
 struct EmptyNote: View {
     var text: String
     var body: some View {
-        Text(text).font(.title3).foregroundStyle(.secondary).padding(.top, 8).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -133,45 +122,46 @@ struct OverviewPane: View {
     var insights: Insights?
 
     var body: some View {
-        if let ins = insights, let score = ins.score {
-            PaneTitle(title: "Run health", subtitle: "How well your agents' sessions went in the last \(ins.days) days, out of 100.")
-            Card {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("\(Int(score.rounded()))").font(.system(size: 56, weight: .semibold, design: .rounded))
-                    Text("/ 100").font(.title2).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            if let ins = insights, let score = ins.score {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Run health").font(.title2.weight(.semibold))
                     Spacer()
-                    if let prev = ins.prevScore {
-                        let d = score - prev
-                        Text(abs(d) < 0.5 ? "Same as the month before" : "\(d > 0 ? "Up" : "Down") \(Format.points(abs(d))) from \(Int(prev.rounded()))")
-                            .font(.title3).foregroundStyle(d <= -3 ? Color.orange : d >= 3 ? Color.green : .secondary)
-                    }
+                    Text("\(Int(score.rounded()))").font(.system(size: 34, weight: .semibold, design: .rounded))
+                    Text("/ 100").foregroundStyle(.secondary)
                 }
-                if let gain = ins.fixes.compactMap(\.points).reduce(0, +) as Double?, gain > 0 {
-                    Button("\(ins.fixes.count) fix\(ins.fixes.count == 1 ? "" : "es") would add \(Format.points(gain)) points") {
-                        model.insightsSection = .fixes
-                    }
-                    .buttonStyle(.link)
-                }
-            }
-            Text("What it's made of").font(.title2.weight(.semibold)).padding(.top, 6)
-            ForEach(ins.components) { c in
+                Text(Self.summary(ins)).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Card {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(c.name).font(.headline)
-                        Spacer()
-                        Text("\(Format.points(c.points ?? 0)) of 20").font(.headline.monospacedDigit())
-                        if let p = c.prevPoints, let now = c.points, abs(now - p) >= 0.5 {
-                            Text(now > p ? "↑" : "↓").foregroundStyle(now > p ? .green : .orange)
+                    ForEach(ins.components) { c in
+                        HStack(spacing: 12) {
+                            Text(c.name).frame(width: 150, alignment: .leading)
+                            ProgressView(value: min(20, max(0, c.points ?? 0)), total: 20)
+                                .tint(((c.points ?? 0) < 10) ? .orange : .accentColor)
+                            Text(Format.points(c.points ?? 0)).monospacedDigit().frame(width: 34, alignment: .trailing)
                         }
+                        .help(Self.meaning(c.key))
                     }
-                    ProgressView(value: min(20, max(0, c.points ?? 0)), total: 20).tint(((c.points ?? 0) < 10) ? .orange : .accentColor)
-                    Text(Self.meaning(c.key)).font(.callout).foregroundStyle(.secondary)
+                    Text("Each part is out of 20. Point at one for what it counts.").font(.caption).foregroundStyle(.secondary)
                 }
+            } else {
+                PaneTitle(title: "Run health", subtitle: "Appears after \(insights?.minSessions ?? 10) sessions in the last 30 days.")
             }
-        } else {
-            PaneTitle(title: "Run health", subtitle: nil)
-            EmptyNote(text: "Run health needs at least \(insights?.minSessions ?? 10) sessions in the last 30 days. It fills in as your agents work.")
         }
+    }
+
+    /// One sentence: which way the score went and the part that moved it most.
+    static func summary(_ ins: Insights) -> String {
+        guard let score = ins.score else { return "" }
+        var out = "How your agents' sessions went in the last \(ins.days) days."
+        if let prev = ins.prevScore, abs(score - prev) >= 0.5 {
+            out = "\(score > prev ? "Up" : "Down") \(Format.points(abs(score - prev))) from \(Int(prev.rounded())) the month before"
+            let moved = ins.components.compactMap { c -> (String, Double)? in
+                guard let a = c.points, let b = c.prevPoints else { return nil }
+                return (c.name, a - b)
+            }.max { abs($0.1) < abs($1.1) }
+            if let m = moved, abs(m.1) >= 0.5 { out += ", mostly \(m.0.lowercased()) (\(m.1 > 0 ? "+" : "")\(Format.points(m.1)))." } else { out += "." }
+        }
+        return out
     }
 
     static func meaning(_ key: String) -> String {
@@ -192,7 +182,7 @@ struct FixesPane: View {
     var insights: Insights?
 
     var body: some View {
-        PaneTitle(title: "Fixes", subtitle: "Changes to your agent setup that your own sessions say would help, best first.")
+        PaneTitle(title: "Do this next", subtitle: "Changes your own sessions say would help, best first.")
         let fixes = insights?.fixes ?? []
         if fixes.isEmpty {
             EmptyNote(text: "Nothing to fix right now. Pip will tell you when your sessions show a pattern worth changing.")
@@ -217,7 +207,7 @@ struct FixesPane: View {
                     }
                 }
                 .padding(.top, 4)
-                Text(f.applicable ? "You see the exact lines before anything is written, and can undo it from Applied."
+                Text(f.applicable ? "You see the exact lines before anything is written, and can undo it under What changed."
                      : "AgentPlay can't change this one itself; the prompt hands the whole case to Claude Code.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -232,7 +222,7 @@ struct AppliedPane: View {
     var insights: Insights?
 
     var body: some View {
-        PaneTitle(title: "Applied", subtitle: "Every change AgentPlay made to your setup, and whether it worked: the thing the fix was chosen to move, measured over the 30 days before and the sessions since.")
+        PaneTitle(title: "What changed", subtitle: "Every change AgentPlay made, and whether it worked.")
         let applied = insights?.applied ?? []
         if applied.isEmpty {
             EmptyNote(text: "Nothing applied yet. Apply a fix and it shows here, with before and after.")
@@ -317,7 +307,7 @@ struct AutotunePane: View {
     var insights: Insights?
 
     var body: some View {
-        PaneTitle(title: "Autotune", subtitle: "Once a day, AgentPlay applies the safe fixes (notes in CLAUDE.local.md) in repos you allow, measures them, and takes them back if they didn't help. Changes to settings wait here for you.")
+        PaneTitle(title: "Autotune", subtitle: "Once a day it applies safe notes in repos you allow, measures them, and takes back what didn't help.")
         let at = insights?.autotune
         Card {
             Label(at?.enabled == true ? "On for at least one repo" : "Off", systemImage: at?.enabled == true ? "checkmark.circle.fill" : "pause.circle")
@@ -325,9 +315,7 @@ struct AutotunePane: View {
             Text(at?.lastRun.map { "Last ran \($0.prefix(10))." } ?? "Hasn't run yet.").font(.callout).foregroundStyle(.secondary)
             Button("Choose Repos in AgentPlay…") { model.openInsights(page: "autotune") }.buttonStyle(.link)
         }
-        Text("Waiting for you").font(.title2.weight(.semibold)).padding(.top, 6)
         let pending = at?.pending ?? []
-        if pending.isEmpty { EmptyNote(text: "Nothing waiting.") }
         ForEach(pending) { p in
             Card {
                 HStack(alignment: .firstTextBaseline) {
@@ -350,10 +338,9 @@ struct AutotunePane: View {
 struct SteeringPane: View {
     var signals: Signals?
     var body: some View {
-        PaneTitle(title: "How you steer", subtitle: "Counted from what you type to Claude Code. No message text is kept.")
+        PaneTitle(title: "How you steer", subtitle: "From what you type to Claude Code. No message text is kept.")
         if let s = signals {
             Card { SteeringCard(signals: s) }
-            Card { SignalsCard(signals: s) }
         } else {
             EmptyNote(text: "Appears after about 20 messages to Claude Code.")
         }

@@ -84,7 +84,7 @@ enum Renderer {
             }
         }
         // Settings as the real window: toolbar tabs and all.
-        for pane in [SettingsView.Pane.general, .claude, .notifications, .sources] {
+        for pane in SettingsView.Pane.allCases {
             let m = fixtureModel("two-active")
             m.settingsPane = pane
             for dark in [false, true] {
