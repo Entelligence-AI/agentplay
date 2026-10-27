@@ -16,7 +16,7 @@ export function AutotuneView() {
     return (
       <div role="note" className="rounded-xl border border-ds-border-subtlest bg-ds-surface-white p-6 text-center ds-text-body-sm-medium">
         Autotune writes to your own repos, so it runs from the CLI on your machine. Run{' '}
-        <code className="font-mono">uvx agentplay</code> to set it up.
+        <code className="font-mono">uvx agentplay@latest</code> to set it up.
       </div>
     );
   }

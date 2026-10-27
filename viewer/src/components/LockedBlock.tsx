@@ -72,7 +72,7 @@ export function LockedBlock({
             : // Nearly opaque, not a tint. The sample only has to read as
               // texture; the sentence over it has to be readable, and at
               // /70 the sample's own words showed through the blurb.
-              'bg-ds-surface-white/92 backdrop-blur-[6px]'
+              'bg-ds-surface-white/[0.92] backdrop-blur-[6px]'
         )}
       >
         <div className="flex flex-col gap-0.5">

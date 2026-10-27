@@ -1010,7 +1010,7 @@ function Rows({
               <button
                 type="button"
                 onClick={() => onSeek(r.seek!)}
-                className="max-w-full cursor-pointer truncate rounded text-right underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ds-border-focus"
+                className="max-w-full cursor-pointer truncate rounded text-right underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ds-brand-subtle"
               >
                 {r.v}
               </button>

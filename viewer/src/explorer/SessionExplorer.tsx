@@ -553,7 +553,7 @@ function useScopeActions(x: ExplorerScope) {
 }
 
 const REPLAY_LABEL =
-  'Session replay. Space plays or pauses, arrow keys step, Shift steps 10, E jumps to the next edit, X to the next error, D to the next delay, O to the next output, R to the next retry.';
+  'Session replay. Space plays or pauses, arrow keys step, Shift steps 10, Home and End jump to the first and last event, E jumps to the next edit, X to the next error, D to the next delay, O to the next output, R to the next retry.';
 
 /**
  * The fit-viewport replay: sidebar | (header with the filters on its line,

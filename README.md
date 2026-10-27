@@ -12,7 +12,7 @@
 **See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro, Gemini CLI and Antigravity CLI.**
 
 ```bash
-uvx agentplay
+uvx agentplay@latest
 ```
 
 That one command finds the agent sessions already on your machine, builds a redacted replay of each one, and opens a local viewer. No account and no API key are required, and your session data never leaves your machine. The only network call is an optional email signup in the viewer, described under [Privacy](#privacy); set `AGENTPLAY_NO_NETWORK=1` to switch it off.
@@ -57,7 +57,7 @@ agentplay makes that data readable. Every session becomes a map of everything it
 You need Python 3.11 or newer. agentplay has **no runtime dependencies** beyond the standard library.
 
 ```bash
-uvx agentplay                 # run without installing (uv: https://docs.astral.sh/uv/)
+uvx agentplay@latest          # run the newest release without installing (uv: https://docs.astral.sh/uv/)
 pipx run agentplay            # same, with pipx
 pip install agentplay         # or install it into an environment
 ```

@@ -128,7 +128,7 @@ export function PromptImages({
                 onClick={() => setOpenKey(s.key)}
                 className={cn(
                   TILE,
-                  'block w-full cursor-pointer outline-none transition-colors hover:border-ds-border-subtler focus-visible:ring-2 focus-visible:ring-ds-border-focus'
+                  'block w-full cursor-pointer outline-none transition-colors hover:border-ds-border-subtler focus-visible:ring-2 focus-visible:ring-ds-brand-subtle'
                 )}
               >
                 <img

@@ -192,7 +192,7 @@ export function App() {
         {mode !== 'probing' ? <PlatformBanner /> : null}
         {mode === 'demo' && source === demo ? (
           <Banner>
-            Demo sessions. Run <code className="font-mono">uvx agentplay</code> (or{' '}
+            Demo sessions. Run <code className="font-mono">uvx agentplay@latest</code> (or{' '}
             <code className="font-mono">pipx run agentplay</code>) to see your own, or drop a map
             file anywhere on this page.
           </Banner>

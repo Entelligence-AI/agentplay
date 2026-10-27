@@ -168,8 +168,14 @@
     --ds-text-body-xs-medium-lh: 16px;
     --ds-text-body-xs-semibold: 12px;
     --ds-text-body-xs-semibold-lh: 16px;
+    --ds-text-body-sm-medium: 14px;
+    --ds-text-body-sm-medium-lh: 1.45;
     --ds-text-body-sm-semibold: 14px;
     --ds-text-body-sm-semibold-lh: 1.45;
+    --ds-text-title-sm-semibold: 16px;
+    --ds-text-title-sm-semibold-lh: 24px;
+    --ds-text-title-md-semibold: 20px;
+    --ds-text-title-md-semibold-lh: 28px;
   }
 
   .dark {

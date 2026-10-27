@@ -102,6 +102,7 @@ export function playbackClock(
 export type ReplayKeyAction =
   | { type: 'toggle' }
   | { type: 'step'; delta: number }
+  | { type: 'seek'; index: number }
   | { type: 'jump'; kind: JumpKey };
 
 type JumpKey = 'edit' | 'err' | 'delay' | 'out' | 'retry';
@@ -121,15 +122,18 @@ const TAKES_ARROWS = `${TAKES_EVERY_KEY}, [role="tab"], [role="radio"]`;
 const KEPT_BY: Record<ReplayKeyAction['type'], string> = {
   jump: TAKES_EVERY_KEY,
   step: TAKES_ARROWS,
+  // Home / End move within text fields, listboxes, menus, tab lists and radio
+  // groups, so those keep them. Buttons and links ignore Home / End.
+  seek: TAKES_ARROWS,
   toggle: `${TAKES_ARROWS}, button, summary, a[href], [role="button"]`,
 };
 
 /**
- * Space plays or pauses, the arrow keys step (Shift steps 10), and E / X / D /
- * O / R jump to the next edit / error / delay / output / retry. Any modifier
- * other than Shift means the key belongs to the browser. A key the focused
- * control uses, or already handled, belongs to that control. Both map to
- * nothing.
+ * Space plays or pauses, the arrow keys step (Shift steps 10), Home and End
+ * jump to the start and end, and E / X / D / O / R jump to the next edit /
+ * error / delay / output / retry. Any modifier other than Shift means the key
+ * belongs to the browser. A key the focused control uses, or already handled,
+ * belongs to that control. Both map to nothing.
  */
 export function replayKeyAction(e: {
   key: string;
@@ -150,6 +154,9 @@ export function replayKeyAction(e: {
 
 function actionForKey(key: string, shift: boolean): ReplayKeyAction | null {
   if (key === ' ') return { type: 'toggle' };
+  // The reducer clamps, so Infinity lands on the last event.
+  if (key === 'Home') return { type: 'seek', index: 0 };
+  if (key === 'End') return { type: 'seek', index: Infinity };
   if (key === 'ArrowRight' || key === 'ArrowLeft') {
     const d = (shift ? 10 : 1) * (key === 'ArrowRight' ? 1 : -1);
     return { type: 'step', delta: d };

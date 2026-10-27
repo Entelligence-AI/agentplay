@@ -33,7 +33,7 @@ export function RunHealthView({ range }: { range: Range }) {
   if (!source.health) {
     return (
       <Note>
-        Run health reads your local store through the CLI. Run <code className="font-mono">uvx agentplay</code> to see
+        Run health reads your local store through the CLI. Run <code className="font-mono">uvx agentplay@latest</code> to see
         yours; the demo has too few sessions to score.
       </Note>
     );

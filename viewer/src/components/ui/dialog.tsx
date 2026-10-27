@@ -24,7 +24,7 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Popup>
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Portal>
-    <DialogPrimitive.Backdrop className="fixed inset-0 z-[1000] bg-ds-gray-darkest/40 transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0" />
+    <DialogPrimitive.Backdrop className="fixed inset-0 z-[1000] bg-black/40 transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0" />
     <DialogPrimitive.Popup
       ref={ref}
       className={cn(

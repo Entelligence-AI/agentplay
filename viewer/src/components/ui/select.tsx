@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Select as SelectPrimitive } from '@base-ui/react/select';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { CaretDown, CaretUp, Check } from '@phosphor-icons/react';
 
 import { cn } from '@/lib/utils';
 
@@ -24,7 +24,7 @@ const SelectTrigger = React.forwardRef<
   >
     {children}
     <SelectPrimitive.Icon
-      render={<ChevronDown className="h-4 w-4 text-ds-text-subtle" />}
+      render={<CaretDown size={16} aria-hidden className="text-ds-text-subtle" />}
     />
   </SelectPrimitive.Trigger>
 ));
@@ -42,7 +42,7 @@ const SelectScrollUpButton = React.forwardRef<
     )}
     {...props}
   >
-    <ChevronUp className="h-4 w-4" />
+    <CaretUp size={16} aria-hidden />
   </SelectPrimitive.ScrollUpArrow>
 ));
 SelectScrollUpButton.displayName = SelectPrimitive.ScrollUpArrow.displayName;
@@ -59,7 +59,7 @@ const SelectScrollDownButton = React.forwardRef<
     )}
     {...props}
   >
-    <ChevronDown className="h-4 w-4" />
+    <CaretDown size={16} aria-hidden />
   </SelectPrimitive.ScrollDownArrow>
 ));
 SelectScrollDownButton.displayName =
@@ -149,7 +149,7 @@ const SelectItem = React.forwardRef<
         <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center" />
       }
     >
-      <Check className="h-4 w-4 text-ds-brand-subtle" />
+      <Check size={16} aria-hidden className="text-ds-brand-subtle" />
     </SelectPrimitive.ItemIndicator>
   </SelectPrimitive.Item>
 ));

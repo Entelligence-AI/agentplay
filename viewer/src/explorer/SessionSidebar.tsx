@@ -163,7 +163,7 @@ function ActionChip({
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ds-border-focus"
+      className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ds-brand-subtle"
     >
       {chip}
     </button>
@@ -588,7 +588,7 @@ function TaskList({
                     disabled={!onJumpToErrors}
                     aria-label={`${noun.one} ${t.n}: ${errs.count} ${errs.count === 1 ? 'error' : 'errors'}. Show them`}
                     title={`Show this ${noun.one.toLowerCase()}'s errors`}
-                    className="pointer-events-auto rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ds-border-focus"
+                    className="pointer-events-auto rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ds-brand-subtle"
                   >
                     <Badge variant="error">
                       {errs.count} {errs.count === 1 ? 'error' : 'errors'}
