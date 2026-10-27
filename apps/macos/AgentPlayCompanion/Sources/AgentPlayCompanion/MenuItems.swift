@@ -125,6 +125,7 @@ enum MenuBuilder {
         for p in providers {
             out.append(.provider(p))
             if p.windows.isEmpty, p.provider == "claude-code" { out.append(.enableLimits(provider: p.provider)) }
+            if p.provider == "claude-code" { out.append(.claudeAccounts) }
         }
         if !providers.isEmpty { out.append(.separator) }
 
@@ -184,8 +185,7 @@ enum MenuBuilder {
     static func contextMenu(hasStore: Bool) -> [MenuEntry] {
         var out: [MenuEntry] = [.action(.openViewer)]
         if hasStore { out.append(.action(.showAllSessions)) }
-        // Switching accounts is a command, not a status: it lives here, not on the plan card.
-        out += [.action(.refresh), .separator, .claudeAccounts, .action(.settings), .action(.quit)]
+        out += [.action(.refresh), .separator, .action(.settings), .action(.quit)]
         return out
     }
 

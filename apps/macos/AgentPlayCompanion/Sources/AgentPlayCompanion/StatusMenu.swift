@@ -609,12 +609,11 @@ struct ProviderCard: View {
                     // Which account these numbers belong to.
                     Text(who).font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(1).truncationMode(.middle)
                 }
-                Text(status(p)).font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                if let line = status(p) {
+                    Text(line).font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                }
             }
             ForEach(p.windows) { w in MeterRow(window: w, now: now) }
-            if let warning = paceWarning(p) {
-                Text(warning).font(.subheadline).foregroundStyle(Color(nsColor: .systemOrange))
-            }
             if let plans = p.conflictingPlans {
                 Text("Recent sessions reported \(plans.map(\.capitalized).joined(separator: " and ")). They may be different accounts.")
                     .font(.subheadline).foregroundStyle(Ink.secondary)
@@ -627,7 +626,9 @@ struct ProviderCard: View {
         .accessibilityElement(children: .combine)
     }
 
-    func status(_ p: ProviderSummary) -> String {
+    /// A line under the title only when there is something to say: why there are no numbers, that they are
+    /// stale, or that they are old. Fresh numbers speak for themselves.
+    func status(_ p: ProviderSummary) -> String? {
         if p.windows.isEmpty {
             if p.provider == "claude-code", model.prefs.usesClaudeAccount {
                 return model.accountFailure?.message ?? "Asking your Claude account…"
@@ -646,23 +647,10 @@ struct ProviderCard: View {
         if p.windows.allSatisfy({ MeterRow.isStale($0, now: now) }) {
             return "Stale · last report \(Format.relative(seen, now: now))"
         }
-        var parts = ["Updated \(Format.relative(seen, now: now))"]
-        if paceWarning(p) == nil, let w = p.window("weekly"), !MeterRow.isStale(w, now: now),
-           MeterRow.pace(w, now: now) != nil {
-            parts.append("on pace for the week")
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    /// The one verdict worth colour: a window that runs out before it resets.
-    func paceWarning(_ p: ProviderSummary) -> String? {
-        for w in p.windows where !MeterRow.isStale(w, now: now) {
-            guard let pace = MeterRow.pace(w, now: now), pace.level != .normal, let out = pace.runsOutAt else { continue }
-            let name = w.window == "five_hour" ? "Session" : w.windowLabel
-            return "\(name) runs out in \(Format.duration(out.timeIntervalSince(now))) at this pace"
-        }
+        if let seen, now.timeIntervalSince(seen) > 15 * 60 { return "Updated \(Format.relative(seen, now: now))" }
         return nil
     }
+
 }
 
 /// Pip at twice its menu-bar size, alive while the menu is open: it blinks, types and waves, hops when clicked,
@@ -1109,7 +1097,8 @@ struct MeterRow: View {
                 }
             }
             .frame(height: 5)
-            Text(detail(stale, used: used)).font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+            Text(detail(stale, used: used)).font(.subheadline.monospacedDigit())
+                .foregroundStyle(tint == .normal || tint == .stale ? Ink.secondary : tint.color)
                 .lineLimit(1).fixedSize()
         }
         .accessibilityElement(children: .ignore)
@@ -1120,6 +1109,10 @@ struct MeterRow: View {
 
     func detail(_ stale: Bool, used: Double) -> String {
         if stale { return "\(Format.percent(used)) · stale, updates when \(window.providerLabel) runs" }
+        // Ahead of pace: the time it runs out replaces the reset time, in the bar's own orange or red.
+        if let pace = Self.pace(window, now: now), pace.level != .normal, let out = pace.runsOutAt {
+            return "\(Format.percent(used)) · out in \(Format.duration(out.timeIntervalSince(now)))"
+        }
         guard let r = window.resetsAt else { return Format.percent(used) }
         let left = r.timeIntervalSince(now)
         let reset = left < 86400 ? "resets in \(Format.duration(left))" : "resets \(Format.weekdayTime(r))"
