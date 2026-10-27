@@ -1109,3 +1109,104 @@ def test_setup_inventory_counts_uses_by_name_only(tmp_path):
     raw = json.dumps(rep)
     for secret in ("SECRET PROMPT", "SECRET TEXT", "SECRET-ARG", "/Users/me"):
         assert secret not in raw, secret
+
+
+def test_setup_impact_compares_sessions_with_and_without(tmp_path):
+    from datetime import UTC, datetime
+
+    from agentplay import setup_inventory
+
+    home = tmp_path / ".claude"
+    (home / "skills" / "tdd").mkdir(parents=True)
+    (home / "skills" / "tdd" / "SKILL.md").write_text("---\nname: tdd\n---\n")
+    now = datetime(2026, 10, 27, tzinfo=UTC)
+    t = now.timestamp() - 3600
+
+    def session(i: int, used: bool, cor: int) -> dict:
+        sig = [[t, "msg", f"{i}-m{k}"] for k in range(10)] + [[t, "cor", f"{i}-c{k}"] for k in range(cor)]
+        sig += [[t, "call", f"{i}-k{k}"] for k in range(20)]
+        return {"session": f"s{i}", "sig": sig, "use": [[t, "skill", "tdd"]] if used else []}
+
+    files = [session(i, True, 0) for i in range(5)] + [session(i, False, 2) for i in range(5, 11)]
+    uses = [[t, "skill", "tdd"]] * 5
+    it = next(i for i in setup_inventory.report(home, uses, now, files=files)["items"] if i["name"] == "tdd")
+    imp = it["impact"]
+    assert (imp["with"], imp["without"]) == (5, 6)
+    assert imp["correctionWith"] == 0.0 and imp["correctionWithout"] == 20.0
+    assert imp["verdict"] == "fewer corrections"
+    # Under five sessions on a side there is nothing to compare.
+    few = setup_inventory.report(home, uses[:2], now, files=files[:2] + files[5:])["items"]
+    assert next(i for i in few if i["name"] == "tdd")["impact"]["verdict"] == "too few"
+    # A session with fewer than three messages from you says nothing about steering.
+    assert setup_inventory.sessions([{"session": "x", "sig": [[t, "msg", "a"]], "use": []}], 0) == {}
+
+
+def test_failed_tool_calls_are_a_signal():
+    from agentplay import usage
+
+    line = {"type": "user", "timestamp": "2026-10-26T10:00:00Z", "uuid": "u1", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": "SECRET OUTPUT"}]}}
+    out, _ = usage._signal_line(json.dumps(line).encode(), True)
+    assert [e[1:] for e in out] == [["err", "t1"]]
+
+
+def test_coach_keeps_only_checked_suggestions():
+    from agentplay import coach
+
+    reply = 'Sure:\n{"suggestions": [' + ",".join([
+        '{"kind": "use-skill", "title": "Use tdd — always", "why": "Fewer corrections.", "name": "tdd"}',
+        '{"kind": "use-skill", "title": "Use magic", "why": "It is great.", "name": "not-installed"}',
+        '{"kind": "weird", "title": "Rest", "why": "Breaks help.", "name": null}',
+        '{"kind": "habit", "title": "", "why": "no title"}',
+        '{"kind": "habit", "title": "Four", "why": "one too many"}',
+        '{"kind": "habit", "title": "Five", "why": "two too many"}']) + "]}"
+    got = coach.parse(reply, {"tdd"})
+    assert len(got) == 3
+    assert got[0] == {"kind": "use-skill", "title": "Use tdd , always", "why": "Fewer corrections.", "name": "tdd"}
+    assert got[1]["name"] is None and got[2]["kind"] == "habit"
+    assert coach.parse("no json here", {"tdd"}) == []
+
+
+def test_coach_runs_isolated_once_a_day_and_sends_no_text(tmp_path, monkeypatch):
+    monkeypatch.delenv("USER", raising=False)  # as the app starts the core
+    monkeypatch.delenv("LOGNAME", raising=False)
+    import os
+    import stat
+    from datetime import UTC, datetime, timedelta
+
+    from agentplay import coach
+    from agentplay.store import Store
+
+    home = tmp_path / ".claude"
+    (home / "skills" / "tdd").mkdir(parents=True)
+    (home / "skills" / "tdd" / "SKILL.md").write_text("---\nname: tdd\ndescription: Write the test first.\n---\nSECRET BODY\n")
+    seen = tmp_path / "seen"
+    fake = tmp_path / "claude"
+    fake.write_text("#!/bin/sh\n"
+                    f'printf "%s\\n" "$@" > "{seen}.args"\n'
+                    f'echo "$USER" > "{seen}.user"\n'
+                    f'cat > "{seen}.stdin"\n'
+                    'echo \'{"result": "{\\"suggestions\\": [{\\"kind\\": \\"use-skill\\", \\"title\\": \\"Use tdd\\", '
+                    '\\"why\\": \\"It fits.\\", \\"name\\": \\"tdd\\"}]}", "usage": {"input_tokens": 10, "output_tokens": 5}}\'\n')
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    st = Store(tmp_path / "ap")
+    snap = {"usage": {"setup": {"items": [{"kind": "skill", "name": "tdd", "uses": 2}]},
+                      "signals": {"current": {"messages": 40, "correctionRate": 7.5}}},
+            "insights": {"score": 61, "components": [{"name": "Verification", "points": 8.5}], "fixes": [{"title": "Run checks"}]},
+            "runs": [{"title": "SECRET PROMPT"}]}
+    now = datetime(2026, 10, 27, tzinfo=UTC)
+    out = coach.run(st, str(fake), snap, home, now=now)
+    assert out["ran"] and out["suggestions"][0]["name"] == "tdd" and out["tokens"] == 15
+    args = (tmp_path / "seen.args").read_text().split("\n")
+    for flag in ("--tools", "--setting-sources", "--strict-mcp-config", "--no-session-persistence"):
+        assert flag in args, flag
+    assert args[args.index("--model") + 1] == "haiku"
+    assert (tmp_path / "seen.user").read_text().strip()  # Claude Code needs it to find its login
+    sent = (tmp_path / "seen.stdin").read_text()
+    assert "Write the test first." in sent and "Verification" in sent
+    assert "SECRET" not in sent
+    os.remove(tmp_path / "seen.stdin")
+    again = coach.run(st, str(fake), snap, home, now=now + timedelta(hours=5))
+    assert not again["ran"] and not (tmp_path / "seen.stdin").exists()
+    assert coach.cached(st)["suggestions"] == out["suggestions"]
+    assert coach.run(st, str(fake), snap, home, now=now + timedelta(hours=21))["ran"]

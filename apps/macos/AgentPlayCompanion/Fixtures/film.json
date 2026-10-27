@@ -2845,7 +2845,176 @@
     }
    ]
   },
-  "timingMs": 0
+  "timingMs": 0,
+  "setup": {
+   "days": 30,
+   "counts": {
+    "mcp": 2,
+    "skill": 6,
+    "agent": 2,
+    "hook": 2
+   },
+   "sessions": 40,
+   "unused": 6,
+   "items": [
+    {
+     "kind": "mcp",
+     "name": "figma",
+     "source": "you",
+     "detail": null,
+     "uses": 214,
+     "lastUsed": "2026-10-23T10:46:00Z",
+     "verdict": "used",
+     "installedAt": null,
+     "impact": {
+      "with": 9,
+      "without": 31,
+      "correctionWith": 5.1,
+      "correctionWithout": 9.4,
+      "errorWith": 2.8,
+      "errorWithout": 4.1,
+      "verdict": "fewer corrections"
+     }
+    },
+    {
+     "kind": "skill",
+     "name": "test-first",
+     "source": "you",
+     "detail": null,
+     "uses": 37,
+     "lastUsed": "2026-10-23T10:46:00Z",
+     "verdict": "used",
+     "installedAt": null,
+     "impact": {
+      "with": 12,
+      "without": 28,
+      "correctionWith": 4.2,
+      "correctionWithout": 10.3,
+      "errorWith": 3.0,
+      "errorWithout": 3.6,
+      "verdict": "fewer corrections"
+     }
+    },
+    {
+     "kind": "agent",
+     "name": "reviewer",
+     "source": "you",
+     "detail": null,
+     "uses": 11,
+     "lastUsed": "2026-10-23T10:46:00Z",
+     "verdict": "used",
+     "installedAt": null,
+     "impact": {
+      "with": 6,
+      "without": 34,
+      "correctionWith": 8.0,
+      "correctionWithout": 8.6,
+      "errorWith": 2.1,
+      "errorWithout": 4.9,
+      "verdict": "fewer failed calls"
+     }
+    },
+    {
+     "kind": "skill",
+     "name": "release-notes",
+     "source": "you",
+     "detail": null,
+     "uses": 4,
+     "lastUsed": "2026-10-23T10:46:00Z",
+     "verdict": "used",
+     "installedAt": null,
+     "impact": {
+      "with": 3,
+      "without": 37,
+      "correctionWith": 7.0,
+      "correctionWithout": 8.1,
+      "errorWith": 3.5,
+      "errorWithout": 3.9,
+      "verdict": "too few"
+     }
+    },
+    {
+     "kind": "skill",
+     "name": "brand-voice",
+     "source": "you",
+     "detail": null,
+     "uses": 0,
+     "lastUsed": null,
+     "verdict": "unused",
+     "installedAt": null
+    },
+    {
+     "kind": "skill",
+     "name": "pricing-page",
+     "source": "you",
+     "detail": null,
+     "uses": 0,
+     "lastUsed": null,
+     "verdict": "unused",
+     "installedAt": null
+    },
+    {
+     "kind": "skill",
+     "name": "sql-tuner",
+     "source": "you",
+     "detail": null,
+     "uses": 0,
+     "lastUsed": null,
+     "verdict": "unused",
+     "installedAt": null
+    },
+    {
+     "kind": "skill",
+     "name": "onboarding-copy",
+     "source": "you",
+     "detail": null,
+     "uses": 0,
+     "lastUsed": null,
+     "verdict": "unused",
+     "installedAt": null
+    },
+    {
+     "kind": "agent",
+     "name": "researcher",
+     "source": "you",
+     "detail": null,
+     "uses": 0,
+     "lastUsed": null,
+     "verdict": "unused",
+     "installedAt": null
+    },
+    {
+     "kind": "mcp",
+     "name": "notion",
+     "source": "you",
+     "detail": null,
+     "uses": 0,
+     "lastUsed": null,
+     "verdict": "unused",
+     "installedAt": null
+    },
+    {
+     "kind": "hook",
+     "name": "SessionStart",
+     "source": "you",
+     "detail": "load-env.sh",
+     "uses": 0,
+     "lastUsed": null,
+     "verdict": "runs",
+     "installedAt": null
+    },
+    {
+     "kind": "hook",
+     "name": "PostToolUse:Edit",
+     "source": "you",
+     "detail": "format.sh",
+     "uses": 0,
+     "lastUsed": null,
+     "verdict": "runs",
+     "installedAt": null
+    }
+   ]
+  }
  },
  "insights": {
   "days": 30,
@@ -2959,5 +3128,30 @@
  "timing": {
   "snapshotMs": 0
  },
- "sample": true
+ "sample": true,
+ "coach": {
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "model": "haiku",
+  "tokens": 7100,
+  "suggestions": [
+   {
+    "kind": "use-skill",
+    "title": "Start bigger tasks with test-first",
+    "why": "Sessions that used it had half the corrections. You used it in 12 of 40 sessions; the long refactors went without it.",
+    "name": "test-first"
+   },
+   {
+    "kind": "remove",
+    "title": "Remove four skills you never use",
+    "why": "brand-voice, pricing-page, sql-tuner and onboarding-copy ran zero times in 30 days, yet each description loads into every session.",
+    "name": null
+   },
+   {
+    "kind": "habit",
+    "title": "Say what done looks like up front",
+    "why": "Most corrections came after the agent stopped early. One line on how to check the result saves a round trip.",
+    "name": null
+   }
+  ]
+ }
 }

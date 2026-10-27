@@ -448,12 +448,41 @@ public struct SetupReport: Codable, Sendable, Equatable {
         public var uses: Int
         public var lastUsed: String?
         public var verdict: String     // used, rare, unused, runs
+        /// Sessions that used it against sessions that didn't, when it was used at all.
+        public var impact: Impact?
         public var id: String { "\(kind)|\(name)|\(detail ?? "")" }
+    }
+    public struct Impact: Codable, Sendable, Equatable {
+        public var with: Int
+        public var without: Int
+        public var correctionWith: Double?
+        public var correctionWithout: Double?
+        public var errorWith: Double?
+        public var errorWithout: Double?
+        public var verdict: String     // fewer corrections, more corrections, fewer failed calls, more failed calls,
+                                       // no clear difference, too few
+        public var isClear: Bool { verdict != "too few" && verdict != "no clear difference" }
+        public var isGood: Bool { verdict.hasPrefix("fewer") }
     }
     public var days: Int
     public var counts: [String: Int]
+    public var sessions: Int?
     public var unused: Int
     public var items: [Item]
+}
+
+public struct Coach: Codable, Sendable, Equatable {
+    public struct Suggestion: Codable, Sendable, Equatable, Identifiable {
+        public var kind: String        // use-skill, remove, habit, fix
+        public var title: String
+        public var why: String
+        public var name: String?
+        public var id: String { title }
+    }
+    public var generatedAt: String?
+    public var model: String?
+    public var tokens: Int?
+    public var suggestions: [Suggestion]
 }
 
 public struct Signals: Codable, Sendable, Equatable {
@@ -634,6 +663,8 @@ public struct Snapshot: Codable, Sendable, Equatable {
     public var live: [LiveSession]?
     public var usage: UsageReport?
     public var insights: Insights?
+    /// Up to three suggestions from Claude, if the person turned them on (`agentplay companion coach`).
+    public var coach: Coach?
 
     public var isSample: Bool { sample == true }
     public var foundSources: [SourceCapability] { sources.filter { $0.status == .found } }

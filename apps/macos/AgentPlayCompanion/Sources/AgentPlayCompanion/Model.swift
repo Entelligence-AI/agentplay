@@ -27,8 +27,13 @@ final class CompanionModel: ObservableObject {
             guard prefs != oldValue else { return }
             prefsStore.save(prefs)
             envBox.value = prefs.folderEnvironment
+            if prefs.asksClaudeForSuggestions, !oldValue.asksClaudeForSuggestions { askClaude(force: true) }
         }
     }
+    /// Which tab the menu shows: what's happening now, what to improve, or your setup.
+    @Published var menuTab: MenuTab = .now
+    /// True while Claude is being asked for suggestions.
+    @Published private(set) var askingClaude = false
     /// The extra environment for the core, readable from the background scan without touching the main actor.
     private let envBox = EnvBox()
     @Published var settingsPane: SettingsView.Pane = .general
@@ -266,6 +271,24 @@ final class CompanionModel: ObservableObject {
         refreshLive()  // the records may be newer than the snapshot
         noticeSnapshotEvents(s)
         deliverAlerts(s)
+        askClaude(force: false)
+    }
+
+    /// Suggestions from Claude: at most once a day, only when turned on, through the person's own Claude Code.
+    /// The core keeps the last answer and skips the call when it's under a day old.
+    func askClaude(force: Bool) {
+        guard prefs.asksClaudeForSuggestions, !askingClaude, !filmMode, !sampleMode else { return }
+        if !force, let at = snapshot?.coach?.generatedAt.flatMap(SnapshotDecoder.parseISO), Date().timeIntervalSince(at) < 20 * 3600 { return }
+        askingClaude = true
+        Task {
+            defer { askingClaude = false }
+            guard let claude = await Task.detached(operation: { ClaudeSwitch.claudeExecutable() }).value else {
+                toast = "Claude Code isn't installed, so there's no one to ask."
+                return
+            }
+            let r = await command(["coach", "--claude", claude] + (force ? ["--force"] : []), timeout: 180)
+            if r.ok { await refresh(.read) } else if force { toast = r.message ?? "Claude didn't answer." }
+        }
     }
 
     // MARK: Pip
@@ -289,6 +312,12 @@ final class CompanionModel: ObservableObject {
 
     var tips: [Pip.Tip] { snapshot.map { Pip.tips($0, now: Date()) } ?? [] }
     var currentTip: Pip.Tip? { tips.isEmpty ? nil : tips[tipIndex % tips.count] }
+
+    /// Pip hops: a click on it, or a switch of tabs.
+    func hop() {
+        pipHop = true
+        Task { try? await Task.sleep(for: .milliseconds(350)); pipHop = false }
+    }
 
     func nextTip() {
         tipIndex &+= 1
@@ -800,10 +829,10 @@ final class CompanionModel: ObservableObject {
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".agentplay")
     }
 
-    private func command(_ args: [String]) async -> CompanionCommand.Reply {
+    private func command(_ args: [String], timeout: TimeInterval = 60) async -> CompanionCommand.Reply {
         if filmMode { return Self.filmReply(args) }
         guard let runtime else { return .init(ok: false, message: "The AgentPlay runtime is missing.", fields: [:]) }
-        return await CompanionCommand.run(runtime, args, extraEnv: envBox.value)
+        return await CompanionCommand.run(runtime, args, extraEnv: envBox.value, timeout: timeout)
     }
 
     /// What the core would answer while filming: the preview and the write of the one fix the script applies.
@@ -1108,7 +1137,8 @@ final class CompanionModel: ObservableObject {
 
     func menuEntries(now: Date, trim: Int = 0) -> [MenuEntry] {
         MenuBuilder.entries(snapshot: snapshot, phase: phase, prefs: prefs, lastError: lastError,
-                            isSample: isSample, now: now, bridgeOn: claudeBridgeOn, trim: trim)
+                            isSample: isSample, now: now, bridgeOn: claudeBridgeOn, trim: trim, tab: menuTab,
+                            askingClaude: askingClaude)
     }
 
     func refreshBridgeState() {

@@ -41,7 +41,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from . import __version__, discover
+from . import __version__, coach, discover
 from .store import INDEX_VERSION, Store
 
 SCHEMA = "agentplay.companion/v1"
@@ -1302,6 +1302,7 @@ def snapshot(store: Store | None = None, *, now: datetime | None = None, max_run
         "learn": learn_card(store, by_activity, now),
         "usage": _usage(store, now, homes),
         "insights": _insights(store, now, homes),
+        "coach": coach.cached(store),
         "timing": {"snapshotMs": round(1000 * (time.monotonic() - t_start))},
     }
 
@@ -1403,6 +1404,17 @@ def autotune_action(store: Store, action: str, fix_id: str) -> dict[str, Any]:
 
 def main(args: Any) -> int:
     cmd = getattr(args, "companion_cmd", "snapshot")
+    if cmd == "coach":
+        # The app runs this once a day, only when the person has turned on suggestions from Claude.
+        st = Store()
+        try:
+            home = (discover.Homes.default().claude_code or [Path.home() / ".claude"])[0]
+            out = coach.run(st, args.claude, snapshot(st), home, force=getattr(args, "force", False))
+            print(json.dumps({"ok": True, **out}))
+            return 0
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:
+            print(json.dumps({"ok": False, "message": str(e)[:200]}))
+            return 1
     if cmd in ("fix", "autotune"):
         from . import fixes
 

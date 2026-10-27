@@ -135,7 +135,8 @@ enum Renderer {
         controller.nowOverride = now
         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         controller.menu.appearance = NSApp.appearance
-        controller.rebuild(now: now)
+        controller.prepare(now: now)
+        print("render: menu \(url.lastPathComponent) tab \(m.menuTab.rawValue) \(Int(controller.menu.size.width))x\(Int(controller.menu.size.height))")
         if ProcessInfo.processInfo.environment["APC_DUMP_MENU"] != nil {
             for i in controller.menu.items {
                 print("item", i.isSeparatorItem ? "---" : i.title, i.isAlternate ? "ALT" : "", i.view.map { "view h=\($0.frame.height)" } ?? "")

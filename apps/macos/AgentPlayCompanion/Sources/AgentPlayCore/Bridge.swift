@@ -56,10 +56,11 @@ public enum CompanionCommand {
         }
     }
 
-    public static func run(_ runtime: Runtime, _ args: [String], extraEnv: [String: String] = [:]) async -> Reply {
+    public static func run(_ runtime: Runtime, _ args: [String], extraEnv: [String: String] = [:],
+                           timeout: TimeInterval = 60) async -> Reply {
         let env = childEnvironment(parent: ProcessInfo.processInfo.environment, extra: extraEnv)
         guard let r = try? await ChildProcess().run(runtime.python, ["-I", "-m", "agentplay", "companion"] + args,
-                                                    env: env, timeout: 60) else {
+                                                    env: env, timeout: timeout) else {
             return Reply(ok: false, message: "AgentPlay didn't answer.", fields: [:])
         }
         return parse(r.stdout)

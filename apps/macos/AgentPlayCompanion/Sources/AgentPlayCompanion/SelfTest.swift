@@ -131,6 +131,11 @@ extension Renderer {
             for dark in [false, true] {
                 captureMenu(m, now: snap.generatedAt, to: dir.appendingPathComponent("live-menu-\(dark ? "dark" : "light").png"), dark: dark)
             }
+            for t in [MenuTab.improve, .setup] {
+                m.menuTab = t
+                captureMenu(m, now: snap.generatedAt, to: dir.appendingPathComponent("live-menu-\(t.rawValue).png"), dark: true)
+            }
+            m.menuTab = .now
             if let line = MenuBuilder.sessionLines(snap, now: Date()).first {
                 write(AnyView(SessionDetail(line: line, now: Date())), to: dir.appendingPathComponent("live-session.png"), dark: true, material: true)
             }
@@ -147,7 +152,9 @@ extension Renderer {
                 write(AnyView(HealthCard(insights: ins)), to: dir.appendingPathComponent("live-health.png"), dark: true, material: true)
             }
             if let st = snap.usage?.setup {
-                write(AnyView(SetupCard(report: st)), to: dir.appendingPathComponent("live-setup.png"), dark: true, material: true)
+                if let it = st.items.first(where: { $0.impact != nil }) {
+                    write(AnyView(ImpactCard(item: it, sessions: st.sessions)), to: dir.appendingPathComponent("live-impact.png"), dark: true, material: true)
+                }
                 write(AnyView(VStack(alignment: .leading, spacing: 14) { SetupPane(report: st) }.padding(28).frame(width: 720)
                                 .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark)),
                       to: dir.appendingPathComponent("live-setup-pane.png"), dark: true, material: false)

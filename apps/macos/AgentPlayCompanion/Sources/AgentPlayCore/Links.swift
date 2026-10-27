@@ -132,6 +132,18 @@ public enum Format {
     }
 
     /// Middle-truncate a label (`payments-…-api`). Repo names are shown truncated by default.
+    /// Names, joined, cut at a whole name: "a, b and 3 more". Never mid-word.
+    public static func names(_ names: [String], max: Int = 34) -> String {
+        var out: [String] = []
+        for (i, n) in names.enumerated() {
+            let rest = names.count - i - 1
+            let next = (out + [n]).joined(separator: ", ") + (rest > 0 ? " and \(rest) more" : "")
+            if !out.isEmpty, next.count > max { return out.joined(separator: ", ") + " and \(names.count - out.count) more" }
+            out.append(n)
+        }
+        return out.joined(separator: ", ")
+    }
+
     public static func truncate(_ s: String?, max: Int = 22) -> String {
         guard let s, !s.isEmpty else { return "" }
         guard s.count > max, max > 3 else { return s }

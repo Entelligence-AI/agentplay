@@ -186,6 +186,34 @@ struct FixesPane: View {
 
     var body: some View {
         PaneTitle(title: "Do this next", subtitle: "What your own sessions say would help, best first.")
+        if let c = model.snapshot?.coach, !c.suggestions.isEmpty, model.prefs.asksClaudeForSuggestions {
+            Card {
+                HStack {
+                    Label("Claude suggests", systemImage: "sparkles").font(.headline)
+                    Spacer()
+                    Button("Ask Again") { model.askClaude(force: true) }.buttonStyle(.link).disabled(model.askingClaude)
+                }
+                ForEach(c.suggestions) { sg in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sg.title).font(.body.weight(.medium))
+                        Text(sg.why).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Text(SuggestionCard(suggestion: c.suggestions[0], coach: c).source).font(.caption).foregroundStyle(.secondary)
+            }
+        } else if !model.prefs.asksClaudeForSuggestions {
+            Card {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Label("Suggestions from Claude", systemImage: "sparkles").font(.headline)
+                        Text("Once a day, Claude Haiku reads your counts and the names of your skills, never your prompts or code, and suggests up to three changes. It runs on your Claude plan, a few thousand tokens a day.")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("Turn On") { model.prefs.claudeSuggestions = true }.buttonStyle(.borderedProminent)
+                }
+            }
+        }
         let fixes = insights?.fixes ?? []
         if fixes.isEmpty {
             EmptyNote(text: "Nothing to fix right now.")
@@ -321,6 +349,9 @@ struct SetupPane: View {
                     }
                     .frame(height: 6)
                     Text("\(it.uses)×").font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+                    Text(it.impact.map { $0.isClear ? $0.verdict : "too soon to tell" } ?? "").font(.caption)
+                        .foregroundStyle(it.impact?.isGood == true ? Color.green : .secondary)
+                        .frame(width: 130, alignment: .leading)
                 }
             }
         }

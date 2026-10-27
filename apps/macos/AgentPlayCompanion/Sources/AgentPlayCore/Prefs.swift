@@ -26,6 +26,9 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
     public var claudeAccounts: [ClaudeSwitch.Saved]? = nil
     /// Save each new account Claude Code signs in to (off: only when the user chooses Save).
     public var rememberClaudeAccounts: Bool? = nil
+    /// Ask Claude (Haiku, through the person's own Claude Code) for suggestions once a day. Off unless turned on.
+    public var claudeSuggestions: Bool? = nil
+    public var asksClaudeForSuggestions: Bool { claudeSuggestions ?? false }
     public var showsPipIsland: Bool { pipIslandEnabled ?? true }
 
     public init(now: Date = Date()) { history = AlertHistory(watermark: now) }

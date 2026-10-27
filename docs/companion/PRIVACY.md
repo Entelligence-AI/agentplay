@@ -1,6 +1,6 @@
 # Privacy
 
-AgentPlay Companion has no AgentPlay account and keeps no analytics; the only request it makes is the Claude usage fetch described under Network, which shows your plan limits and can be switched off. This page says exactly what it reads, shows, stores and runs, and which test holds each line.
+AgentPlay Companion has no AgentPlay account and keeps no analytics; the requests it makes are described under Network (plan limits, updates, and suggestions from Claude if you turn them on), and each can be switched off. This page says exactly what it reads, shows, stores and runs, and which test holds each line.
 
 ## Network
 
@@ -8,7 +8,11 @@ One request, for the plan limits, on by default and off with one switch: "Show C
 
 Switching Claude accounts (Settings → Account, and Switch Claude Account in the menu) makes no requests either. On the user's Save, it copies Claude Code's login from its Keychain item into AgentPlay's own item ("AgentPlay Claude accounts", one per account) and keeps the name, organization and last-seen usage in preferences. On Switch, it saves the outgoing login first, writes the chosen login into Claude Code's item (keeping this Mac's MCP server logins), and replaces only `oauthAccount` in `~/.claude.json`, after copying it to `~/.agentplay/backups`. All of it goes through `/usr/bin/security`, as Claude Code does, with the login on stdin, never in a process's arguments. Refused while a session is mid-step or when the saved login has expired. "Remember accounts I sign in to" is off by default. Tests: `ClaudeSwitchTests`, including an end-to-end round trip on throwaway Keychain items.
 
-Otherwise the app makes no requests of its own: no update check, no telemetry SDK, no remote fonts, icons or scripts (all assets are drawn in code or bundled). Every child process gets `AGENTPLAY_NO_NETWORK=1` and `DO_NOT_TRACK=1`, whatever the parent environment says (`Redaction.childEnvironmentIsMinimal`), so the viewer it opens hides the newsletter card and can't send an email. The only things that open a web page are links the user clicks (provider usage pages, "See supported agents"), and they open in the browser.
+Suggestions from Claude are off by default ("Ask Claude for suggestions once a day", Settings → Privacy, and the row at the bottom of the menu's Improve tab). When on, at most once every 20 hours the app runs your own `claude` once: `claude -p --model haiku --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence`, from `~/.agentplay/coach`, so no tool can run, none of your hooks or MCP servers load, and no session is saved. It sends counts only: run health and its parts, steering rates, the titles of the fixes found, the name of a command that keeps failing, and your installed skills, subagents and MCP servers by name with their use counts and the one-line `description` each skill or subagent declares. Never a prompt, a message, a file path or code. It uses your Claude plan like any other Claude Code request, a few thousand Haiku tokens a day. The reply is checked before it's kept: at most three suggestions, short strings, and a skill name only if you have it installed. Tests: `test_coach_runs_isolated_once_a_day_and_sends_no_text`, `test_coach_keeps_only_checked_suggestions`.
+
+Updates: once a day, when the release is signed with a real key, Sparkle fetches the appcast from GitHub Releases (no system profile is sent). Off with "Check for updates once a day" in Settings → General.
+
+Otherwise the app makes no requests of its own: no telemetry SDK, no remote fonts, icons or scripts (all assets are drawn in code or bundled). Every child process gets `AGENTPLAY_NO_NETWORK=1` and `DO_NOT_TRACK=1`, whatever the parent environment says (`Redaction.childEnvironmentIsMinimal`), so the viewer it opens hides the newsletter card and can't send an email. The only things that open a web page are links the user clicks (provider usage pages, "See supported agents"), and they open in the browser.
 
 `test_snapshot_makes_no_network_calls` builds a snapshot with `socket.connect` raising.
 

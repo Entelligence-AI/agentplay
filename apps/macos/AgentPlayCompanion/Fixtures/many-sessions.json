@@ -2617,6 +2617,7 @@
     "setup": {
       "days": 30,
       "counts": {},
+      "sessions": 0,
       "unused": 0,
       "items": []
     },
@@ -2669,6 +2670,7 @@
     },
     "fixes": []
   },
+  "coach": null,
   "timing": {
     "snapshotMs": 0
   },

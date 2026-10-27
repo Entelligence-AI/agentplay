@@ -29,7 +29,8 @@ from typing import Any
 from .store import Store, _atomic_write
 
 CACHE_VERSION = 3
-RAW_CACHE_VERSION = 8  # 8: setup uses (skills, subagents, slash commands, MCP servers by name)
+RAW_CACHE_VERSION = 9  # 9: failed tool calls, for whether a skill or fix goes with fewer of them
+# was 8  # 8: setup uses (skills, subagents, slash commands, MCP servers by name)
 # was 7  # 7: steering signals carry their kind (a correction that says it still isn't working; swearing)
 BLOCK_HOURS = 5
 WINDOW_DAYS = 30
@@ -125,7 +126,7 @@ _USER_LINE = re.compile(rb'"type"\s*:\s*"user"')
 def _signal_line(line: bytes, seen_user: bool) -> tuple[list[list[Any]], bool]:
     """``[sec, kind, key]`` steering signals in one line (``key`` dedupes the copies a resumed session makes):
     ``msg`` (a message from the user), ``cor`` (one that corrects), ``int`` (an interruption), ``ref`` (a
-    refused tool call), ``call`` (a tool call). Read to classify, then dropped: no text is kept. ``seen_user``
+    refused tool call), ``call`` (a tool call), ``err`` (a tool call that failed). Read to classify, then dropped: no text is kept. ``seen_user``
     carries over between lines and reads, so a session's first message is never counted as a correction."""
     out: list[list[Any]] = []
     if not _USER_LINE.search(line) and b'"tool_use"' not in line:
@@ -155,6 +156,8 @@ def _signal_line(line: bytes, seen_user: bool) -> tuple[list[list[Any]], bool]:
                 body = body if isinstance(body, str) else json.dumps(body)[:400]
                 if "doesn't want to proceed" in body or "user rejected" in body.lower():
                     out.append([sec, "ref", str(b.get("tool_use_id") or uid)])
+                elif b.get("is_error") is True:
+                    out.append([sec, "err", str(b.get("tool_use_id") or uid)])
     text = _user_text(content)
     if text is None:
         return out, seen_user
@@ -281,7 +284,8 @@ def _setup_line(line: bytes) -> list[list[Any]]:
 
 def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = WINDOW_DAYS,
                     signals_out: list[list[Any]] | None = None,
-                    uses_out: list[list[Any]] | None = None) -> list[Request]:
+                    uses_out: list[list[Any]] | None = None,
+                    files_out: list[dict[str, Any]] | None = None) -> list[Request]:
     """Every Claude Code request in the last ``days``, each once, from the raw transcripts.
 
     ``signals_out``: if given, extended with the steering signals of the last ``2 × days`` (``_signal_lines``),
@@ -369,6 +373,8 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
     if uses_out is not None:
         for hit in files.values():
             uses_out += hit.get("use", [])
+    if files_out is not None:
+        files_out += files.values()  # per transcript: its session, signals and uses, for setup_inventory.impact
     out: list[Request] = []
     for (_key, sec, model, i, cw, cr, o, repo), session in best.values():
         out.append((sec, model, i, cw, cr, o, _price(model, i, cw, cr, o), "claude-code", repo, session))
@@ -529,7 +535,8 @@ def claude_block(reqs: list[Request], now: datetime) -> dict[str, Any] | None:
     }
 
 
-def _setup(claude_homes: list[Path] | None, uses: list[list[Any]], now: datetime) -> dict[str, Any] | None:
+def _setup(claude_homes: list[Path] | None, uses: list[list[Any]], now: datetime,
+           files: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
     """The person's Claude Code setup and how much of it is used (setup_inventory)."""
     if not claude_homes:
         return None
@@ -537,7 +544,7 @@ def _setup(claude_homes: list[Path] | None, uses: list[list[Any]], now: datetime
 
     home = Path(claude_homes[0])
     try:
-        return setup_inventory.report(home, uses, now, claude_json=home.parent / ".claude.json")
+        return setup_inventory.report(home, uses, now, claude_json=home.parent / ".claude.json", files=files)
     except Exception:  # noqa: BLE001 - the setup list must never cost the usage report
         return None
 
@@ -548,7 +555,9 @@ def report(store: Store, now: datetime | None = None, claude_homes: list[Path] |
     now = now or datetime.now(UTC)
     sig: list[list[Any]] = []
     uses: list[list[Any]] = []
-    raw = claude_requests(claude_homes, store, now, signals_out=sig, uses_out=uses) if claude_homes else []
+    files: list[dict[str, Any]] = []
+    raw = (claude_requests(claude_homes, store, now, signals_out=sig, uses_out=uses, files_out=files)
+           if claude_homes else [])
     reqs = merge(raw, map_requests(store, now))
     local_midnight = datetime.fromtimestamp(now.timestamp()).replace(hour=0, minute=0, second=0, microsecond=0)
     today = local_midnight.astimezone(UTC)
@@ -580,7 +589,7 @@ def report(store: Store, now: datetime | None = None, claude_homes: list[Path] |
         "claudeDaily": claude_daily,
         "claudeBlock": claude_block(reqs, now),
         "signals": signals(sig, now) if claude_homes else None,
-        "setup": _setup(claude_homes, uses, now),
+        "setup": _setup(claude_homes, uses, now, files),
         "timingMs": round(1000 * (time.monotonic() - t_start)),
     }
 

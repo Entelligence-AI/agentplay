@@ -198,21 +198,68 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         // Never taller than the screen: a menu that scrolls hides Pip under its arrow. Trim the least
         // important rows until it fits.
         let bottom = ((w.screen ?? NSScreen.main)?.visibleFrame.minY ?? 0) + 8
-        let room = top - bottom
+        room = top - bottom
+        prepare(now: nowOverride ?? Date())
+        b.highlight(true)
+        menu.popUp(positioning: nil, at: NSPoint(x: r.minX, y: top), in: nil)
+        b.highlight(false)
+    }
+
+    /// Fill the menu for the tab showing, at one width for every tab.
+    func prepare(now: Date) {
+        // One width for every tab, so switching never makes the menu jump sideways: the widest tab's.
+        menu.minimumWidth = 0
+        let shown = model.menuTab
+        var widest: CGFloat = 0
+        for t in MenuTab.allCases where t != shown {
+            model.menuTab = t
+            let probe = NSMenu()
+            probe.autoenablesItems = false
+            for e in model.menuEntries(now: now) { add(e, to: probe, now: now) }
+            widest = max(widest, probe.size.width)
+        }
+        model.menuTab = shown
+        fill(now: now)
+        menu.minimumWidth = max(widest, menu.size.width)
+    }
+
+    /// How tall the open menu may be: from its top to the bottom of the usable screen.
+    private var room: CGFloat = .greatestFiniteMagnitude
+
+    /// Build the menu for the current tab, trimming the least important rows until it fits. `fromTabs`: keep
+    /// Pip and the tab strip in place (the strip is mid-click, and its pill slides), replace what's below.
+    private func fill(now: Date, fromTabs: Bool = false) {
         // Keep trimming while a step still changes the menu: past MenuBuilder.maxTrim each step drops one
         // waiting row, so the count of steps depends on the data, not a constant.
-        let now = nowOverride ?? Date()
         var previous: [MenuEntry]?
         for trim in 0...64 {
             let entries = model.menuEntries(now: now, trim: trim)
             if entries == previous { break }  // nothing left to drop
-            rebuild(entries, now: now)
+            if fromTabs, let keep = menu.items.firstIndex(where: { $0.view is TabHostingView }),
+               let at = entries.firstIndex(where: { if case .tabs = $0 { true } else { false } }) {
+                while menu.items.count > keep + 1 { menu.removeItem(at: keep + 1) }
+                for e in entries.dropFirst(at + 1) { add(e, to: menu, now: now) }
+                addHiddenCommands()
+            } else {
+                rebuild(entries, now: now)
+            }
             if menu.size.height <= room { break }
             previous = entries
         }
-        b.highlight(true)
-        menu.popUp(positioning: nil, at: NSPoint(x: r.minX, y: top), in: nil)
-        b.highlight(false)
+    }
+
+    /// A tab in the strip was clicked: switch in place, the menu stays open.
+    func switchTab(_ t: MenuTab) {
+        guard t != model.menuTab else { return }
+        model.menuTab = t
+        model.hop()
+        // After this click's event: the strip handling it stays, everything below it is rebuilt.
+        RunLoop.main.perform(inModes: [.eventTracking, .default, .modalPanel]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.fill(now: self.nowOverride ?? Date(), fromTabs: true)
+            }
+        }
     }
 
     // MARK: NSMenuDelegate
@@ -236,6 +283,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     func rebuild(_ entries: [MenuEntry], now: Date) {
         menu.removeAllItems()
         for e in entries { add(e, to: menu, now: now) }
+        addHiddenCommands()
+    }
+
+    private func addHiddenCommands() {
         // The commands live on right-click; their shortcuts keep working here through hidden items.
         for a in [MenuAction.openViewer, .refresh, .settings, .quit] {
             let i = item(a.title, key: a.key) { [weak self] in self?.perform(a) }
@@ -373,8 +424,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case .fix(let f):
             let count = model.snapshot?.insights?.fixes.count ?? 1
             let i = item(Plain.text(f.title)) { [model] in model.showInsights(.fixes) }
-            let pts = f.points.map { "+\(Format.points($0)) points" }
-            setSubtitle([count > 1 ? "\(count) fixes ready" : "Fix ready", pts].compactMap { $0 }.joined(separator: " · "), on: i)
+            let pts = f.points.flatMap { $0 >= 0.05 ? "+\(Format.points($0)) points" : nil }
+            let part = model.snapshot?.insights?.components.first { $0.key == f.component }?.name
+            setSubtitle([pts, part].compactMap { $0 }.joined(separator: " · "), on: i)
             i.image = symbol("wrench.and.screwdriver")
             let m = NSMenu()
             m.autoenablesItems = false
@@ -390,19 +442,100 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             i.submenu = m
             menu.addItem(i)
 
-        case .setup(let st):
-            let c = st.counts
-            let i = item("Your Setup") { [model] in model.showInsights(.setup) }
-            let bits = [c["skill"].map { "\($0) skills" }, c["agent"].map { "\($0) agents" }, c["mcp"].map { "\($0) MCP" },
-                        st.unused > 0 ? "\(st.unused) unused" : nil].compactMap { $0 }
-            setSubtitle(bits.joined(separator: " · "), on: i)
-            i.image = symbol("square.stack.3d.up")
+        case .tabs(let n):
+            let host = TabHostingView(rootView: AnyView(TabStrip(model: model, improveCount: n).environmentObject(model)))
+            host.onClick = { [weak self, weak host] x in
+                guard let self, let host else { return }
+                if let t = TabStrip.tab(at: x, width: host.bounds.width) { self.switchTab(t) }
+            }
+            host.sizeToContent(width: Menu.width)
+            host.autoresizingMask = [.width]
+            let h = NSMenuItem()
+            h.view = host
+            menu.addItem(h)
+
+        case .suggestion(let sg):
+            let i = item(sg.title) { [model] in model.showInsights(.fixes) }
+            setSubtitle(SuggestionCard.subtitle(sg), on: i)
+            i.image = symbol(SuggestionCard.symbol(sg.kind))
             let m = NSMenu()
             m.autoenablesItems = false
-            m.addItem(hosted(SetupCard(report: st)))
+            m.addItem(hosted(SuggestionCard(suggestion: sg, coach: model.snapshot?.coach)))
+            if let name = sg.name, sg.kind == "use-skill" {
+                m.addItem(.separator())
+                let copy = item("Copy /\(name)") { [model] in
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString("/\(name)", forType: .string)
+                    model.toast = "Copied /\(name). Paste it into Claude Code."
+                }
+                setSubtitle("Paste it at the start of your next task", on: copy)
+                copy.image = symbol("doc.on.doc")
+                m.addItem(copy)
+            }
+            if sg.kind == "remove" {
+                m.addItem(.separator())
+                m.addItem(item("Show Skills Folder") { NSWorkspace.shared.open(Self.claudeFolder("skills")) })
+            }
+            m.addItem(.separator())
+            m.addItem(item("Ask Claude Again") { [model] in model.askClaude(force: true) })
+            i.submenu = m
+            menu.addItem(i)
+
+        case .askClaude(let asking):
+            if asking {
+                let i = NSMenuItem(title: "Asking Claude…", action: nil, keyEquivalent: "")
+                i.isEnabled = false
+                setSubtitle("A few seconds, on Haiku", on: i)
+                i.image = symbol("sparkles")
+                menu.addItem(i)
+            } else {
+                let i = item("Ask Claude for Suggestions") { [model] in model.prefs.claudeSuggestions = true }
+                setSubtitle("Once a day on Haiku. Counts and skill names only", on: i)
+                i.image = symbol("sparkles")
+                menu.addItem(i)
+            }
+
+        case .setupItem(let it):
+            let i = item(it.name) { [model] in model.showInsights(.setup) }
+            var bits = [SetupCard.kindName(it.kind), "\(it.uses)×"]
+            if let imp = it.impact, imp.isClear { bits.append(imp.verdict) }
+            setSubtitle(bits.joined(separator: " · "), on: i)
+            i.image = symbol(SetupCard.symbol(it.kind))
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(ImpactCard(item: it, sessions: model.snapshot?.usage?.setup?.sessions)))
             m.addItem(.separator())
             m.addItem(item("Open in Insights…") { [model] in model.showInsights(.setup) })
             i.submenu = m
+            menu.addItem(i)
+
+        case .unused(let kind, let names):
+            let i = NSMenuItem(title: "\(names.count) \(SetupCard.kindName(kind, plural: names.count != 1))", action: nil, keyEquivalent: "")
+            setSubtitle(Format.names(names), on: i)
+            i.image = symbol(SetupCard.symbol(kind))
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(UnusedCard(kind: kind, names: names)))
+            if let folder = ["skill": "skills", "agent": "agents", "command": "commands"][kind] {
+                m.addItem(.separator())
+                let show = item("Show \(folder.capitalized) Folder") { NSWorkspace.shared.open(Self.claudeFolder(folder)) }
+                setSubtitle("Move out what you don't need; Claude Code stops loading it", on: show)
+                show.image = symbol("folder")
+                m.addItem(show)
+            }
+            i.submenu = m
+            menu.addItem(i)
+
+        case .hook(let it):
+            let i = NSMenuItem(title: it.name, action: nil, keyEquivalent: "")
+            i.isEnabled = false
+            if let d = it.detail { setSubtitle(d, on: i) }
+            i.image = symbol("bolt.horizontal")
+            menu.addItem(i)
+
+        case .openInsights(let section, let title):
+            let i = item(title) { [model] in model.showInsights(section) }
+            i.image = symbol("macwindow")
             menu.addItem(i)
 
         case .applied(let ins):
@@ -507,6 +640,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private func setSubtitle(_ text: String, on item: NSMenuItem) {
         if #available(macOS 14.4, *) { item.subtitle = text } else { item.toolTip = text }
+    }
+
+    static func claudeFolder(_ sub: String) -> URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/\(sub)")
     }
 
     private func symbol(_ name: String) -> NSImage? {
@@ -704,16 +841,14 @@ struct PipHeader: View {
     /// The one thing worth knowing right now, in a few words.
     static func now(_ m: CompanionModel, now: Date) -> String {
         guard let s = m.snapshot else { return "Reading your sessions" }
-        if let w = (s.live ?? []).first(where: { $0.status == .waiting }) {
-            return "\(w.name ?? w.project ?? "A session") is waiting for you"
-        }
+        // A waiting session is Pip's title already; this line says the next thing worth knowing.
         if let week = ProviderSummary.build(s.limits).first(where: { $0.provider == "claude-code" })?.window("weekly"),
            let used = week.used.value?.usedPercent, let days = s.usage?.claudeDaily,
            let f = Forecast.of(used: used, windowMinutes: week.windowMinutes, resetsAt: week.resetsAt, days: days, now: now),
            let out = f.runsOutAt {
             return "Week runs out \(Format.weekdayTime(out)) at this pace"
         }
-        if let n = s.insights?.fixes.count, n > 0 { return n == 1 ? "1 fix ready below" : "\(n) fixes ready below" }
+        if let n = s.insights?.fixes.count, n > 0 { return n == 1 ? "1 fix ready in Improve" : "\(n) fixes ready in Improve" }
         let busy = (s.live ?? []).filter { $0.status == .busy }.count
         return busy > 0 ? "Click me if you're bored" : "Nothing needs you"
     }
@@ -734,6 +869,13 @@ struct PipHeader: View {
 }
 
 /// A custom row that takes a click without closing the menu: Pip, in the header.
+/// The tab strip: a click says where it landed, and the menu stays open.
+final class TabHostingView: MenuHostingView {
+    var onClick: ((CGFloat) -> Void)?
+    override func mouseUp(with event: NSEvent) { onClick?(convert(event.locationInWindow, from: nil).x) }
+    override func mouseDown(with event: NSEvent) {}
+}
+
 final class ClickHostingView: MenuHostingView {
     var onClick: (() -> Void)?
     override func mouseUp(with event: NSEvent) { onClick?() }
@@ -873,29 +1015,140 @@ struct SteeringCard: View {
     }
 }
 
-/// Your setup at a glance: what gets used, and what sits there unused, costing context in every session.
-struct SetupCard: View {
-    var report: SetupReport
+/// Words and symbols for the kinds of setup Claude Code loads.
+enum SetupCard {
+    static func kindName(_ k: String, plural: Bool = false) -> String {
+        let one = ["skill": "skill", "agent": "subagent", "command": "command", "mcp": "MCP server", "hook": "hook"][k] ?? k
+        return plural ? one + "s" : one
+    }
+
+    static func symbol(_ k: String) -> String {
+        ["skill": "sparkle", "agent": "person.2", "command": "command", "mcp": "puzzlepiece.extension", "hook": "bolt.horizontal"][k] ?? "square.stack.3d.up"
+    }
+}
+
+/// The menu's tabs: Now, Improve, Setup. A pill slides to the one showing; the menu stays open.
+struct TabStrip: View {
+    @ObservedObject var model: CompanionModel
+    var improveCount: Int
+    @Namespace private var ns
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Which tab a click at `x` (in the strip's own coordinates) lands on.
+    static func tab(at x: CGFloat, width: CGFloat) -> MenuTab? {
+        let inner = width - 2 * Menu.inset, rel = x - Menu.inset
+        guard rel >= 0, rel < inner else { return nil }
+        return MenuTab.allCases[min(MenuTab.allCases.count - 1, Int(rel / (inner / CGFloat(MenuTab.allCases.count))))]
+    }
 
     var body: some View {
-        let used = report.items.filter { $0.uses > 0 && $0.kind != "hook" }.prefix(5)
-        let unused = report.items.filter { $0.verdict == "unused" && ["skill", "mcp", "agent"].contains($0.kind) }
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Used most, last \(report.days) days").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
-            if used.isEmpty { Text("Nothing used yet.").font(.subheadline).foregroundStyle(Ink.secondary) }
-            ForEach(Array(used)) { it in
-                HStack {
-                    Text(it.name).font(.subheadline).foregroundStyle(Ink.primary).lineLimit(1)
-                    Text(SetupCard.kindName(it.kind)).font(.caption).foregroundStyle(Ink.secondary)
-                    Spacer()
-                    Text("\(it.uses)×").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+        HStack(spacing: 0) {
+            ForEach(MenuTab.allCases, id: \.self) { t in
+                let on = t == model.menuTab
+                HStack(spacing: 5) {
+                    Text(t.title).font(.subheadline.weight(on ? .semibold : .regular))
+                    if t == .improve, improveCount > 0 {
+                        Text("\(improveCount)").font(.caption2.weight(.bold).monospacedDigit())
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Color(nsColor: .controlAccentColor)))
+                            .foregroundStyle(Color.white)
+                    }
                 }
+                .foregroundStyle(on ? Ink.primary : Ink.secondary)
+                .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
+                .background { if on { Knob().matchedGeometryEffect(id: "knob", in: ns) } }
+                .contentShape(Rectangle())
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
             }
-            if !unused.isEmpty {
-                Text("Not used in \(report.days) days: \(unused.count)").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary).padding(.top, 4)
-                Text(unused.prefix(6).map(\.name).joined(separator: ", ") + (unused.count > 6 ? ", …" : ""))
-                    .font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
-                Text("Each one's description loads into every session.").font(.caption).foregroundStyle(Ink.secondary)
+        }
+        .padding(2)
+        .background(Capsule().fill(Ink.track))
+        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.78), value: model.menuTab)
+        .padding(.horizontal, Menu.inset)
+        .padding(.top, 2).padding(.bottom, 8)
+        .frame(minWidth: Menu.width, maxWidth: .infinity)
+    }
+
+    /// The selected tab: a raised capsule, Liquid Glass where the system has it.
+    struct Knob: View {
+        var body: some View {
+            if #available(macOS 26.0, *) {
+                Capsule().fill(Ink.knob)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            } else {
+                Capsule().fill(Ink.knob).shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            }
+        }
+    }
+}
+
+/// One of Claude's suggestions, in full, and where it came from.
+struct SuggestionCard: View {
+    var suggestion: Coach.Suggestion
+    var coach: Coach?
+
+    /// A short line under the title; the reason is one level down, in full.
+    static func subtitle(_ s: Coach.Suggestion) -> String {
+        switch s.kind {
+        case "use-skill": s.name.map { "A skill you have · /\($0)" } ?? "A skill you have"
+        case "remove": "Lighter sessions"
+        case "fix": "A fix"
+        default: "A habit to try"
+        }
+    }
+
+    static func symbol(_ kind: String) -> String {
+        ["use-skill": "sparkle", "remove": "trash", "habit": "lightbulb", "fix": "wrench.and.screwdriver"][kind] ?? "sparkles"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(suggestion.title).font(.headline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+            Text(suggestion.why).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+            Text(source).font(.caption).foregroundStyle(Ink.secondary).padding(.top, 2)
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 9)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+
+    var source: String {
+        var bits = ["From Claude Haiku, on your plan"]
+        if let at = coach?.generatedAt.flatMap(SnapshotDecoder.parseISO) { bits.append(Format.relative(at, now: Date())) }
+        if let t = coach?.tokens { bits.append("\(Format.tokens(t)) tokens") }
+        return bits.joined(separator: " · ")
+    }
+}
+
+/// How sessions went with a skill, subagent or MCP server against sessions without it.
+struct ImpactCard: View {
+    var item: SetupReport.Item
+    var sessions: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.name).font(.headline).foregroundStyle(Ink.primary)
+                Text(usedLine).font(.subheadline).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if let imp = item.impact {
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+                    GridRow {
+                        Text("").gridColumnAlignment(.leading)
+                        Text("With").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary).gridColumnAlignment(.trailing)
+                        Text("Without").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary).gridColumnAlignment(.trailing)
+                    }
+                    row("Corrections", imp.correctionWith, imp.correctionWithout)
+                    row("Failed calls", imp.errorWith, imp.errorWithout)
+                    GridRow {
+                        Text("Sessions").font(.subheadline).foregroundStyle(Ink.secondary)
+                        Text("\(imp.with)").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+                        Text("\(imp.without)").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+                    }
+                }
+                Text(verdict(imp)).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, Menu.inset)
@@ -903,8 +1156,48 @@ struct SetupCard: View {
         .frame(width: Menu.width, alignment: .leading)
     }
 
-    static func kindName(_ k: String) -> String {
-        ["skill": "skill", "agent": "subagent", "command": "command", "mcp": "MCP", "hook": "hook"][k] ?? k
+    var usedLine: String {
+        let kind = SetupCard.kindName(item.kind)
+        var s = "\(kind.prefix(1).uppercased() + kind.dropFirst()) · used \(item.uses)×"
+        if let n = item.impact?.with { s += " in \(n) session\(n == 1 ? "" : "s")" }
+        if let at = item.lastUsed.flatMap(SnapshotDecoder.parseISO) { s += ", last \(Format.relative(at, now: Date()))" }
+        return s
+    }
+
+    @ViewBuilder func row(_ label: String, _ with: Double?, _ without: Double?) -> some View {
+        GridRow {
+            Text(label).font(.subheadline).foregroundStyle(Ink.primary)
+            Text(with.map { Format.percent($0) } ?? "–").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.primary)
+            Text(without.map { Format.percent($0) } ?? "–").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+        }
+    }
+
+    func verdict(_ imp: SetupReport.Impact) -> String {
+        switch imp.verdict {
+        case "too few": "Too few sessions to tell yet. It needs 5 with it and 5 without."
+        case "no clear difference": "No clear difference yet."
+        default: "Sessions with it had \(imp.verdict). That goes with it; it doesn't prove it caused it."
+        }
+    }
+}
+
+/// What sits unused: every name, and why it matters.
+struct UnusedCard: View {
+    var kind: String
+    var names: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Not used in 30 days").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
+            Text(names.joined(separator: ", ")).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+            if kind != "command" {
+                Text("Each one's description loads into every session, used or not.")
+                    .font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 9)
+        .frame(width: Menu.width, alignment: .leading)
     }
 }
 
@@ -1212,6 +1505,13 @@ enum Ink {
     // when drawn; `withAlphaComponent` on a system colour would freeze it at launch.
     static let secondary = Color(nsColor: ink(0.75))
     static let tertiary = Color(nsColor: ink(0.58))
+    /// The tab strip's track and its raised knob.
+    static let track = Color(nsColor: NSColor(name: nil) { ap in
+        ap.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.10) : NSColor(white: 0, alpha: 0.07)
+    })
+    static let knob = Color(nsColor: NSColor(name: nil) { ap in
+        ap.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.24) : NSColor(white: 1, alpha: 0.95)
+    })
 
     private static func ink(_ alpha: CGFloat) -> NSColor {
         NSColor(name: nil) { ap in

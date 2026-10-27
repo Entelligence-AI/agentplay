@@ -374,12 +374,18 @@ struct PrivacyPane: View {
         Section {
             line("internaldrive", "Reads your agents' session files on this Mac.",
                  "Never the text of your prompts, file contents or command arguments.")
-            line("network", "One request: your Claude plan usage.",
+            line("network", "Your Claude plan usage, every few minutes.",
                  "To api.anthropic.com, with the login Claude Code saved. Off in Limits.")
             line("bell", "Notifications name the agent and a count.",
                  "The project's name only if you allow it.")
             line("folder", "Everything it keeps stays in ~/.agentplay.",
                  "Deleting the app leaves it; nothing is uploaded.")
+        }
+        Section {
+            Toggle(isOn: Binding(get: { model.prefs.asksClaudeForSuggestions }, set: { model.prefs.claudeSuggestions = $0 })) {
+                Text("Ask Claude for suggestions once a day")
+                Text("Claude Haiku, through your own Claude Code, reads counts and your skill names, never your prompts or code. A few thousand tokens a day on your plan.")
+            }
         }
         Section {
             HStack {

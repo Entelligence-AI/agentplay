@@ -255,6 +255,7 @@ enum Film {
     /// Name, the scene, and how long the recording runs (a little over the scene; `screencapture` stops by itself).
     static let takes: [(name: String, run: () async -> Void, seconds: Int)] = [
         ("probe", probe, 8),
+        ("tabs", tabs, 26),
         ("needs-you", needsYou, 19),
         ("peek-click", peekClick, 17),
         ("menu-tour", menuTour, 23),
@@ -291,6 +292,76 @@ enum Film {
         }
         status.menu.cancelTracking()
         await sleep(0.3)
+    }
+
+    /// Opens the menu, clicks each tab for real, and after each click reports the menu window (still open, its
+    /// frame, scroll, rows) and saves a screenshot of it: `tabs-<tab>.png`. Then hovers a setup row and a
+    /// suggestion, so their cards show, and saves those too.
+    static func tabs() async {
+        model.prefs.claudeSuggestions = true   // the film fixture carries Claude's answer
+        await Cursor.moveTo(pipCenter, over: 0.4)
+        await sleep(0.3)
+        await Cursor.click()
+        await sleep(1.0)
+        report("open")
+        shoot("tabs-now")
+        for t in [MenuTab.improve, .setup, .now, .improve] {
+            guard let main = menuWindows().first,
+                  let i = status.menu.items.filter({ !$0.isAlternate }).firstIndex(where: { $0.view is TabHostingView }),
+                  i < main.rows.count else { print("tabs: strip not found"); return }
+            let r = main.rows[i]
+            let k = CGFloat(MenuTab.allCases.firstIndex(of: t) ?? 0)
+            let inner = r.width - 2 * Menu.inset
+            let p = center(NSRect(x: r.minX + Menu.inset + inner * (k + 0.5) / 3, y: r.minY + r.height / 2 + 3, width: 1, height: 1))
+            await Cursor.moveTo(p, over: 0.45)
+            await sleep(0.2)
+            await Cursor.click()
+            await sleep(1.1)
+            report("after \(t.rawValue)")
+            if model.menuTab != t { print("tabs: FAIL wanted \(t.rawValue), model shows \(model.menuTab.rawValue)") }
+            shoot("tabs-\(t.rawValue)")
+        }
+        // On Improve: hover the first suggestion for its card.
+        await hover({ $0.title.hasPrefix("Start bigger") }, hold: 1.4)
+        shoot("tabs-suggestion", wide: true)
+        if let main = menuWindows().first, let i = status.menu.items.filter({ !$0.isAlternate }).firstIndex(where: { $0.view is TabHostingView }) {
+            let r = main.rows[i]
+            let inner = r.width - 2 * Menu.inset
+            await Cursor.moveTo(center(NSRect(x: r.minX + Menu.inset + inner * 2.5 / 3, y: r.minY + r.height / 2 + 3, width: 1, height: 1)), over: 0.45)
+            await Cursor.click(); await sleep(1.0)
+        }
+        await hover({ $0.title == "test-first" }, hold: 1.4)
+        shoot("tabs-impact", wide: true)
+        status.menu.cancelTracking()
+        await sleep(0.3)
+        print("tabs: menu open after clicks \(model.popoverOpen)")
+    }
+
+    static func report(_ label: String) {
+        let ws = menuWindows()
+        guard let (w, rows) = ws.first else { print("tabs: \(label): MENU CLOSED"); return }
+        var scroll = "none"
+        func walk(_ v: NSView) {
+            if let sv = v as? NSScrollView { scroll = "y=\(sv.documentVisibleRect.origin.y) docH=\(sv.documentView?.frame.height ?? 0) clipH=\(sv.contentView.bounds.height)" }
+            v.subviews.forEach(walk)
+        }
+        if let root = w.contentView { walk(root) }
+        print("tabs: \(label): tab \(model.menuTab.rawValue) window \(w.frame) top \(w.frame.maxY) visibleTop \(screen.visibleFrame.maxY) rows \(rows.count) scroll \(scroll)")
+    }
+
+    /// A screenshot of the open menu (and, `wide`, the submenu beside it) into the film folder.
+    static func shoot(_ name: String, wide: Bool = false) {
+        let ws = menuWindows().map(\.window)
+        guard let first = ws.first else { return }
+        var r = first.frame
+        if wide { for w in ws.dropFirst() { r = r.union(w.frame) } }
+        r = r.insetBy(dx: -12, dy: -12)
+        let f = screen.frame
+        let x = Int(r.minX - f.minX), y = Int(f.maxY - r.maxY)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-x", "-D", "\(screenIndex + 1)", "-R", "\(x),\(max(0, y)),\(Int(r.width)),\(Int(r.height))", outDir.appendingPathComponent("\(name).png").path]
+        try? p.run(); p.waitUntilExit()
     }
 
     static func needsYou() async {

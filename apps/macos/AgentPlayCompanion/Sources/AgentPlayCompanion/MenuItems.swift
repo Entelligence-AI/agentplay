@@ -19,9 +19,27 @@ enum MenuEntry: Equatable {
     case signals(Signals)                        // hosted card: how you steer, the four rates one level down
     case fix(Insights.Fix)                       // the best fix; a click opens the window on Fixes
     case applied(Insights)                       // what AgentPlay changed and whether it worked
-    case setup(SetupReport)                      // your skills, agents, MCP servers and hooks, and their use
+    case tabs(improve: Int)                      // hosted: Now · Improve · Setup, switched in place
+    case suggestion(Coach.Suggestion)            // one of Claude's suggestions
+    case askClaude(asking: Bool)                 // turn on suggestions from Claude, or "Asking Claude…"
+    case setupItem(SetupReport.Item)             // a skill, subagent or MCP server you use, and how sessions go with it
+    case unused(kind: String, names: [String])   // what sits unused, by kind
+    case hook(SetupReport.Item)
+    case openInsights(InsightsSection, String)
     case action(MenuAction)
     case separator
+}
+
+/// The menu's three tabs, Blume-style: what's happening, what to make better, and what you've set up.
+enum MenuTab: String, CaseIterable {
+    case now, improve, setup
+    var title: String {
+        switch self {
+        case .now: "Now"
+        case .improve: "Improve"
+        case .setup: "Setup"
+        }
+    }
 }
 
 enum MenuAction: String, CaseIterable {
@@ -86,7 +104,8 @@ enum MenuBuilder {
     static let maxTrim = 4
 
     static func entries(snapshot s: Snapshot?, phase: Phase, prefs: CompanionPrefs, lastError: SnapshotError?,
-                        isSample: Bool, now: Date, bridgeOn: Bool, trim: Int = 0) -> [MenuEntry] {
+                        isSample: Bool, now: Date, bridgeOn: Bool, trim: Int = 0, tab: MenuTab = .now,
+                        askingClaude: Bool = false) -> [MenuEntry] {
         var out: [MenuEntry] = []
         if isSample {
             // Unmissable and one click to leave: sample numbers must never pass for yours.
@@ -106,7 +125,16 @@ enum MenuBuilder {
             return out + footer()
         }
         if let e = lastError { out.append(.message(title: "Last Refresh Failed", detail: e.localizedDescription)) }
-        if !isSample, prefs.showsPip { out += [.pip, .separator] }
+        if !isSample, prefs.showsPip { out.append(.pip) }
+        let ins = s.insights.flatMap { $0.score == nil ? nil : $0 }
+        // The badge counts what the Improve tab shows: fixes, and Claude's suggestions when they're on.
+        let suggestions = prefs.asksClaudeForSuggestions ? (s.coach?.suggestions.count ?? 0) : 0
+        out.append(.tabs(improve: (ins?.fixes.count ?? 0) + suggestions))
+        switch tab {
+        case .now: break
+        case .improve: return out + improve(s, ins: ins, prefs: prefs, trim: trim, askingClaude: askingClaude) + footer()
+        case .setup: return out + setup(s, trim: trim) + footer()
+        }
 
         // 1. Sessions waiting on you: the one thing worth interrupting for.
         let lines = sessionLines(s, now: now)
@@ -154,24 +182,6 @@ enum MenuBuilder {
         let busy = working.filter { $0.dot == .working }, idle = working.filter { $0.dot == .idle }
         out += (busy + idle.prefix(1)).prefix(max(1, 3 - trim)).map(MenuEntry.session)
 
-        // 4. Insights: one line each, a click opens the Insights window on it. What to fix comes first, then what
-        // was changed and whether it worked, then the score and how you steer. Errors that passed later need
-        // nothing from you and stay out of the menu.
-        let ins = s.insights.flatMap { $0.score == nil ? nil : $0 }
-        let sig = s.usage?.signals.flatMap { $0.current.messages >= 20 ? $0 : nil }
-        var insights: [MenuEntry] = []
-        if let ins, let fix = ins.fixes.first { insights.append(.fix(fix)) }
-        if let ins, !(ins.applied ?? []).isEmpty { insights.append(.applied(ins)) }
-        if let ins { insights.append(.health(ins)) }
-        if let sig, trim < 3 { insights.append(.signals(sig)) }
-        if let setup = s.usage?.setup, !setup.items.isEmpty, trim < 4 { insights.append(.setup(setup)) }
-        // The section exists only for the rows the trim left it; never a header over nothing.
-        if !insights.isEmpty {
-            out.append(.separator)
-            out.append(.header("Insights · Last \(s.insights?.days ?? 30) Days"))
-            out += insights
-        }
-
         // 5. Estimated usage: two lines here, the rest one level down.
         if let u = s.usage, u.last30Days.requests > 0 {
             out.append(.separator)
@@ -180,6 +190,65 @@ enum MenuBuilder {
             out.append(.usageDetails(u))
         }
         return out + footer()
+    }
+
+    /// Improve: what to fix, what Claude suggests, what was changed and whether it worked, and how runs are going.
+    static func improve(_ s: Snapshot, ins: Insights?, prefs: CompanionPrefs, trim: Int, askingClaude: Bool) -> [MenuEntry] {
+        var out: [MenuEntry] = []
+        if let ins, !ins.fixes.isEmpty {
+            out.append(.header("Do This Next"))
+            out += ins.fixes.prefix(max(1, 3 - trim)).map(MenuEntry.fix)
+        }
+        out.append(.header("Claude Suggests"))
+        if let c = s.coach, !c.suggestions.isEmpty, prefs.asksClaudeForSuggestions {
+            out += c.suggestions.prefix(max(1, 3 - trim)).map(MenuEntry.suggestion)
+        } else {
+            out.append(.askClaude(asking: askingClaude))
+        }
+        if let ins, !(ins.applied ?? []).isEmpty {
+            out.append(.header("What Changed"))
+            out.append(.applied(ins))
+        }
+        let sig = s.usage?.signals.flatMap { $0.current.messages >= 20 ? $0 : nil }
+        if ins != nil || sig != nil {
+            out.append(.header("How It's Going · Last \(s.insights?.days ?? 30) Days"))
+            if let ins { out.append(.health(ins)) }
+            if let sig { out.append(.signals(sig)) }
+        }
+        if ins == nil, sig == nil, s.coach == nil {
+            out.append(.message(title: "Not enough sessions yet", detail: "Insights start after a few sessions with Claude Code."))
+        }
+        out.append(.separator)
+        out.append(.openInsights(.fixes, "Open Insights…"))
+        return out
+    }
+
+    /// Setup: what Claude Code loads for you, how often each ran, and how sessions went with it.
+    static func setup(_ s: Snapshot, trim: Int) -> [MenuEntry] {
+        guard let st = s.usage?.setup, !st.items.isEmpty else {
+            return [.message(title: "No setup found", detail: "Skills, subagents and MCP servers you add to Claude Code show here.")]
+        }
+        var out: [MenuEntry] = []
+        let used = st.items.filter { $0.uses > 0 && $0.kind != "hook" }
+        out.append(.header("Used · Last \(st.days) Days"))
+        if used.isEmpty { out.append(.message(title: "Nothing ran in \(st.days) days", detail: nil)) }
+        out += used.prefix(max(2, 6 - 2 * trim)).map(MenuEntry.setupItem)
+        let unused = st.items.filter { $0.verdict == "unused" && $0.kind != "hook" }
+        if !unused.isEmpty {
+            out.append(.header("Not Used in \(st.days) Days"))
+            for kind in ["skill", "agent", "mcp", "command"] {
+                let names = unused.filter { $0.kind == kind }.map(\.name)
+                if !names.isEmpty { out.append(.unused(kind: kind, names: names)) }
+            }
+        }
+        let hooks = st.items.filter { $0.kind == "hook" }
+        if !hooks.isEmpty, trim < 3 {
+            out.append(.header("Hooks"))
+            out += hooks.prefix(max(1, 5 - trim)).map(MenuEntry.hook)
+        }
+        out.append(.separator)
+        out.append(.openInsights(.setup, "Open in Insights…"))
+        return out
     }
 
     /// The left-click menu ends with its content. Open, refresh, settings and quit live on right-click, where
