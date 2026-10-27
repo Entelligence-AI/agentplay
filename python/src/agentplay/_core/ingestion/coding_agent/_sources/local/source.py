@@ -1184,7 +1184,7 @@ def _command_code_header(head: bytes) -> dict | None:
     for line in head.split(b"\n"):
         try:
             obj = json.loads(line)
-        except ValueError:  # blank, truncated, or split mid-character
+        except (ValueError, RecursionError):  # blank, truncated, split mid-character, or deeply nested
             continue
         if isinstance(obj, dict) and obj.get("type") == "session" and isinstance(obj.get("id"), str):
             return obj
@@ -1196,7 +1196,9 @@ def _command_code_has_messages(path: Path) -> bool:
 
     Streams like ``_gemini_has_messages``: one line at a time, at most
     ``MAX_SOURCE_BYTES``, stopping at the first qualifying record. A file of
-    only the header (a session opened and closed without a prompt) is skipped.
+    only the header (a session opened and closed without a prompt), or whose
+    only user text is ``meta.injected`` (which the parser opens no turn for),
+    is skipped.
     """
     remaining = MAX_SOURCE_BYTES
     with path.open("rb") as handle:
@@ -1218,6 +1220,9 @@ def _command_code_has_messages(path: Path) -> bool:
             if not isinstance(message, dict):
                 continue
             role = message.get("role")
+            meta = message.get("meta")
+            if role == "user" and isinstance(meta, dict) and meta.get("injected"):
+                continue
             if role == "assistant" or (
                 role == "user" and _command_code_user_prompt(message.get("content")) is not None
             ):

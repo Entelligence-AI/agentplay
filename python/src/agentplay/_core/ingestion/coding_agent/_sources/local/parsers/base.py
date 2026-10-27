@@ -48,11 +48,11 @@ def detect_agent(data: bytes) -> AgentType | None:
             continue
         try:
             obj = json.loads(raw_line)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
             # UnicodeDecodeError: a fixed-size byte head can split a
             # multi-byte UTF-8 char at the boundary (unicode
-            # in transcripts). Skip the unparseable line, don't crash
-            # the whole index walk.
+            # in transcripts). RecursionError: a deeply nested line.
+            # Skip the unparseable line, don't crash the whole index walk.
             continue
 
         # A bare JSON primitive/array is valid JSON but not an agent header

@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from agentplay import builder, discover
+from agentplay._core.ingestion.coding_agent._sources.local import source as local_source
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
@@ -399,6 +400,58 @@ def test_a_claude_code_transcript_in_the_home_is_not_claimed(tmp_path):
     source = LocalSource(claude_code_homes=[], codex_homes=[], command_code_homes=[home])
     source._build_index()
     assert source.discovery_stats()["command-code"]["skipped"] == {"empty_events": 1, "different_agent": 1}
+
+
+def _injected(msg_id: str) -> dict:
+    record = _prompt(msg_id, "INJECTED-PLACEHOLDER")
+    record["message"]["meta"]["injected"] = True
+    return record
+
+
+def test_injected_only_session_is_skipped_as_empty_events(tmp_path):
+    home = _command_code_home(tmp_path)
+    project = home / "projects" / "users-dev-project"
+    # The parser opens no turn for an injected message, so a session of only
+    # that would build an empty map. One with a real prompt after it is kept.
+    (project / "injected-only.jsonl").write_bytes(_session(_injected("u1"), session_id="injected-only"))
+    (project / "injected-then-prompt.jsonl").write_bytes(
+        _session(_injected("u1"), _prompt("u2"), session_id="injected-then-prompt")
+    )
+    source = LocalSource(claude_code_homes=[], codex_homes=[], command_code_homes=[home])
+    index = source._build_index()
+    assert "local:command-code:injected-only" not in index
+    assert "local:command-code:injected-then-prompt" in index
+    assert source.discovery_stats()["command-code"]["skipped"] == {"empty_events": 2}
+
+
+def test_deeply_nested_line_before_the_header_does_not_abort_discovery(tmp_path, monkeypatch):
+    nested = b'{"a":' * 100000 + b"0" + b"}" * 100000
+    try:
+        json.loads(nested)
+    except RecursionError:
+        pass
+    else:
+        # An interpreter that parses this depth can't raise here, so reproduce
+        # the failure the scan has to survive (as the Gemini CLI test does).
+        real_loads = local_source.json.loads
+
+        def loads(raw, *args, **kwargs):
+            text = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
+            if isinstance(text, str) and text.startswith('{"a":' * 40):
+                raise RecursionError("maximum recursion depth exceeded")
+            return real_loads(raw, *args, **kwargs)
+
+        monkeypatch.setattr(local_source.json, "loads", loads)
+
+    home = _command_code_home(tmp_path)
+    project = home / "projects" / "users-dev-project"
+    # Agent detection reads the head before the header; the nested line is
+    # skipped there and in the header scan, so the file is still detected.
+    (project / "nested-then-header.jsonl").write_bytes(nested + b"\n" + _session(_prompt("u1"), session_id="nested"))
+    source = LocalSource(claude_code_homes=[], codex_homes=[], command_code_homes=[home])
+    index = source._build_index()
+    assert "local:command-code:nested" in index
+    assert "local:command-code:00000000-0000-4000-8000-000000000001" in index
 
 
 def test_discovery_lists_command_code_with_env_override(tmp_path, monkeypatch):
