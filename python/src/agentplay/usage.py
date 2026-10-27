@@ -496,6 +496,14 @@ def report(store: Store, now: datetime | None = None, claude_homes: list[Path] |
         p = _period(reqs, s, s + timedelta(days=1))
         daily.append({"date": datetime.fromtimestamp(s.timestamp()).strftime("%Y-%m-%d"),
                       "tokens": p["tokens"]["total"], "costUsd": p["costUsd"], "requests": p["requests"]})
+    # Claude Code alone, four weeks: what its plan forecast learns your weekdays from. Cost, not tokens: it
+    # weighs models and cache reads roughly the way plan limits do.
+    claude = [r for r in reqs if r[7] == "claude-code"]
+    claude_daily = []
+    for d in range(27, -1, -1):
+        s = today - timedelta(days=d)
+        claude_daily.append({"date": datetime.fromtimestamp(s.timestamp()).strftime("%Y-%m-%d"),
+                             "costUsd": _period(claude, s, s + timedelta(days=1))["costUsd"]})
     source = "Claude Code's own transcripts and your local AgentPlay maps" if raw else "your local AgentPlay maps"
     return {
         "generatedAt": _iso(now),
@@ -507,6 +515,7 @@ def report(store: Store, now: datetime | None = None, claude_homes: list[Path] |
         "last7Days": _period(reqs, now - timedelta(days=7), now + timedelta(minutes=1)),
         "last30Days": _period(reqs, now - timedelta(days=30), now + timedelta(minutes=1)),
         "daily": daily,
+        "claudeDaily": claude_daily,
         "claudeBlock": claude_block(reqs, now),
         "signals": signals(sig, now) if claude_homes else None,
         "timingMs": round(1000 * (time.monotonic() - t_start)),

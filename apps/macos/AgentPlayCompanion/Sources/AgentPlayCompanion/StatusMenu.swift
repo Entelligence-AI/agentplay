@@ -621,7 +621,16 @@ struct ProviderCard: View {
                     Text(line).font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            ForEach(p.windows) { w in MeterRow(window: w, now: now) }
+            ForEach(p.windows) { w in
+                let f = forecast(p, w)
+                // With a forecast, the weekly line shows its reset; the forecast says when it really runs out.
+                MeterRow(window: w, now: now, linear: f == nil)
+                if let f, let r = w.resetsAt {
+                    Text(f.sentence(reset: r, now: now)).font(.subheadline)
+                        .foregroundStyle(f.runsOutAt != nil ? Color(nsColor: .systemOrange) : Ink.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             if let plans = p.conflictingPlans {
                 Text("Recent sessions reported \(plans.map(\.capitalized).joined(separator: " and ")). They may be different accounts.")
                     .font(.subheadline).foregroundStyle(Ink.secondary)
@@ -632,6 +641,13 @@ struct ProviderCard: View {
         .padding(.top, 5).padding(.bottom, 7)
         .frame(minWidth: Menu.width, maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    /// Claude's weekly window, from your usual spend per weekday; nil for other windows or without history.
+    func forecast(_ p: ProviderSummary, _ w: ProviderLimitWindow) -> Forecast? {
+        guard p.provider == "claude-code", w.window == "weekly", !MeterRow.isStale(w, now: now),
+              let days = model.snapshot?.usage?.claudeDaily, let used = w.used.value?.usedPercent else { return nil }
+        return Forecast.of(used: used, windowMinutes: w.windowMinutes, resetsAt: w.resetsAt, days: days, now: now)
     }
 
     /// A line under the title only when there is something to say: why there are no numbers, that they are
@@ -1077,6 +1093,8 @@ struct ErrorDetail: View {
 struct MeterRow: View {
     var window: ProviderLimitWindow
     var now: Date
+    /// Show the straight-line "out in …" on this line (off when a forecast line follows).
+    var linear: Bool = true
 
     static func isStale(_ w: ProviderLimitWindow, now: Date) -> Bool {
         w.used.freshness == .stale || (w.resetsAt.map { $0 <= now } ?? false) || w.used.isStale(now: now, maxAge: 6 * 3600)
@@ -1115,7 +1133,7 @@ struct MeterRow: View {
     func detail(_ stale: Bool, used: Double) -> String {
         if stale { return "\(Format.percent(used)) · stale, updates when \(window.providerLabel) runs" }
         // Ahead of pace: the time it runs out replaces the reset time, in the bar's own orange or red.
-        if let pace = Self.pace(window, now: now), pace.level != .normal, let out = pace.runsOutAt {
+        if linear, let pace = Self.pace(window, now: now), pace.level != .normal, let out = pace.runsOutAt {
             return "\(Format.percent(used)) · out in \(Format.duration(out.timeIntervalSince(now)))"
         }
         guard let r = window.resetsAt else { return Format.percent(used) }

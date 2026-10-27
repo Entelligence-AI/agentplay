@@ -305,6 +305,12 @@ public struct UsagePeriod: Codable, Sendable, Equatable {
     }
 }
 
+public struct CostDay: Codable, Sendable, Equatable {
+    public var date: String
+    public var costUsd: Double
+    public init(date: String, costUsd: Double) { self.date = date; self.costUsd = costUsd }
+}
+
 public struct UsageDay: Codable, Sendable, Equatable, Identifiable {
     public var date: String
     public var tokens: Int
@@ -341,6 +347,8 @@ public struct UsageReport: Codable, Sendable, Equatable {
     public var last7Days: UsagePeriod
     public var last30Days: UsagePeriod
     public var daily: [UsageDay]
+    /// Claude Code's own spend per local day, four weeks, oldest first: what the plan forecast learns from.
+    public var claudeDaily: [CostDay]?
     public var claudeBlock: UsageBlock?
     public var signals: Signals?
 }
