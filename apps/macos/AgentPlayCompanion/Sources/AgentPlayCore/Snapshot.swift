@@ -358,6 +358,8 @@ public struct UsageReport: Codable, Sendable, Equatable {
     public var claudeDaily: [CostDay]?
     public var claudeBlock: UsageBlock?
     public var signals: Signals?
+    /// The person's Claude Code setup and how much of it is used.
+    public var setup: SetupReport?
 }
 
 public enum AlertRuleKind: String, TolerantEnum, Sendable, CaseIterable {
@@ -437,6 +439,23 @@ public struct ProviderLimitWindow: Codable, Sendable, Equatable, Identifiable {
 
 /// How often the user steers: corrections, interruptions and frustration per message they type, refused tool
 /// calls per 100 calls. From Claude Code's transcripts; counts only.
+public struct SetupReport: Codable, Sendable, Equatable {
+    public struct Item: Codable, Sendable, Equatable, Identifiable {
+        public var kind: String        // skill, agent, command, mcp, hook
+        public var name: String
+        public var source: String      // "you" or "plugin <name>"
+        public var detail: String?     // a hook's script name
+        public var uses: Int
+        public var lastUsed: String?
+        public var verdict: String     // used, rare, unused, runs
+        public var id: String { "\(kind)|\(name)|\(detail ?? "")" }
+    }
+    public var days: Int
+    public var counts: [String: Int]
+    public var unused: Int
+    public var items: [Item]
+}
+
 public struct Signals: Codable, Sendable, Equatable {
     public struct Rates: Codable, Sendable, Equatable {
         public var messages: Int

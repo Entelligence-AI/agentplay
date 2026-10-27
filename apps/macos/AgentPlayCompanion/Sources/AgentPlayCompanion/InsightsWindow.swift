@@ -4,13 +4,14 @@ import SwiftUI
 
 /// The parts of the Insights window, in sidebar order.
 enum InsightsSection: String, CaseIterable, Identifiable {
-    case overview, fixes, applied, autotune, steering, usage
+    case overview, fixes, applied, setup, autotune, steering, usage
     var id: String { rawValue }
     var title: String {
         switch self {
         case .overview: "Overview"
         case .fixes: "Fixes"
         case .applied: "Applied"
+        case .setup: "Your Setup"
         case .autotune: "Autotune"
         case .steering: "How You Steer"
         case .usage: "Usage"
@@ -21,6 +22,7 @@ enum InsightsSection: String, CaseIterable, Identifiable {
         case .overview: "heart.text.square"
         case .fixes: "wrench.and.screwdriver"
         case .applied: "checkmark.seal"
+        case .setup: "square.stack.3d.up"
         case .autotune: "wand.and.stars"
         case .steering: "steeringwheel"
         case .usage: "chart.bar.xaxis"
@@ -54,6 +56,7 @@ struct InsightsView: View {
                     section(.overview) { OverviewPane(insights: insights) }
                     section(.fixes) { FixesPane(insights: insights) }
                     if !(insights?.applied ?? []).isEmpty { section(.applied) { AppliedPane(insights: insights) } }
+                    if let st = model.snapshot?.usage?.setup { section(.setup) { SetupPane(report: st) } }
                     section(.autotune) { AutotunePane(insights: insights) }
                     section(.steering) { SteeringPane(signals: model.snapshot?.usage?.signals) }
                     section(.usage) { UsagePane(report: model.snapshot?.usage) }
@@ -286,6 +289,72 @@ struct VerdictBadge: View {
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(color.opacity(0.15), in: Capsule())
     }
+}
+
+// MARK: - Your setup
+
+struct SetupPane: View {
+    var report: SetupReport
+
+    var body: some View {
+        PaneTitle(title: "Your setup", subtitle: "Skills, subagents, commands, MCP servers and hooks Claude Code loads for you, and how often each ran in the last \(report.days) days.")
+        let used = report.items.filter { $0.uses > 0 && $0.kind != "hook" }
+        let top = max(used.map(\.uses).max() ?? 1, 1)
+        let unused = report.items.filter { $0.verdict == "unused" }
+        let hooks = report.items.filter { $0.kind == "hook" }
+        Card {
+            Text("Used").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            if used.isEmpty { Text("Nothing ran in the last \(report.days) days.").foregroundStyle(.secondary) }
+            ForEach(used) { it in
+                HStack(spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(it.name).lineLimit(1)
+                        Text(SetupCard.kindName(it.kind)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(width: 220, alignment: .leading)
+                    GeometryReader { g in
+                        Capsule().fill(.quaternary).overlay(alignment: .leading) {
+                            // Log scale, so one heavy MCP server doesn't flatten everything else.
+                            Capsule().fill(Color.accentColor)
+                                .frame(width: max(6, g.size.width * log(Double(it.uses) + 1) / log(Double(top) + 1)))
+                        }
+                    }
+                    .frame(height: 6)
+                    Text("\(it.uses)×").font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+                }
+            }
+        }
+        if !unused.isEmpty {
+            Card {
+                Text("Not used in \(report.days) days · \(unused.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(["skill", "agent", "mcp", "command"], id: \.self) { kind in
+                    let names = unused.filter { $0.kind == kind }.map(\.name)
+                    if !names.isEmpty {
+                        Labelled(label: Self.title(kind), text: names.joined(separator: ", "))
+                    }
+                }
+                Text("Their descriptions still load into every session. Removing the ones you don't need gives the agent more room.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        if !hooks.isEmpty {
+            Card {
+                Text("Hooks").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(hooks) { it in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(it.name)
+                        Spacer()
+                        if let d = it.detail { Text(d).font(.callout.monospaced()).foregroundStyle(.secondary) }
+                    }
+                }
+            }
+        }
+    }
+
+    static func title(_ k: String) -> String {
+        ["skill": "Skills", "agent": "Subagents", "mcp": "MCP servers", "command": "Slash commands", "hook": "Hooks"][k] ?? k
+    }
+
 }
 
 // MARK: - Autotune

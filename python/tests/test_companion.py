@@ -1073,3 +1073,39 @@ def test_applied_entry_says_measuring_then_worked_or_no_change():
     assert companion._applied_entry({**e, "current": 0.0, "sessionsSince": 5})["verdict"] == "worked"
     assert companion._applied_entry({**e, "current": 1.0, "sessionsSince": 5})["verdict"] == "no_change"
     assert companion._applied_entry({"id": "y", "sessionsSince": 5})["verdict"] == "unmeasured"
+
+
+# ---------------------------------------------------------------- the person's own setup
+def test_setup_inventory_counts_uses_by_name_only(tmp_path):
+    from datetime import UTC, datetime
+
+    from agentplay import setup_inventory, usage
+
+    home = tmp_path / ".claude"
+    (home / "skills" / "launchcut").mkdir(parents=True)
+    (home / "skills" / "launchcut" / "SKILL.md").write_text("---\nname: launchcut\ndescription: x\n---\n")
+    (home / "skills" / "idle").mkdir()
+    (home / "skills" / "idle" / "SKILL.md").write_text("---\nname: idle\n---\n")
+    (home / "agents").mkdir()
+    (home / "agents" / "judge.md").write_text("---\nname: judge\n---\n")
+    (home / "settings.json").write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
+        {"type": "command", "command": "/Users/me/SECRET/start.sh --token SECRET-ARG"},
+        {"type": "command", "command": "other.sh"}]}]}}))
+    lines = [
+        {"type": "assistant", "timestamp": "2026-10-26T10:00:00Z", "message": {"content": [
+            {"type": "tool_use", "name": "Skill", "input": {"skill": "launchcut"}},
+            {"type": "tool_use", "name": "Agent", "input": {"subagent_type": "judge", "prompt": "SECRET PROMPT"}},
+            {"type": "tool_use", "name": "mcp__figma__use_figma", "input": {}}]}},
+        {"type": "user", "timestamp": "2026-10-26T10:01:00Z",
+         "message": {"content": "<command-name>/launchcut</command-name> SECRET TEXT"}},
+    ]
+    uses = [u for line in lines for u in usage._setup_line(json.dumps(line).encode())]
+    assert sorted(u[1:] for u in uses) == [["agent", "judge"], ["command", "launchcut"], ["mcp", "figma"], ["skill", "launchcut"]]
+    rep = setup_inventory.report(home, uses, datetime(2026, 10, 27, tzinfo=UTC))
+    by = {(i["kind"], i["name"], i.get("detail")): i for i in rep["items"]}
+    assert by[("skill", "launchcut", None)]["uses"] == 2 and by[("skill", "idle", None)]["verdict"] == "unused"
+    assert by[("agent", "judge", None)]["uses"] == 1
+    assert ("hook", "SessionStart", "start.sh") in by and ("hook", "SessionStart", "other.sh") in by
+    raw = json.dumps(rep)
+    for secret in ("SECRET PROMPT", "SECRET TEXT", "SECRET-ARG", "/Users/me"):
+        assert secret not in raw, secret

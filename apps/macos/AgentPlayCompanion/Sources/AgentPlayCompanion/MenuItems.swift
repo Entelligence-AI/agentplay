@@ -19,6 +19,7 @@ enum MenuEntry: Equatable {
     case signals(Signals)                        // hosted card: how you steer, the four rates one level down
     case fix(Insights.Fix)                       // the best fix; a click opens the window on Fixes
     case applied(Insights)                       // what AgentPlay changed and whether it worked
+    case setup(SetupReport)                      // your skills, agents, MCP servers and hooks, and their use
     case action(MenuAction)
     case separator
 }
@@ -163,6 +164,7 @@ enum MenuBuilder {
         if let ins, !(ins.applied ?? []).isEmpty { insights.append(.applied(ins)) }
         if let ins { insights.append(.health(ins)) }
         if let sig, trim < 3 { insights.append(.signals(sig)) }
+        if let setup = s.usage?.setup, !setup.items.isEmpty, trim < 4 { insights.append(.setup(setup)) }
         // The section exists only for the rows the trim left it; never a header over nothing.
         if !insights.isEmpty {
             out.append(.separator)

@@ -29,7 +29,8 @@ from typing import Any
 from .store import Store, _atomic_write
 
 CACHE_VERSION = 3
-RAW_CACHE_VERSION = 7  # 7: steering signals carry their kind (a correction that says it still isn't working; swearing)
+RAW_CACHE_VERSION = 8  # 8: setup uses (skills, subagents, slash commands, MCP servers by name)
+# was 7  # 7: steering signals carry their kind (a correction that says it still isn't working; swearing)
 BLOCK_HOURS = 5
 WINDOW_DAYS = 30
 DUP_SECONDS = 5
@@ -239,8 +240,48 @@ def _file_key(path: Path) -> str:
     return hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:32]
 
 
+_SETUP_NAME = re.compile(r"^[A-Za-z0-9_.:@-]{1,80}$")
+_COMMAND = re.compile(rb"<command-name>/?([A-Za-z0-9_.:@-]{1,80})</command-name>")
+
+
+def _setup_line(line: bytes) -> list[list[Any]]:
+    """``[sec, kind, name]`` for each use of a piece of setup in one line: a Skill call (``skill``), an Agent or
+    Task call (``agent``, its subagent type), an MCP tool (``mcp``, the server), a slash command (``command``).
+    Names only; setup_inventory keeps just the ones that match something installed."""
+    if b'"tool_use"' not in line and b"<command-name>" not in line:
+        return []
+    try:
+        d = json.loads(line)
+    except ValueError:
+        return []
+    at = _parse(d.get("timestamp")) if isinstance(d, dict) else None
+    if at is None:
+        return []
+    sec = round(at.timestamp())
+    out: list[list[Any]] = []
+    m = d.get("message") if isinstance(d.get("message"), dict) else {}
+    content = m.get("content")
+    if d.get("type") == "assistant" and isinstance(content, list):
+        for b in content:
+            if not isinstance(b, dict) or b.get("type") != "tool_use":
+                continue
+            name, inp = str(b.get("name") or ""), b.get("input") if isinstance(b.get("input"), dict) else {}
+            if name == "Skill":
+                out.append([sec, "skill", str(inp.get("skill") or inp.get("command") or "")])
+            elif name in ("Agent", "Task"):
+                out.append([sec, "agent", str(inp.get("subagent_type") or "general-purpose")])
+            elif name.startswith("mcp__"):
+                out.append([sec, "mcp", name.split("__")[1] if name.count("__") >= 2 else ""])
+    elif d.get("type") == "user":
+        hit = _COMMAND.search(line)
+        if hit:
+            out.append([sec, "command", hit.group(1).decode()])
+    return [u for u in out if _SETUP_NAME.match(u[2])]
+
+
 def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = WINDOW_DAYS,
-                    signals_out: list[list[Any]] | None = None) -> list[Request]:
+                    signals_out: list[list[Any]] | None = None,
+                    uses_out: list[list[Any]] | None = None) -> list[Request]:
     """Every Claude Code request in the last ``days``, each once, from the raw transcripts.
 
     ``signals_out``: if given, extended with the steering signals of the last ``2 × days`` (``_signal_lines``),
@@ -270,6 +311,7 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
             start = 0
             reqs: list[list[Any]] = []
             sigs: list[list[Any]] = []
+            uses: list[list[Any]] = []
             seen_user = False
             if hit and hit.get("size") == st.st_size and hit.get("mtime") == st.st_mtime:
                 files[key] = hit
@@ -277,6 +319,7 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
             if hit and st.st_size >= hit.get("offset", 0):
                 start, reqs = hit.get("offset", 0), list(hit.get("reqs", []))  # appended since: read the tail
                 sigs, seen_user = list(hit.get("sig", [])), bool(hit.get("seenUser"))
+                uses = list(hit.get("use", []))
             root = "subagents" not in f.parts  # a subagent's prompts are the agent's, not the user's
             end = start
             try:
@@ -289,6 +332,7 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
                         r = _claude_line(line)
                         if r is not None:
                             reqs.append(r)
+                        uses += _setup_line(line)
                         if root:
                             new_sigs, seen_user = _signal_line(line, seen_user)
                             sigs += new_sigs
@@ -296,7 +340,8 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
                 continue
             files[key] = {"session": _session_of(f), "size": st.st_size, "mtime": st.st_mtime, "offset": end,
                           "reqs": [r for r in reqs if r[1] >= since],
-                          "sig": [s for s in sigs if s[0] >= sig_since], "seenUser": seen_user}
+                          "sig": [s for s in sigs if s[0] >= sig_since], "seenUser": seen_user,
+                          "use": [u for u in uses if u[0] >= since]}
     if files != cached:
         try:
             body = json.dumps({"version": RAW_CACHE_VERSION, "files": files}, separators=(",", ":"))
@@ -321,6 +366,9 @@ def claude_requests(homes: list[Path], store: Store, now: datetime, days: int = 
     if signals_out is not None:
         for hit in files.values():
             signals_out += hit.get("sig", [])
+    if uses_out is not None:
+        for hit in files.values():
+            uses_out += hit.get("use", [])
     out: list[Request] = []
     for (_key, sec, model, i, cw, cr, o, repo), session in best.values():
         out.append((sec, model, i, cw, cr, o, _price(model, i, cw, cr, o), "claude-code", repo, session))
@@ -481,12 +529,26 @@ def claude_block(reqs: list[Request], now: datetime) -> dict[str, Any] | None:
     }
 
 
+def _setup(claude_homes: list[Path] | None, uses: list[list[Any]], now: datetime) -> dict[str, Any] | None:
+    """The person's Claude Code setup and how much of it is used (setup_inventory)."""
+    if not claude_homes:
+        return None
+    from . import setup_inventory
+
+    home = Path(claude_homes[0])
+    try:
+        return setup_inventory.report(home, uses, now, claude_json=home.parent / ".claude.json")
+    except Exception:  # noqa: BLE001 - the setup list must never cost the usage report
+        return None
+
+
 def report(store: Store, now: datetime | None = None, claude_homes: list[Path] | None = None) -> dict[str, Any]:
     """``claude_homes``: Claude Code homes to read raw transcripts from. None reads none (maps only)."""
     t_start = time.monotonic()
     now = now or datetime.now(UTC)
     sig: list[list[Any]] = []
-    raw = claude_requests(claude_homes, store, now, signals_out=sig) if claude_homes else []
+    uses: list[list[Any]] = []
+    raw = claude_requests(claude_homes, store, now, signals_out=sig, uses_out=uses) if claude_homes else []
     reqs = merge(raw, map_requests(store, now))
     local_midnight = datetime.fromtimestamp(now.timestamp()).replace(hour=0, minute=0, second=0, microsecond=0)
     today = local_midnight.astimezone(UTC)
@@ -518,6 +580,7 @@ def report(store: Store, now: datetime | None = None, claude_homes: list[Path] |
         "claudeDaily": claude_daily,
         "claudeBlock": claude_block(reqs, now),
         "signals": signals(sig, now) if claude_homes else None,
+        "setup": _setup(claude_homes, uses, now),
         "timingMs": round(1000 * (time.monotonic() - t_start)),
     }
 

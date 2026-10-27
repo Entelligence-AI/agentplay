@@ -146,12 +146,18 @@ extension Renderer {
             if let ins = snap.insights {
                 write(AnyView(HealthCard(insights: ins)), to: dir.appendingPathComponent("live-health.png"), dark: true, material: true)
             }
+            if let st = snap.usage?.setup {
+                write(AnyView(SetupCard(report: st)), to: dir.appendingPathComponent("live-setup.png"), dark: true, material: true)
+                write(AnyView(VStack(alignment: .leading, spacing: 14) { SetupPane(report: st) }.padding(28).frame(width: 720)
+                                .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark)),
+                      to: dir.appendingPathComponent("live-setup-pane.png"), dark: true, material: false)
+            }
             if let u = snap.usage {
                 write(AnyView(UsageDetail(report: u)), to: dir.appendingPathComponent("live-usage-details.png"), dark: true, material: true)
             }
             // The Insights window, each section, as a real window.
             NSApp.appearance = NSAppearance(named: .darkAqua)
-            for section in [InsightsSection.overview, .steering] {
+            for section in [InsightsSection.overview, .setup, .steering] {
                 m.insightsSection = section
                 let w = InsightsWindow.make(model: m)
                 captureWindow(w, to: dir.appendingPathComponent("live-insights-\(section.rawValue).png"), wait: 0.8)

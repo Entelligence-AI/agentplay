@@ -390,6 +390,21 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             i.submenu = m
             menu.addItem(i)
 
+        case .setup(let st):
+            let c = st.counts
+            let i = item("Your Setup") { [model] in model.showInsights(.setup) }
+            let bits = [c["skill"].map { "\($0) skills" }, c["agent"].map { "\($0) agents" }, c["mcp"].map { "\($0) MCP" },
+                        st.unused > 0 ? "\(st.unused) unused" : nil].compactMap { $0 }
+            setSubtitle(bits.joined(separator: " · "), on: i)
+            i.image = symbol("square.stack.3d.up")
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(SetupCard(report: st)))
+            m.addItem(.separator())
+            m.addItem(item("Open in Insights…") { [model] in model.showInsights(.setup) })
+            i.submenu = m
+            menu.addItem(i)
+
         case .applied(let ins):
             let all = ins.applied ?? []
             guard let first = all.first else { return }
@@ -855,6 +870,41 @@ struct SteeringCard: View {
             parts.append(n <= 1 ? "Nearly every message corrects the agent." : "1 in \(n) messages corrects the agent.")
         }
         return parts.isEmpty ? "Counted from what you type; no text is kept." : parts.joined(separator: " ")
+    }
+}
+
+/// Your setup at a glance: what gets used, and what sits there unused, costing context in every session.
+struct SetupCard: View {
+    var report: SetupReport
+
+    var body: some View {
+        let used = report.items.filter { $0.uses > 0 && $0.kind != "hook" }.prefix(5)
+        let unused = report.items.filter { $0.verdict == "unused" && ["skill", "mcp", "agent"].contains($0.kind) }
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Used most, last \(report.days) days").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
+            if used.isEmpty { Text("Nothing used yet.").font(.subheadline).foregroundStyle(Ink.secondary) }
+            ForEach(Array(used)) { it in
+                HStack {
+                    Text(it.name).font(.subheadline).foregroundStyle(Ink.primary).lineLimit(1)
+                    Text(SetupCard.kindName(it.kind)).font(.caption).foregroundStyle(Ink.secondary)
+                    Spacer()
+                    Text("\(it.uses)×").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+                }
+            }
+            if !unused.isEmpty {
+                Text("Not used in \(report.days) days: \(unused.count)").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary).padding(.top, 4)
+                Text(unused.prefix(6).map(\.name).joined(separator: ", ") + (unused.count > 6 ? ", …" : ""))
+                    .font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+                Text("Each one's description loads into every session.").font(.caption).foregroundStyle(Ink.secondary)
+            }
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 9)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+
+    static func kindName(_ k: String) -> String {
+        ["skill": "skill", "agent": "subagent", "command": "command", "mcp": "MCP", "hook": "hook"][k] ?? k
     }
 }
 

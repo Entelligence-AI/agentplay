@@ -2614,6 +2614,12 @@
         }
       ]
     },
+    "setup": {
+      "days": 30,
+      "counts": {},
+      "unused": 0,
+      "items": []
+    },
     "timingMs": 0
   },
   "insights": {
