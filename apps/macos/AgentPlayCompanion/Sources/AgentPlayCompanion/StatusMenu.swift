@@ -339,18 +339,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             // submenu doesn't take a click of its own.
             let m = NSMenu()
             m.autoenablesItems = false
+            let state = SessionDetail(line: s, now: now)
+            let context = s.run?.context.value?.percent.flatMap { $0 >= 70 ? "context \(Format.percent($0)) full" : nil }
+            let glance = [state.status, context].compactMap { $0 }.joined(separator: " · ")
             if let pid = s.pid, let app = TerminalFocus.app(for: pid)?.localizedName {
                 let go = item("Go to \(app)") { _ = TerminalFocus.bringForward(pid: pid) }
                 go.image = symbol("arrow.up.forward.app")
+                setSubtitle(glance, on: go)
                 m.addItem(go)
             }
             let replay = item("Open Replay") { [model] in model.openViewer(sessionId: s.sessionId, seq: s.seq) }
             replay.image = symbol("play.circle")
             replay.isEnabled = s.openable
-            if !s.openable { setSubtitle("Appears after the next refresh", on: replay) }
+            setSubtitle(s.openable ? "See every step it took" : "Appears after the next refresh", on: replay)
             m.addItem(replay)
-            m.addItem(.separator())
-            m.addItem(hosted(SessionDetail(line: s, now: now)))
             i.submenu = m
             menu.addItem(i)
 
@@ -428,7 +430,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let m = NSMenu()
             m.autoenablesItems = false
             m.addItem(hosted(SteeringCard(signals: sig)))
-            m.addItem(hosted(SignalsCard(signals: sig)))
             m.addItem(.separator())
             m.addItem(item("Open Insights in AgentPlay…") { [model] in model.openInsights(page: "overview") })
             i.submenu = m
@@ -825,14 +826,16 @@ struct SteeringCard: View {
     var body: some View {
         let c = signals.current, p = signals.previous
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("How you steer").font(.headline).foregroundStyle(Ink.primary)
-                Spacer()
-                Text("\(c.messages) messages you typed").font(.subheadline).foregroundStyle(Ink.secondary)
-            }
-            HStack(alignment: .top, spacing: 14) {
-                figure("corrected", c.correctionRate, p.correctionRate, \.correctionRate)
-                figure("frustrated", c.frustrationRate, p.frustrationRate, \.frustrationRate)
+            Text("Of \(c.messages) messages you typed, last 30 days").font(.subheadline).foregroundStyle(Ink.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
+                GridRow {
+                    figure("corrected", c.correctionRate, p.correctionRate, \.correctionRate)
+                    figure("frustrated", c.frustrationRate, p.frustrationRate, \.frustrationRate)
+                }
+                GridRow {
+                    figure("interrupted", c.interruptRate, p.interruptRate, \.interruptRate)
+                    figure("refused", c.refusalRate, p.refusalRate, \.refusalRate)
+                }
             }
             Text(Self.sentence(signals)).font(.subheadline).foregroundStyle(Ink.primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -846,7 +849,7 @@ struct SteeringCard: View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(now.map { Format.percent($0) } ?? "–")
+                    Text(now.map { $0 < 1 && $0 > 0 ? String(format: "%.1f%%", $0) : Format.percent($0) } ?? "–")
                         .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(Ink.primary)
                     if let now, let before, abs(now - before) >= 0.5 {
@@ -875,16 +878,11 @@ struct SteeringCard: View {
     static func sentence(_ s: Signals) -> String {
         var parts: [String] = []
         let c = s.current
-        if let r = c.correctionRate, r > 0 {
+        if let nw = c.notWorking, c.corrections >= 5, Double(nw) / Double(c.corrections) >= 0.5 {
+            parts.append("Most corrections say it still isn't working: the agent calls done too early.")
+        } else if let r = c.correctionRate, r > 0 {
             let n = Int((100 / r).rounded())
             parts.append(n <= 1 ? "Nearly every message corrects the agent." : "1 in \(n) messages corrects the agent.")
-        }
-        if let nw = c.notWorking, c.corrections >= 5, Double(nw) / Double(c.corrections) >= 0.5 {
-            parts.append("Most of them say the result didn't hold, not \u{201C}do it differently\u{201D}: the agent is calling done too early.")
-        } else if let now = c.frustrationRate, let before = s.previous.frustrationRate {
-            if now <= before - 2 { parts.append("Frustration is down from \(Format.percent(before)).") }
-            else if now >= before + 2 { parts.append("Frustration is up from \(Format.percent(before)).") }
-            else { parts.append("Frustration is about where it was.") }
         }
         return parts.isEmpty ? "Counted from what you type; no text is kept." : parts.joined(separator: " ")
     }
