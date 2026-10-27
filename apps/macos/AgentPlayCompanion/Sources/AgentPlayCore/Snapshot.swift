@@ -503,6 +503,13 @@ public struct Insights: Codable, Sendable, Equatable {
         public var at: String?
         public var source: String?
         public var title: String?
+        /// What the fix was chosen to move, its value over the 30 days before, and since, over `sessionsSince`.
+        public var measure: String?
+        public var before: Double?
+        public var after: Double?
+        public var sessionsSince: Int?
+        /// measuring, worked, no_change, unmeasured
+        public var verdict: String?
     }
     public struct Autotune: Codable, Sendable, Equatable {
         public struct Pending: Codable, Sendable, Equatable, Identifiable {

@@ -32,6 +32,14 @@ final class CompanionModel: ObservableObject {
     /// The extra environment for the core, readable from the background scan without touching the main actor.
     private let envBox = EnvBox()
     @Published var settingsPane: SettingsView.Pane = .general
+    /// Which part of the Insights window is showing.
+    @Published var insightsSection: InsightsSection = .fixes
+
+    /// The Insights window, on one section.
+    func showInsights(_ section: InsightsSection) {
+        insightsSection = section
+        Windows.show(.insights)
+    }
     @Published private(set) var claudeBridgeOn = false
     let claudeBridge = ClaudeBridge()
     @Published var popoverOpen = false {

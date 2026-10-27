@@ -17,7 +17,8 @@ enum MenuEntry: Equatable {
     case errors([ErrorLine])                     // each error, its details one level down
     case health(Insights)                        // run health, its parts, what was applied and what Autotune holds
     case signals(Signals)                        // hosted card: how you steer, the four rates one level down
-    case fix(Insights.Fix)                       // a fix, its details one level down
+    case fix(Insights.Fix)                       // the best fix; a click opens the window on Fixes
+    case applied(Insights)                       // what AgentPlay changed and whether it worked
     case action(MenuAction)
     case separator
 }
@@ -151,15 +152,16 @@ enum MenuBuilder {
         let busy = working.filter { $0.dot == .working }, idle = working.filter { $0.dot == .idle }
         out += (busy + idle.prefix(1)).prefix(max(1, 3 - trim)).map(MenuEntry.session)
 
-        // 4. Insights: how you steer first (the thing people react to), then run health and what would raise it.
-        let errs = errorLines(s, prefs: prefs, now: now)
+        // 4. Insights: one line each, a click opens the Insights window on it. What to fix comes first, then what
+        // was changed and whether it worked, then the score and how you steer. Errors that passed later need
+        // nothing from you and stay out of the menu.
         let ins = s.insights.flatMap { $0.score == nil ? nil : $0 }
         let sig = s.usage?.signals.flatMap { $0.current.messages >= 20 ? $0 : nil }
         var insights: [MenuEntry] = []
-        if let sig { insights.append(.signals(sig)) }
+        if let ins, let fix = ins.fixes.first { insights.append(.fix(fix)) }
+        if let ins, !(ins.applied ?? []).isEmpty { insights.append(.applied(ins)) }
         if let ins { insights.append(.health(ins)) }
-        if let ins, let fix = ins.fixes.first { insights.append(.fix(fix)) }   // the best one; Run Health has the rest
-        if !errs.isEmpty, trim < 2 { insights.append(.errors(Array(errs.prefix(1)))) }
+        if let sig, trim < 3 { insights.append(.signals(sig)) }
         // The section exists only for the rows the trim left it; never a header over nothing.
         if !insights.isEmpty {
             out.append(.separator)

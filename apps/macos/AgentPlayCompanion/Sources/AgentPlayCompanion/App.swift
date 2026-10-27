@@ -127,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 /// Settings and the welcome window, opened from AppKit (the menu, onboarding, notifications).
 @MainActor
 enum Windows {
-    enum Kind { case settings, welcome }
+    enum Kind { case settings, welcome, insights }
     static var model: CompanionModel?
     private static var open: [Kind: NSWindow] = [:]
 
@@ -144,6 +144,8 @@ enum Windows {
         case .settings:
             model.refreshBridgeState()
             w = SettingsWindow.make(model: model)
+        case .insights:
+            w = InsightsWindow.make(model: model)
         case .welcome:
             w = NSWindow(contentViewController: NSHostingController(rootView: AnyView(OnboardingView().environmentObject(model))))
             w.title = "Welcome to AgentPlay"

@@ -146,6 +146,13 @@ extension Renderer {
             if let u = snap.usage {
                 write(AnyView(UsageDetail(report: u)), to: dir.appendingPathComponent("live-usage-details.png"), dark: true, material: true)
             }
+            // The Insights window, each section, as a real window.
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+            for section in InsightsSection.allCases {
+                m.insightsSection = section
+                let w = InsightsWindow.make(model: m)
+                captureWindow(w, to: dir.appendingPathComponent("live-insights-\(section.rawValue).png"), wait: 0.8)
+            }
         }
         print("rendered live screens to \(dir.path)")
     }

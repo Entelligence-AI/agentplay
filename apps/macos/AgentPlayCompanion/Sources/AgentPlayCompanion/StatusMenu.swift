@@ -331,120 +331,51 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case .usage(let u):
             menu.addItem(hosted(UsageSummary(report: u)))
 
-        case .usageDetails(let u):
-            let i = NSMenuItem(title: "Usage Details", action: nil, keyEquivalent: "")
+        case .usageDetails:
+            let i = item("Usage Details") { [model] in model.showInsights(.usage) }
             i.image = symbol("chart.bar.xaxis")
-            let sub = NSMenu()
-            sub.autoenablesItems = false
-            sub.addItem(hosted(UsageDetail(report: u)))
-            i.submenu = sub
             menu.addItem(i)
 
         case .health(let ins):
-            // One row; the five parts are one level down.
             let score = Int((ins.score ?? 0).rounded())
-            let i = NSMenuItem(title: "Run Health  \(score) / 100", action: nil, keyEquivalent: "")
-            // The lever first: what the fixes below are worth together. Then the trend.
-            var bits: [String] = []
-            let gain = ins.fixes.compactMap(\.points).reduce(0, +)
-            if gain >= 0.5 {
-                bits.append("\(Int((min(100, (ins.score ?? 0) + gain)).rounded())) within reach from \(ins.fixes.count) fix\(ins.fixes.count == 1 ? "" : "es")")
-            }
+            let i = item("Run Health  \(score) / 100") { [model] in model.showInsights(.overview) }
+            var sub = "What it's made of"
             if let prev = ins.prevScore, abs((ins.score ?? 0) - prev) >= 0.5 {
                 let d = (ins.score ?? 0) - prev
-                bits.append("\(d > 0 ? "up" : "down") \(Format.points(abs(d)))")
+                sub = "\(d > 0 ? "Up" : "Down") \(Format.points(abs(d))) this month · what it's made of"
             }
-            if bits.isEmpty {
-                let weak = ins.components.filter { ($0.points ?? 20) < 10 }.map(\.name)
-                if !weak.isEmpty { bits.append("weakest: " + weak.prefix(2).joined(separator: ", ")) }
-            }
-            setSubtitle(bits.isEmpty ? "Last \(ins.days) days" : bits.joined(separator: " · "), on: i)
+            setSubtitle(sub, on: i)
             i.image = symbol("heart.text.square")
-            let m = NSMenu()
-            m.autoenablesItems = false
-            m.addItem(hosted(HealthCard(insights: ins)))
-            if let applied = ins.applied, !applied.isEmpty {
-                m.addItem(.separator())
-                m.addItem(.sectionHeader(title: "Applied by AgentPlay"))
-                for e in applied {
-                    let ai = item("Undo \(Plain.text(e.title ?? "this change"))") { [model] in model.undoApplied(e) }
-                    setSubtitle([e.repo, e.file, e.source == "autotune" ? "by Autotune" : nil].compactMap { $0 }.joined(separator: " · "), on: ai)
-                    ai.image = symbol("arrow.uturn.backward")
-                    m.addItem(ai)
-                }
-            }
-            if let pending = ins.autotune?.pending, !pending.isEmpty {
-                m.addItem(.separator())
-                m.addItem(.sectionHeader(title: "Autotune Is Holding"))
-                for p in pending {
-                    let pi = NSMenuItem(title: Plain.text(p.title), action: nil, keyEquivalent: "")
-                    setSubtitle([p.points.map { "+\(Format.points($0)) points" }, p.repo].compactMap { $0 }.joined(separator: " · "), on: pi)
-                    let pm = NSMenu()
-                    pm.addItem(item("Approve and Apply") { [model] in model.autotune("approve", p) })
-                    pm.addItem(item("Dismiss") { [model] in model.autotune("dismiss", p) })
-                    pi.submenu = pm
-                    m.addItem(pi)
-                }
-            }
-            m.addItem(.separator())
-            m.addItem(item("Open Run Health in AgentPlay…") { [model] in model.openInsights() })
-            i.submenu = m
             menu.addItem(i)
 
         case .signals(let sig):
-            // One row, like Run Health: the two numbers people react to in its subtitle; the card with its
-            // trend lines, the sentence and all four rates one level down.
             let c = sig.current
-            let i = NSMenuItem(title: "How You Steer", action: nil, keyEquivalent: "")
+            let i = item("How You Steer") { [model] in model.showInsights(.steering) }
             let bits = [c.correctionRate.map { "\(Format.percent($0)) corrected" }, c.frustrationRate.map { "\(Format.percent($0)) frustrated" }].compactMap { $0 }
             setSubtitle(bits.isEmpty ? "\(c.messages) messages you typed" : bits.joined(separator: " · "), on: i)
             i.image = symbol("steeringwheel")
-            let m = NSMenu()
-            m.autoenablesItems = false
-            m.addItem(hosted(SteeringCard(signals: sig)))
-            m.addItem(.separator())
-            m.addItem(item("Open Insights in AgentPlay…") { [model] in model.openInsights(page: "overview") })
-            i.submenu = m
             menu.addItem(i)
 
         case .fix(let f):
-            let i = NSMenuItem(title: Plain.text(f.title), action: nil, keyEquivalent: "")
-            // One line: what it's worth and where. The pattern is one level down.
-            let sub = [f.points.map { "+\(Format.points($0)) points" }, Insights.componentName(f.component), f.repo].compactMap { $0 }
-            setSubtitle(sub.joined(separator: " · "), on: i)
+            let count = model.snapshot?.insights?.fixes.count ?? 1
+            let i = item(Plain.text(f.title)) { [model] in model.showInsights(.fixes) }
+            let pts = f.points.map { "+\(Format.points($0)) points" }
+            setSubtitle([count > 1 ? "\(count) fixes ready" : "Fix ready", pts, "see why and apply"].compactMap { $0 }.joined(separator: " · "), on: i)
             i.image = symbol("wrench.and.screwdriver")
-            let m = NSMenu()
-            m.autoenablesItems = false
-            m.addItem(hosted(FixDetail(fix: f)))
-            m.addItem(.separator())
-            // The way to get it done comes first. Apply when AgentPlay can write the change itself; otherwise a
-            // prompt that hands the whole case to Claude Code.
-            if f.applicable {
-                let ap = item("Apply This Fix…") { [model] in model.applyFix(f) }
-                setSubtitle(f.hook?.remedy ?? "You see the exact lines first; undo any time", on: ap)
-                ap.image = symbol("checkmark.circle.fill")
-                m.addItem(ap)
+            menu.addItem(i)
+
+        case .applied(let ins):
+            let all = ins.applied ?? []
+            guard let first = all.first else { return }
+            let i = item(all.count == 1 ? Plain.text(first.title ?? "1 change applied") : "\(all.count) changes applied") { [model] in model.showInsights(.applied) }
+            let verdict: String = switch first.verdict {
+            case "worked": "Worked"
+            case "no_change": "No change yet"
+            case "measuring": "Measuring, \(first.sessionsSince ?? 0) of 3 sessions"
+            default: "Applied"
             }
-            let prompt = item("Copy a Prompt for Claude Code") { [model] in model.copyText(FixDetail.prompt(f)) }
-            setSubtitle("Paste it into a session; it makes the change and shows the diff", on: prompt)
-            prompt.image = symbol("text.badge.plus")
-            m.addItem(prompt)
-            if let file = f.hook?.settingsFiles.first {
-                let name = (file as NSString).lastPathComponent
-                let open = item("Open \(name)") { NSWorkspace.shared.open(URL(fileURLWithPath: (file as NSString).expandingTildeInPath)) }
-                open.image = symbol("doc.text")
-                m.addItem(open)
-                let reveal = item("Show \(name) in Finder") { [model] in model.reveal(file) }
-                reveal.isAlternate = true
-                reveal.keyEquivalentModifierMask = [.option]
-                m.addItem(reveal)
-            }
-            m.addItem(.separator())
-            if let first = f.evidence.first {
-                m.addItem(item("Open a Session Where It Happened") { [model] in model.openViewer(sessionId: first) })
-            }
-            m.addItem(item("See It in AgentPlay…") { [model] in model.openInsights() })
-            i.submenu = m
+            setSubtitle(verdict + " · before and after", on: i)
+            i.image = symbol("checkmark.seal")
             menu.addItem(i)
 
         case .errors(let errs):
