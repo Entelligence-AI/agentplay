@@ -14,7 +14,27 @@ Homebrew (after a release): `brew install --cask agentplay-companion` once the c
 
 If macOS asks "AgentPlay Companion would like to access files in your Documents folder": that's because your repos live there. It looks there only to tell which repo a session worked in. Declining keeps it out; you can change it later in System Settings → Privacy & Security → Files and Folders. Please don't disable Gatekeeper to install any build of this app.
 
-**Today, no notarized build exists** (no Apple Developer ID was available while building this). Until one does, use the developer build below.
+**Today, no notarized build exists** (no Apple Developer ID was available while building this). Until one does, use the team preview below.
+
+## Team preview (before notarization)
+
+For people you trust, on Apple silicon Macs. One person builds the DMG; everyone else runs one line.
+
+Whoever builds (needs the developer setup below):
+
+```sh
+sh scripts/companion-dmg.sh      # ends with "BLOCKED: not notarized"; the DMG in dist/companion is still good for the team
+```
+
+Share `dist/companion/AgentPlay-Companion-<version>-arm64.dmg` (Slack, Drive, or a GitHub draft release).
+
+Everyone else, in Terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Entelligence-AI/agentplay/main/scripts/companion-install.sh | sh -s -- ~/Downloads/AgentPlay-Companion-<version>-arm64.dmg
+```
+
+It copies the app into Applications, clears the "downloaded from the internet" flag that stops an un-notarized app from opening, and opens it. The welcome window does the rest. Updating is the same line with the new DMG.
 
 ## For developers
 
