@@ -77,6 +77,15 @@ public struct Forecast: Equatable, Sendable {
                         daysEarly: runsOut.map { reset.timeIntervalSince($0) / 86400 } ?? 0)
     }
 
+    /// A few words under the week's bar: when it runs out at your pace, or that it lasts.
+    public func short(reset: Date, now: Date) -> String {
+        if let out = runsOutAt {
+            let budget = perDay < 1 ? String(format: "%.1f%%", perDay) : Format.percent(perDay)
+            return "At your pace: out \(Format.weekdayTime(out)). Lasts at \(budget) a day."
+        }
+        return "At your pace: lasts, about \(Format.percent(leftAtReset ?? 0)) spare."
+    }
+
     /// One line for the plan card.
     public func sentence(reset: Date, now: Date) -> String {
         if let out = runsOutAt {

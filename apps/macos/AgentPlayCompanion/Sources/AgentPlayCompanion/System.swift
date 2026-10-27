@@ -1,4 +1,5 @@
 import AgentPlayCore
+import AppKit
 import CoreServices
 import Foundation
 import UserNotifications
@@ -93,6 +94,8 @@ enum Notifier {
         content.body = a.note.body
         content.categoryIdentifier = category
         content.threadIdentifier = a.preset.rawValue
+        let pose: PipPose = switch a.preset { case .allowanceLow: .sweat; case .repeatedFailure, .unresolvedEnd: .oops; case .finished: .cheer; default: .wave }
+        if let att = pipAttachment(pose) { content.attachments = [att] }
         // Ids and seqs only: enough to open the moment, nothing about what happened in it.
         var info: [String: Any] = ["patternKey": a.patternKey]
         if let s = a.sessionId { info["sessionId"] = s }
@@ -103,13 +106,35 @@ enum Notifier {
     }
 
     /// One notification on request, so people can see what one looks like before any alert is on.
+    /// Pip, in the pose that matches the alert, as the notification's picture: the face people know from the bar.
+    static func pipAttachment(_ pose: PipPose) -> UNNotificationAttachment? {
+        let scale: CGFloat = 12
+        let img = PipIcon.image(pose, session: 0.45, weekly: 0.6)
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(20 * scale), pixelsHigh: Int(18 * scale), bitsPerSample: 8,
+                                   samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        let ctx = NSGraphicsContext(bitmapImageRep: rep)!
+        NSGraphicsContext.current = ctx
+        ctx.imageInterpolation = .none
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        img.draw(in: NSRect(x: 0, y: 0, width: 20 * scale, height: 18 * scale), from: .zero, operation: .sourceOver, fraction: 1)
+        (dark ? NSColor.white : NSColor.black).setFill()
+        NSRect(x: 0, y: 0, width: 20 * scale, height: 18 * scale).fill(using: .sourceIn)
+        NSGraphicsContext.restoreGraphicsState()
+        guard let png = rep.representation(using: .png, properties: [:]) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pip-\(pose.rawValue)-\(dark ? "dark" : "light").png")
+        try? png.write(to: url)
+        return try? UNNotificationAttachment(identifier: "pip", url: url, options: [UNNotificationAttachmentOptionsThumbnailClippingRectKey: CGRect(x: 0, y: 0, width: 1, height: 1).dictionaryRepresentation])
+    }
+
     /// A sample of one alert, sent when the person asks to see it during onboarding or in Settings.
-    static func postSample(title: String, body: String) {
+    static func postSample(title: String, body: String, pose: PipPose = .wave) {
         guard available else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        if let a = pipAttachment(pose) { content.attachments = [a] }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "sample-\(UUID().uuidString)", content: content, trigger: nil))
     }
 
@@ -141,6 +166,7 @@ enum Notifier {
         content.threadIdentifier = needsYouThread
         content.categoryIdentifier = needsYouCategory
         content.sound = .default
+        if let att = pipAttachment(.wave) { content.attachments = [att] }
         var info: [String: Any] = ["sessionId": l.sessionId, "kind": "needsYou"]
         if let pid = l.pid { info["pid"] = Int(pid) }
         content.userInfo = info

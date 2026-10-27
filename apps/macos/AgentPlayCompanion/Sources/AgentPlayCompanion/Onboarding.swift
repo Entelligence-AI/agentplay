@@ -344,14 +344,15 @@ struct OnboardingView: View {
         var title: String
         var sampleTitle: String
         var sampleBody: String
+        var pose: PipPose
         var id: AlertPreset { preset }
     }
 
     static let choices: [AlertChoice] = [
-        .init(preset: .needsYou, title: "A session needs me", sampleTitle: "Claude Code needs you", sampleBody: "docs-site is waiting for your answer."),
-        .init(preset: .finished, title: "A session finishes", sampleTitle: "Done in 14 min", sampleBody: "212 tool calls, 2 errors. Last step: pnpm test."),
-        .init(preset: .repeatedFailure, title: "A command keeps failing", sampleTitle: "pnpm test failed 3 times", sampleBody: "Three in a row in one run, no pass between."),
-        .init(preset: .allowanceLow, title: "My plan is about to run out", sampleTitle: "Weekly limit: out in about 5 hours", sampleBody: "97% used; resets Thursday 6:30 AM."),
+        .init(preset: .needsYou, title: "A session needs me", sampleTitle: "Claude Code needs you", sampleBody: "docs-site is waiting for your answer.", pose: .wave),
+        .init(preset: .finished, title: "A session finishes", sampleTitle: "Done in 14 min", sampleBody: "212 tool calls, 2 errors. Last step: pnpm test.", pose: .cheer),
+        .init(preset: .repeatedFailure, title: "A command keeps failing", sampleTitle: "pnpm test failed 3 times", sampleBody: "Three in a row in one run, no pass between.", pose: .oops),
+        .init(preset: .allowanceLow, title: "My plan is about to run out", sampleTitle: "Weekly limit: out in about 5 hours", sampleBody: "97% used; resets Thursday 6:30 AM.", pose: .sweat),
     ]
 
     var alerts: some View {
@@ -377,7 +378,7 @@ struct OnboardingView: View {
                     Spacer()
                     Button("Send a sample") {
                         if model.notificationStatus == .authorized || model.notificationStatus == .provisional {
-                            Notifier.postSample(title: c.sampleTitle, body: c.sampleBody)
+                            Notifier.postSample(title: c.sampleTitle, body: c.sampleBody, pose: c.pose)
                         } else {
                             model.requestNotifications()
                         }

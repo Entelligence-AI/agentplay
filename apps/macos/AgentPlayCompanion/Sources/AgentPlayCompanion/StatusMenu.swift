@@ -347,13 +347,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case .health(let ins):
             let score = Int((ins.score ?? 0).rounded())
             let i = item("Run Health  \(score) / 100") { [model] in model.showInsights(.overview) }
-            var sub = "What it's made of"
+            var sub = "The last 30 days"
             if let prev = ins.prevScore, abs((ins.score ?? 0) - prev) >= 0.5 {
                 let d = (ins.score ?? 0) - prev
-                sub = "\(d > 0 ? "Up" : "Down") \(Format.points(abs(d))) this month · what it's made of"
+                sub = "\(d > 0 ? "Up" : "Down") \(Format.points(abs(d))) this month"
             }
             setSubtitle(sub, on: i)
             i.image = symbol("heart.text.square")
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(HealthCard(insights: ins)))
+            m.addItem(.separator())
+            m.addItem(item("Open in Insights…") { [model] in model.showInsights(.overview) })
+            i.submenu = m
             menu.addItem(i)
 
         case .signals(let sig):
@@ -362,14 +368,32 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let bits = [c.correctionRate.map { "\(Format.percent($0)) corrected" }, c.frustrationRate.map { "\(Format.percent($0)) frustrated" }].compactMap { $0 }
             setSubtitle(bits.isEmpty ? "\(c.messages) messages you typed" : bits.joined(separator: " · "), on: i)
             i.image = symbol("steeringwheel")
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(SteeringCard(signals: sig)))
+            m.addItem(.separator())
+            m.addItem(item("Open in Insights…") { [model] in model.showInsights(.steering) })
+            i.submenu = m
             menu.addItem(i)
 
         case .fix(let f):
             let count = model.snapshot?.insights?.fixes.count ?? 1
             let i = item(Plain.text(f.title)) { [model] in model.showInsights(.fixes) }
             let pts = f.points.map { "+\(Format.points($0)) points" }
-            setSubtitle([count > 1 ? "\(count) fixes ready" : "Fix ready", pts, "see why and apply"].compactMap { $0 }.joined(separator: " · "), on: i)
+            setSubtitle([count > 1 ? "\(count) fixes ready" : "Fix ready", pts].compactMap { $0 }.joined(separator: " · "), on: i)
             i.image = symbol("wrench.and.screwdriver")
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(FixDetail(fix: f)))
+            m.addItem(.separator())
+            if f.applicable {
+                let ap = item("Apply This Fix…") { [model] in model.applyFix(f) }
+                setSubtitle("You see the exact lines first; undo any time", on: ap)
+                ap.image = symbol("checkmark.circle.fill")
+                m.addItem(ap)
+            }
+            m.addItem(item(count > 1 ? "All \(count) Fixes in Insights…" : "Open in Insights…") { [model] in model.showInsights(.fixes) })
+            i.submenu = m
             menu.addItem(i)
 
         case .applied(let ins):
@@ -382,8 +406,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             case "measuring": "Measuring, \(first.sessionsSince ?? 0) of 3 sessions"
             default: "Applied"
             }
-            setSubtitle(verdict + " · before and after", on: i)
+            setSubtitle(verdict, on: i)
             i.image = symbol("checkmark.seal")
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(item("Open in Insights…") { [model] in model.showInsights(.applied) })
+            m.addItem(item("Undo \(Plain.text(first.title ?? "this change"))") { [model] in model.undoApplied(first) })
+            i.submenu = m
             menu.addItem(i)
 
         case .errors(let errs):
@@ -565,9 +594,9 @@ struct ProviderCard: View {
                 // With a forecast, the weekly line shows its reset; the forecast says when it really runs out.
                 MeterRow(window: w, now: now, linear: f == nil)
                 if let f, let r = w.resetsAt {
-                    Text(f.sentence(reset: r, now: now)).font(.subheadline)
+                    Text(f.short(reset: r, now: now)).font(.caption)
                         .foregroundStyle(f.runsOutAt != nil ? Color(nsColor: .systemOrange) : Ink.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1).padding(.leading, 66)
                 }
             }
             if let plans = p.conflictingPlans {
@@ -698,20 +727,10 @@ struct HealthCard: View {
                     .font(.subheadline)
                     .foregroundStyle(d <= -3 ? Color(nsColor: .systemOrange) : Ink.secondary)
             }
-            let gain = insights.fixes.compactMap(\.points).reduce(0, +)
-            if gain >= 0.5 {
-                Text("The fixes below would take it to \(Int(min(100, score + gain).rounded())).")
-                    .font(.subheadline).foregroundStyle(Ink.primary)
-            }
-            Text("Five parts, 20 points each. Every one counts something your sessions did.")
-                .font(.footnote).foregroundStyle(Ink.tertiary).padding(.top, 2)
+            // A hover card: the five parts as bars, each out of 20. What each counts is in the Insights window.
             ForEach(insights.components) { c in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(c.name).font(.subheadline).foregroundStyle(Ink.primary)
-                        Text(Self.meaning[c.key] ?? "").font(.caption).foregroundStyle(Ink.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                HStack(alignment: .center, spacing: 8) {
+                    Text(c.name).font(.subheadline).foregroundStyle(Ink.primary)
                     Spacer(minLength: 4)
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color(nsColor: .quaternaryLabelColor))
@@ -721,7 +740,7 @@ struct HealthCard: View {
                     Text(c.points.map { Format.points($0) } ?? "–").font(.subheadline.monospacedDigit())
                         .foregroundStyle(Ink.secondary).frame(width: 30, alignment: .trailing)
                 }
-                .padding(.top, 3)
+                .padding(.top, 4)
             }
         }
         .padding(.horizontal, Menu.inset)
@@ -1057,12 +1076,14 @@ struct MeterRow: View {
                     Capsule().fill(Color(nsColor: .quaternaryLabelColor))
                     Capsule().fill(tint.color).frame(width: max(5, g.size.width * min(1, used / 100)))
                 }
+                .frame(height: 5)
+                .frame(maxHeight: .infinity)   // centred in the row, whatever the text's height
             }
-            .frame(height: 5)
             Text(detail(stale, used: used)).font(.subheadline.monospacedDigit())
                 .foregroundStyle(tint == .normal || tint == .stale ? Ink.secondary : tint.color)
                 .lineLimit(1).fixedSize()
         }
+        .frame(height: 18)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail(stale, used: used))")
     }

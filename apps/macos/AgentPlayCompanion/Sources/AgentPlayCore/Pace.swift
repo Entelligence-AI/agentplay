@@ -66,8 +66,10 @@ public struct ProviderSummary: Identifiable, Equatable, Sendable {
         }
         let out = order.map { p -> ProviderSummary in
             let all = groups[p] ?? []
+            // Session, then week, then anything else: the order people read, whatever resets first.
+            let rank = ["five_hour": 0, "weekly": 1]
             let real = all.filter { $0.used.isAvailable }
-                .sorted { ($0.resetsAt ?? .distantFuture) < ($1.resetsAt ?? .distantFuture) }
+                .sorted { (rank[$0.window] ?? 2, $0.resetsAt ?? .distantFuture) < (rank[$1.window] ?? 2, $1.resetsAt ?? .distantFuture) }
             return ProviderSummary(provider: p, plan: all.compactMap(\.plan).first, windows: real,
                                    unavailable: real.isEmpty ? all.first : nil,
                                    conflictingPlans: all.compactMap(\.conflictingPlans).first)

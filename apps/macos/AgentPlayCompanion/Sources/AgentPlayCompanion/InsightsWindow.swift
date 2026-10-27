@@ -182,34 +182,34 @@ struct FixesPane: View {
     var insights: Insights?
 
     var body: some View {
-        PaneTitle(title: "Do this next", subtitle: "Changes your own sessions say would help, best first.")
+        PaneTitle(title: "Do this next", subtitle: "What your own sessions say would help, best first.")
         let fixes = insights?.fixes ?? []
         if fixes.isEmpty {
-            EmptyNote(text: "Nothing to fix right now. Pip will tell you when your sessions show a pattern worth changing.")
+            EmptyNote(text: "Nothing to fix right now.")
         }
         ForEach(fixes) { f in
             Card {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(Plain.text(f.title)).font(.title3.weight(.semibold))
+                    Text(Plain.text(f.title)).font(.headline)
                     Spacer()
-                    if let p = f.points, p > 0 { Text("+\(Format.points(p))").font(.title3.weight(.semibold)).foregroundStyle(.green) }
+                    if let p = f.points, p > 0 { Text("+\(Format.points(p))").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
                 }
-                Labelled(label: "What happens", text: Plain.text(f.pattern))
-                if let cause = f.hook?.cause { Labelled(label: "Why", text: cause, tint: .orange) }
-                Labelled(label: "After the fix", text: Plain.text(f.effect))
-                HStack(spacing: 10) {
+                Text(Plain.text(f.pattern)).font(.callout).fixedSize(horizontal: false, vertical: true)
+                if let cause = f.hook?.cause {
+                    Text(cause).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 12) {
                     if f.applicable {
-                        Button("Preview and Apply…") { model.applyFix(f) }.buttonStyle(.borderedProminent)
+                        Button("Apply…") { model.applyFix(f) }.buttonStyle(.borderedProminent).controlSize(.regular)
                     }
-                    Button("Copy a Prompt for Claude Code") { model.copyText(FixDetail.prompt(f)) }
+                    Button("Copy Prompt") { model.copyText(FixDetail.prompt(f)) }.controlSize(.regular)
                     if let first = f.evidence.first {
-                        Button("Where It Happened") { model.openViewer(sessionId: first) }.buttonStyle(.link)
+                        Button("Show a Session") { model.openViewer(sessionId: first) }.buttonStyle(.link)
                     }
+                    Spacer()
+                    Text(Plain.text(f.effect)).font(.caption).foregroundStyle(.secondary).lineLimit(2).frame(maxWidth: 260, alignment: .trailing)
                 }
-                .padding(.top, 4)
-                Text(f.applicable ? "You see the exact lines before anything is written, and can undo it under What changed."
-                     : "AgentPlay can't change this one itself; the prompt hands the whole case to Claude Code.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .padding(.top, 2)
             }
         }
     }
@@ -222,48 +222,45 @@ struct AppliedPane: View {
     var insights: Insights?
 
     var body: some View {
-        PaneTitle(title: "What changed", subtitle: "Every change AgentPlay made, and whether it worked.")
+        PaneTitle(title: "What changed", subtitle: "Changes AgentPlay made, and whether they worked.")
         let applied = insights?.applied ?? []
-        if applied.isEmpty {
-            EmptyNote(text: "Nothing applied yet. Apply a fix and it shows here, with before and after.")
-        }
-        ForEach(applied) { e in
-            Card {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(Plain.text(e.title ?? "A change")).font(.title3.weight(.semibold))
+        if applied.isEmpty { EmptyNote(text: "Nothing applied yet.") }
+        Card {
+            ForEach(Array(applied.enumerated()), id: \.element.id) { i, e in
+                if i > 0 { Divider() }
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(Plain.text(e.title ?? "A change")).font(.body.weight(.medium))
+                        Text(Self.detail(e)).font(.caption).foregroundStyle(.secondary)
+                    }
                     Spacer()
                     VerdictBadge(verdict: e.verdict)
+                    Button("Undo") { model.undoApplied(e) }.controlSize(.small)
                 }
-                Text([e.file, e.repo, Self.when(e.at), e.source == "autotune" ? "by Autotune" : nil].compactMap { $0 }.joined(separator: " · "))
-                    .font(.callout).foregroundStyle(.secondary)
-                if let m = e.measure, let before = e.before {
-                    HStack(alignment: .firstTextBaseline, spacing: 18) {
-                        Labelled(label: Self.measureName(m), text: "before \(Self.value(m, before))")
-                        Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                        Labelled(label: "since, \(e.sessionsSince ?? 0) session\(e.sessionsSince == 1 ? "" : "s")",
-                                 text: e.after.map { Self.value(m, $0) } ?? "no sessions yet")
-                    }
-                }
-                Text(Self.explain(e)).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Button("Undo") { model.undoApplied(e) }
+                .padding(.vertical, 4)
             }
         }
     }
 
-    static func when(_ iso: String?) -> String? {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return nil }
-        return "applied " + Format.weekdayTime(d)
+    static func detail(_ e: Insights.Applied) -> String {
+        var bits: [String] = []
+        if let iso = e.at, let d = ISO8601DateFormatter().date(from: iso) { bits.append(Format.weekdayTime(d)) }
+        if let m = e.measure, let before = e.before {
+            let after = e.after.map { value(m, $0) } ?? "–"
+            bits.append("\(measureName(m)): \(value(m, before)) → \(after) over \(e.sessionsSince ?? 0) session\(e.sessionsSince == 1 ? "" : "s")")
+        }
+        return bits.joined(separator: " · ")
     }
 
     static func measureName(_ m: String) -> String {
         switch m {
-        case "hook_fails": "Hook failures per session"
-        case "mcp_fail_rate": "Server failure rate"
-        case "fail_rate": "Command failure rate"
-        case "out_bytes": "Output per run"
-        case "denials": "Permission stops per session"
-        case "verified_share": "Sessions checked after the last edit"
-        default: "Measure"
+        case "hook_fails": "hook failures per session"
+        case "mcp_fail_rate": "server failure rate"
+        case "fail_rate": "failure rate"
+        case "out_bytes": "output per run"
+        case "denials": "permission stops per session"
+        case "verified_share": "sessions checked after the last edit"
+        default: "measure"
         }
     }
 
@@ -272,15 +269,6 @@ struct AppliedPane: View {
         case "fail_rate", "mcp_fail_rate", "verified_share": Format.percent(v * 100)
         case "out_bytes": "\(Int((v / 4 / 1000).rounded()))k tokens"
         default: String(format: "%.1f", v)
-        }
-    }
-
-    static func explain(_ e: Insights.Applied) -> String {
-        switch e.verdict {
-        case "worked": "It worked: this moved the way the fix said it would."
-        case "no_change": "No change yet. If it stays that way, undo it and try the prompt instead."
-        case "measuring": "Measuring: a verdict after three sessions that could show it."
-        default: "Not measured: this change has nothing it was chosen to move."
         }
     }
 }
@@ -307,27 +295,27 @@ struct AutotunePane: View {
     var insights: Insights?
 
     var body: some View {
-        PaneTitle(title: "Autotune", subtitle: "Once a day it applies safe notes in repos you allow, measures them, and takes back what didn't help.")
+        PaneTitle(title: "Autotune", subtitle: "Applies safe notes in repos you allow, once a day, and takes back what didn't help.")
         let at = insights?.autotune
         Card {
-            Label(at?.enabled == true ? "On for at least one repo" : "Off", systemImage: at?.enabled == true ? "checkmark.circle.fill" : "pause.circle")
-                .font(.headline).foregroundStyle(at?.enabled == true ? .green : .secondary)
-            Text(at?.lastRun.map { "Last ran \($0.prefix(10))." } ?? "Hasn't run yet.").font(.callout).foregroundStyle(.secondary)
-            Button("Choose Repos in AgentPlay…") { model.openInsights(page: "autotune") }.buttonStyle(.link)
-        }
-        let pending = at?.pending ?? []
-        ForEach(pending) { p in
-            Card {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(Plain.text(p.title)).font(.headline)
+            HStack {
+                Text(at?.enabled == true ? "On" : "Off").font(.body.weight(.medium))
+                Text(at?.lastRun.map { "· last ran \($0.prefix(10))" } ?? "").foregroundStyle(.secondary)
+                Spacer()
+                Button("Choose Repos…") { model.openInsights(page: "autotune") }.controlSize(.small)
+            }
+            ForEach(at?.pending ?? []) { p in
+                Divider()
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Plain.text(p.title)).font(.body.weight(.medium))
+                        Text([p.repo, p.points.map { "+\(Format.points($0))" }].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    if let pts = p.points, pts > 0 { Text("+\(Format.points(pts))").foregroundStyle(.green) }
+                    Button("Approve") { model.autotune("approve", p) }.controlSize(.small)
+                    Button("Dismiss") { model.autotune("dismiss", p) }.controlSize(.small)
                 }
-                if let repo = p.repo { Text(repo).font(.callout).foregroundStyle(.secondary) }
-                HStack {
-                    Button("Approve") { model.autotune("approve", p) }.buttonStyle(.borderedProminent)
-                    Button("Dismiss") { model.autotune("dismiss", p) }
-                }
+                .padding(.vertical, 3)
             }
         }
     }
@@ -338,12 +326,41 @@ struct AutotunePane: View {
 struct SteeringPane: View {
     var signals: Signals?
     var body: some View {
-        PaneTitle(title: "How you steer", subtitle: "From what you type to Claude Code. No message text is kept.")
+        PaneTitle(title: "How you steer", subtitle: "From what you type to Claude Code, the last 30 days against the 30 before.")
         if let s = signals {
-            Card { SteeringCard(signals: s) }
+            Card {
+                row("Corrections", s.current.correctionRate, s.previous.correctionRate, "messages that turn the agent around")
+                Divider()
+                row("Frustration", s.current.frustrationRate, s.previous.frustrationRate, "messages that swear or pile up ! and ?")
+                Divider()
+                row("Interruptions", s.current.interruptRate, s.previous.interruptRate, "messages that stop the agent mid-step")
+                Divider()
+                row("Refusals", s.current.refusalRate, s.previous.refusalRate, "tool calls you said no to")
+                Text("Of \(s.current.messages) messages. No message text is kept.").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+            }
         } else {
             EmptyNote(text: "Appears after about 20 messages to Claude Code.")
         }
+    }
+
+    func row(_ name: String, _ now: Double?, _ before: Double?, _ what: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.body.weight(.medium))
+                Text(what).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(now.map { $0 < 1 && $0 > 0 ? String(format: "%.1f%%", $0) : Format.percent($0) } ?? "–")
+                .font(.body.monospacedDigit())
+            if let now, let before, abs(now - before) >= 0.5 {
+                // Lower is better for all four: up is orange.
+                Text("\(now > before ? "↑" : "↓") from \(Format.percent(before))").font(.caption.monospacedDigit())
+                    .foregroundStyle(now > before ? .orange : .secondary).frame(width: 90, alignment: .trailing)
+            } else {
+                Text("same").font(.caption).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
+            }
+        }
+        .padding(.vertical, 3)
     }
 }
 
@@ -351,6 +368,35 @@ struct UsagePane: View {
     var report: UsageReport?
     var body: some View {
         PaneTitle(title: "Usage", subtitle: "Estimated from your agents' own transcripts, at list prices.")
-        if let r = report { Card { UsageDetail(report: r) } } else { EmptyNote(text: "No usage yet.") }
+        if let r = report {
+            Card {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Today").font(.body.weight(.medium)); Spacer()
+                    Text("\(Format.money(r.today.costUsd)) · \(Format.tokens(r.today.tokens.total))").monospacedDigit()
+                }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Last 7 days").font(.body.weight(.medium)); Spacer()
+                    Text("\(Format.money(r.last7Days.costUsd)) · \(Format.tokens(r.last7Days.tokens.total))").monospacedDigit()
+                }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Last 30 days").font(.body.weight(.medium)); Spacer()
+                    Text("\(Format.money(r.last30Days.costUsd)) · \(Format.tokens(r.last30Days.tokens.total))").monospacedDigit()
+                }
+            }
+            Card {
+                Text("By model, 7 days").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach((r.last7Days.byModel ?? []).prefix(4)) { m in
+                    HStack { Text(Format.modelName(m.key)); Spacer()
+                        Text(m.isUnpriced ? "\(Format.tokens(m.tokens.total)) · unpriced" : "\(Format.money(m.costUsd)) · \(Format.tokens(m.tokens.total))").foregroundStyle(.secondary).monospacedDigit() }
+                }
+                Text("By project, 7 days").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 8)
+                ForEach((r.last7Days.byRepo ?? []).prefix(4)) { p in
+                    HStack { Text(p.key); Spacer()
+                        Text("\(Format.money(p.costUsd)) · \(Format.tokens(p.tokens.total))").foregroundStyle(.secondary).monospacedDigit() }
+                }
+            }
+        } else {
+            EmptyNote(text: "No usage yet.")
+        }
     }
 }

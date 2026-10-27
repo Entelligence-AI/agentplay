@@ -284,7 +284,7 @@ struct NotificationsPane: View {
                         Text("\u{201C}\(c.sampleTitle)\u{201D}").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Send Sample") { Notifier.postSample(title: c.sampleTitle, body: c.sampleBody) }
+                    Button("Send Sample") { Notifier.postSample(title: c.sampleTitle, body: c.sampleBody, pose: c.pose) }
                         .buttonStyle(.link).font(.caption).disabled(!allowed)
                     Toggle("", isOn: Binding(get: { model.prefs.alerts.enabled.contains(c.preset) }, set: { model.setPreset(c.preset, on: $0) }))
                         .labelsHidden().toggleStyle(.switch)
