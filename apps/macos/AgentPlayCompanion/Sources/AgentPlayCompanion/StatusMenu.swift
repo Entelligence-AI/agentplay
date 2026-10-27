@@ -9,6 +9,14 @@ import SwiftUI
 /// the provider cards, the usage summary and the usage chart, which take no clicks and no highlight.
 @MainActor
 final class StatusItemController: NSObject, NSMenuDelegate {
+    /// The app's own status item, for the first run's hand-off: the welcome window flies into it.
+    static weak var current: StatusItemController?
+
+    /// Where Pip sits on screen.
+    var pipScreenRect: NSRect? {
+        guard let b = statusItem.button, let w = b.window else { return nil }
+        return w.convertToScreen(b.convert(b.bounds, to: nil))
+    }
     let model: CompanionModel
     let statusItem: NSStatusItem
     let menu = NSMenu()

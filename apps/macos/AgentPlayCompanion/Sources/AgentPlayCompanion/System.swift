@@ -103,6 +103,16 @@ enum Notifier {
     }
 
     /// One notification on request, so people can see what one looks like before any alert is on.
+    /// A sample of one alert, sent when the person asks to see it during onboarding or in Settings.
+    static func postSample(title: String, body: String) {
+        guard available else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "sample-\(UUID().uuidString)", content: content, trigger: nil))
+    }
+
     static func postTest() {
         guard available else { return }
         let content = UNMutableNotificationContent()

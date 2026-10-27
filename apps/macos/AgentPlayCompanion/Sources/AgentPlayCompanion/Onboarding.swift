@@ -2,317 +2,501 @@ import AgentPlayCore
 import AppKit
 import SwiftUI
 
-/// First run, told by Pip, one idea per screen: who it is; reading this Mac's sessions while you watch (and
-/// the one permission worth asking for while that runs); where it lives, shown with the real icon as it is
-/// right now; three choices. Big type, room around it, one button. Motion follows Reduce Motion.
+/// First run, told by Pip on a dark stage, one idea per screen and motion between them:
+///  1. Wake: Pip is asleep; a click wakes it and it types hello.
+///  2. Read: your sessions fly in while Pip's jar fills; your own repos, counted on this Mac.
+///  3. The first thing it noticed, from your own sessions, with the fix one click away.
+///  4. Practice: a pretend menu bar where Pip waves; you click it and the terminal comes forward. Then the alerts,
+///     each with what it says and a sample you can send to yourself.
+///  5. Move in: two last choices; the window flies into the menu bar, where Pip lands.
+/// Every animation follows Reduce Motion.
 struct OnboardingView: View {
     @EnvironmentObject var model: CompanionModel
     @State var step = 1
-    /// Filming: the first run plays itself, step by step, on the timings a viewer would take.
+    /// Filming: the first run plays itself on the timings a viewer would take.
     var filmAutoplay = false
-    @State private var scanning = false
-    /// Why the first read failed, when it did; Retry runs it again.
-    @State private var scanError: String?
     @State private var opened = Date()
-    // The three choices, on until switched off; Start applies them. Defaults nobody has to go looking for.
-    @State private var wantsAlerts = true
+    @State private var wokeAt: Date?
+    @State private var scanning = false
+    @State private var scanError: String?
+    @State private var flown = 0               // repo cards that have flown into Pip
+    @State private var clickedPip = false      // the practice click
+    @State private var showFixAfter = false
+    @State private var alertsOn: Set<AlertPreset> = [.needsYou, .finished]
     @State private var wantsAccount = true
     @State private var wantsLogin = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static let size = CGSize(width: 600, height: 560)
+    static let size = CGSize(width: 720, height: 600)
+    static let lime = Color(red: 0xA2 / 255, green: 0xE4 / 255, blue: 0x35 / 255)
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack {
+            stage
             Group {
                 switch step {
-                case 1: meet
-                case 2: reading
-                case 3: home
-                default: choices
+                case 1: wake
+                case 2: read
+                case 3: noticed
+                case 4: practice
+                default: moveIn
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .id(step)
-            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 10)), removal: .opacity))
-            HStack {
+            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.97)).combined(with: .offset(y: 16)),
+                                                             removal: .opacity.combined(with: .offset(y: -16))))
+            VStack {
+                Spacer()
                 HStack(spacing: 7) {
-                    ForEach(1...4, id: \.self) { i in
-                        Circle().fill(i == step ? Color.primary.opacity(0.7) : Color.primary.opacity(0.15)).frame(width: 6, height: 6)
+                    ForEach(1...5, id: \.self) { i in
+                        Capsule().fill(i == step ? Self.lime : Color.white.opacity(0.18)).frame(width: i == step ? 18 : 6, height: 6)
                     }
                 }
-                .accessibilityLabel("Step \(step) of 4")
-                Spacer()
-                if step > 2 || (step == 2 && scanError != nil) { Button("Back") { go(step - 1) }.controlSize(.large) }
-                primary.controlSize(.large)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: step)
+                .padding(.bottom, 18)
+                .accessibilityLabel("Step \(step) of 5")
             }
-            .padding(.horizontal, 28).padding(.bottom, 24).padding(.top, 8)
         }
         .frame(width: Self.size.width, height: Self.size.height)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: step)
+        .environment(\.colorScheme, .dark)
+        .animation(reduceMotion ? nil : .spring(response: 0.55, dampingFraction: 0.86), value: step)
     }
 
-    /// Filming: advance on the view's own clock (onAppear never fires in a window parked off the screen).
-    func filmAdvance(_ now: Date) {
-        guard filmAutoplay else { return }
-        let el = now.timeIntervalSince(opened)
-        if step == 1, el > 3.6 { DispatchQueue.main.async { go(2); scan() } }   // reading, then home by itself
-        if step == 3, el > 7.0 { DispatchQueue.main.async { go(4) } }
-    }
-
-    @ViewBuilder var primary: some View {
-        switch step {
-        case 1: Button("Let\u{2019}s Go") { go(2); scan() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
-        case 2 where scanError != nil: Button("Retry") { scan() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
-        case 2: Button(scanning ? "Reading…" : "Continue") { go(3) }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(scanning)
-        case 3: Button("Continue") { go(4) }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
-        default: Button("Start") { finish() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+    /// The dark stage: near-black with a lime light from the top and a faint grid of dots.
+    var stage: some View {
+        ZStack {
+            Color(red: 0.07, green: 0.07, blue: 0.075)
+            RadialGradient(colors: [Self.lime.opacity(0.16), .clear], center: .init(x: 0.5, y: -0.1), startRadius: 10, endRadius: 520)
+            Canvas { ctx, size in
+                for x in stride(from: 0.0, to: size.width, by: 28) {
+                    for y in stride(from: 0.0, to: size.height, by: 28) {
+                        ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 1.4, height: 1.4)), with: .color(.white.opacity(0.05)))
+                    }
+                }
+            }
         }
+        .ignoresSafeArea()
     }
 
     func go(_ s: Int) {
-        step = s
+        withAnimation { step = s }
         opened = Date()
     }
 
-    // MARK: Pip, big
+    // MARK: Pip
 
-    /// Pip at several times its menu-bar size, moving on a quarter-second beat while this window is up.
-    func pip(_ pose: PipPose, wakeAfter: TimeInterval? = nil, size: CGFloat = 120) -> some View {
-        TimelineView(.periodic(from: .now, by: reduceMotion ? 3600 : 0.25)) { t in
+    /// Pip large, moving on a quarter-second beat. `fill` is the jar, 0...1.
+    func pip(_ pose: PipPose, size: CGFloat, fill: Double = 0.45, hop: Bool = false) -> some View {
+        TimelineView(.periodic(from: .now, by: reduceMotion ? 3600 : 0.125)) { t in
             let tick = reduceMotion ? 0 : Int(t.date.timeIntervalSinceReferenceDate * 4)
             let _ = filmAdvance(t.date)
-            let awake = wakeAfter.map { t.date.timeIntervalSince(opened) > $0 } ?? true
-            let p: PipPose = awake ? pose : .sleep
-            let blink = awake && tick % 14 == 0 && p != .sleep
-            Image(nsImage: PipIcon.image(p, frame: (p == .work || p == .wave) ? tick / 2 : 0,
-                                         session: p == .sleep ? 0.15 : 0.45, weekly: 0.6,
-                                         eyes: blink ? .closed : .pose))
+            let blink = tick % 14 == 0 && pose != .sleep && pose != .limit
+            Image(nsImage: PipIcon.image(pose, frame: (pose == .work || pose == .wave) ? tick / 2 : 0,
+                                         session: fill, weekly: 0.6, eyes: blink ? .closed : .pose, hop: hop))
                 .renderingMode(.template).interpolation(.none).resizable()
                 .frame(width: size, height: size * 0.9)
-                .foregroundStyle(.primary)
-                .accessibilityLabel("Pip, \(PipIcon.description(p).lowercased())")
+                .foregroundStyle(.white)
+                .shadow(color: Self.lime.opacity(pose == .sleep ? 0 : 0.25), radius: 30)
+                .accessibilityLabel("Pip, \(PipIcon.description(pose).lowercased())")
         }
     }
 
-    func title(_ s: String) -> some View {
-        Text(s).font(.system(size: 30, weight: .semibold, design: .rounded)).multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 460)
+    func headline(_ s: String) -> some View {
+        Text(s).font(.system(size: 34, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 560)
     }
 
-    func body(_ s: String) -> some View {
-        Text(s).font(.system(size: 17)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            .lineSpacing(3).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 400)
+    func line(_ s: String) -> some View {
+        Text(s).font(.system(size: 18)).foregroundStyle(.white.opacity(0.68)).multilineTextAlignment(.center)
+            .lineSpacing(3).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 500)
     }
 
-    // MARK: 1. Meet Pip
+    func primaryButton(_ title: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.black)
+                .padding(.horizontal, 22).padding(.vertical, 11)
+                .background(Self.lime, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.defaultAction)
+    }
 
-    var meet: some View {
+    // MARK: 1. Wake
+
+    static let hello = "Hi, I\u{2019}m Pip. I watch your coding agents, so you don\u{2019}t have to watch the terminal."
+
+    var wake: some View {
         VStack(spacing: 0) {
             Spacer()
-            pip(.wave, wakeAfter: 1.2, size: 132)
-            title("Hi, I\u{2019}m Pip.").padding(.top, 28)
-            body("I watch your coding agents from the menu bar, so you don\u{2019}t have to watch the terminal.").padding(.top, 12)
+            ZStack {
+                if wokeAt == nil {
+                    Button { wakeUp() } label: { pip(.sleep, size: 170, fill: 0.12) }.buttonStyle(.plain)
+                } else {
+                    pip(.wave, size: 170, fill: 0.45, hop: hopping)
+                }
+            }
+            .frame(height: 170)
+            TimelineView(.periodic(from: .now, by: 0.03)) { t in
+                let n = wokeAt.map { reduceMotion ? Self.hello.count : Int(t.date.timeIntervalSince($0) * 34) } ?? 0
+                if wokeAt == nil {
+                    Text("Pip is asleep. Click to wake it.").font(.system(size: 18)).foregroundStyle(.white.opacity(0.55))
+                        .opacity(0.55 + 0.45 * abs(sin(t.date.timeIntervalSinceReferenceDate * 1.6)))
+                } else {
+                    Text(String(Self.hello.prefix(n)))
+                        .font(.system(size: 26, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                        .multilineTextAlignment(.center).frame(maxWidth: 520, minHeight: 70, alignment: .top)
+                }
+            }
+            .padding(.top, 34)
             Spacer()
-            Button("Try it with sample data instead") { model.loadSample(); go(3) }
-                .buttonStyle(.plain).font(.callout).foregroundStyle(.tertiary)
-                .padding(.bottom, 4)
+            Group {
+                if wokeAt != nil {
+                    primaryButton("Show Me My Agents") { go(2); scan() }
+                } else {
+                    Button("Just show me with sample data") { model.loadSample(); wakeUp(); go(3) }
+                        .buttonStyle(.plain).font(.callout).foregroundStyle(.white.opacity(0.4))
+                }
+            }
+            .padding(.bottom, 60)
         }
         .padding(.horizontal, 40)
     }
 
-    // MARK: 2. Reading your sessions (and, while that runs, the one permission worth asking for)
+    @State private var hopping = false
+    func wakeUp() {
+        guard wokeAt == nil else { return }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) { wokeAt = Date(); hopping = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { hopping = false }
+    }
+
+    // MARK: 2. Read
 
     var found: Int {
         if case .scanning(let n?) = model.phase { return n }
         return model.snapshot?.sources.filter { $0.status == .found }.reduce(0) { $0 + $1.sessionCount } ?? 0
     }
 
-    var reading: some View {
+    var repos: [String] {
+        var seen = Set<String>(), out: [String] = []
+        for r in model.snapshot?.runs ?? [] {
+            if let repo = r.repo, !seen.contains(repo) { seen.insert(repo); out.append(repo) }
+            if out.count == 8 { break }
+        }
+        return out
+    }
+
+    static let agents = ["Claude Code", "Codex", "Cursor", "Copilot", "OpenCode", "Kiro"]
+
+    var read: some View {
         VStack(spacing: 0) {
             Spacer()
-            if let scanError {
-                // The read failed: say why, and the button below becomes Retry instead of claiming "All read."
-                pip(.sleep, size: 96)
-                title("Couldn\u{2019}t read your sessions.").padding(.top, 24)
-                body(scanError).padding(.top, 12)
-            } else {
-                pip(scanning ? .work : .cheer, size: 96)
-                title(scanning ? "Reading your sessions" : "All read.").padding(.top, 24)
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("\(found)")
-                        .font(.system(size: 44, weight: .semibold, design: .rounded).monospacedDigit())
-                        .contentTransition(.numericText())
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
-                    Text(found == 1 ? "session" : "sessions").font(.system(size: 17)).foregroundStyle(.secondary)
+            ZStack {
+                // The agents it reads, around Pip.
+                ForEach(Array(Self.agents.enumerated()), id: \.offset) { i, name in
+                    let a = Double(i) / Double(Self.agents.count) * 2 * .pi - .pi / 2
+                    Text(name).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.75))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(.white.opacity(0.08), in: Capsule())
+                        .offset(x: cos(a) * 210, y: sin(a) * 105)
+                        .opacity(scanning || scanError == nil ? 1 : 0.3)
                 }
-                .padding(.top, 14)
-                Text(sources).font(.callout).foregroundStyle(.secondary).padding(.top, 4)
+                // Your repos, flying in.
+                ForEach(Array(repos.enumerated()), id: \.offset) { i, repo in
+                    let a = Double(i) / Double(max(1, repos.count)) * 2 * .pi
+                    Text(repo).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(.black)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Self.lime, in: Capsule())
+                        .offset(x: i < flown ? 0 : cos(a) * 320, y: i < flown ? 0 : sin(a) * 190)
+                        .scaleEffect(i < flown ? 0.2 : 1)
+                        .opacity(i < flown ? 0 : 1)
+                }
+                pip(scanning ? .work : scanError != nil ? .sleep : .cheer, size: 130,
+                    fill: min(1, 0.08 + 0.9 * (1 - exp(-Double(found) / 150))))
+            }
+            .frame(height: 260)
+            if let scanError {
+                headline("I couldn\u{2019}t read your sessions.").padding(.top, 10)
+                line(scanError).padding(.top, 8)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(found)").font(.system(size: 54, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white).contentTransition(.numericText())
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
+                    Text(found == 1 ? "session" : "sessions").font(.system(size: 20)).foregroundStyle(.white.opacity(0.6))
+                }
+                .padding(.top, 6)
+                line(scanning ? "Reading the sessions already on this Mac. Nothing leaves it." : readSummary).padding(.top, 4)
             }
             Spacer()
-            permission
-            Text("macOS may ask about your Desktop or Documents folder: that\u{2019}s me checking which repo a session worked in.")
-                .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 420).padding(.top, 10)
-                .opacity(scanning ? 1 : 0)
+            Group {
+                if scanError != nil { primaryButton("Try Again") { scan() } }
+                else if !scanning { primaryButton("What Did You Find?") { go(3) } }
+                else { Text("macOS may ask about your Documents or Desktop: that\u{2019}s me seeing which repo a session worked in.")
+                        .font(.caption).foregroundStyle(.white.opacity(0.4)).multilineTextAlignment(.center).frame(maxWidth: 440) }
+            }
+            .padding(.bottom, 60)
         }
         .padding(.horizontal, 40)
     }
 
-    var sources: String {
-        if let s = model.snapshot, !s.foundSources.isEmpty, !scanning {
-            return "From " + s.foundSources.map(\.label).joined(separator: ", ") + ". Read on this Mac; nothing leaves it."
-        }
-        return "Read on this Mac. Nothing leaves it."
+    var readSummary: String {
+        let srcs = model.snapshot?.foundSources.map(\.label) ?? []
+        return srcs.isEmpty ? "All read, on this Mac." : "From " + srcs.joined(separator: ", ") + ". All read, on this Mac."
     }
 
-    /// Notifications, asked for here because this is when there's a moment to answer. Each state says what
-    /// to do; the system prompt comes from the button, never by surprise.
-    var permission: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: "bell.badge").font(.title2).foregroundStyle(.tint).frame(width: 28)
-            VStack(alignment: .leading, spacing: 3) {
+    // MARK: 3. What it noticed
+
+    var noticed: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            pip(.cheer, size: 96, fill: 0.55).padding(.bottom, 18)
+            if let fix = model.snapshot?.insights?.fixes.first {
+                headline("The first thing I noticed.")
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(Plain.text(fix.pattern)).font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let cause = fix.hook?.cause {
+                        Text(cause).font(.system(size: 16)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Fixing it: " + Plain.text(fix.effect)).font(.system(size: 16)).foregroundStyle(.white.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(22)
+                .frame(maxWidth: 560, alignment: .leading)
+                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Self.lime.opacity(0.35)))
+                .padding(.top, 20)
+                Spacer()
+                HStack(spacing: 14) {
+                    Button("Later") { go(4) }.buttonStyle(.plain).foregroundStyle(.white.opacity(0.6))
+                    primaryButton("Show Me the Fix After This") { showFixAfter = true; go(4) }
+                }
+                .padding(.bottom, 60)
+            } else {
+                headline("Here\u{2019}s what I learnt.")
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array((model.snapshot.map(Pip.learnings) ?? []).enumerated()), id: \.offset) { _, l in
+                        Label(l.text, systemImage: l.symbol).font(.system(size: 16)).foregroundStyle(.white)
+                            .padding(14).frame(maxWidth: 540, alignment: .leading)
+                            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                }
+                .padding(.top, 20)
+                Spacer()
+                primaryButton("Continue") { go(4) }.padding(.bottom, 60)
+            }
+        }
+        .padding(.horizontal, 40)
+    }
+
+    // MARK: 4. Practice, then the alerts
+
+    var practice: some View {
+        VStack(spacing: 0) {
+            headline(clickedPip ? "That\u{2019}s it." : "This is how I get your attention.").padding(.top, 44)
+            line(clickedPip ? "A wave means an agent is waiting for you. A click takes you to it."
+                 : "When an agent stops and waits, I wave from the menu bar. Click me.").padding(.top, 8)
+            fakeBar.padding(.top, 26)
+            if clickedPip {
+                fakeTerminal.transition(.move(edge: .bottom).combined(with: .opacity)).padding(.top, 14)
+                alerts.transition(.opacity).padding(.top, 18)
+            }
+            Spacer()
+            if clickedPip { primaryButton("Continue") { go(5) }.padding(.bottom, 60) }
+        }
+        .padding(.horizontal, 40)
+        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.82), value: clickedPip)
+    }
+
+    /// A slice of menu bar with Pip waving beside "docs-site".
+    var fakeBar: some View {
+        HStack(spacing: 18) {
+            Spacer()
+            Image(systemName: "wifi").foregroundStyle(.white.opacity(0.7))
+            Button { withAnimation { clickedPip = true } } label: {
+                HStack(spacing: 6) {
+                    pip(clickedPip ? .cheer : .wave, size: 30, fill: 0.45)
+                    if !clickedPip { Text("docs-site").font(.system(size: 13, weight: .medium)).foregroundStyle(.white) }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(clickedPip ? 0.0 : 0.12)))
+                .overlay(
+                    TimelineView(.periodic(from: .now, by: 0.05)) { t in
+                        RoundedRectangle(cornerRadius: 8).strokeBorder(Self.lime, lineWidth: 2)
+                            .opacity(clickedPip || reduceMotion ? 0 : 0.35 + 0.65 * abs(sin(t.date.timeIntervalSinceReferenceDate * 3)))
+                            .padding(-4)
+                    }
+                )
+            }
+            .buttonStyle(.plain)
+            Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.7))
+            Text("10:42 AM").font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
+        }
+        .padding(.horizontal, 16).frame(height: 34)
+        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .frame(maxWidth: 560)
+    }
+
+    var fakeTerminal: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ForEach([Color.red, .yellow, .green], id: \.self) { c in Circle().fill(c.opacity(0.8)).frame(width: 9, height: 9) }
+                Text("Terminal · docs-site").font(.system(size: 12)).foregroundStyle(.white.opacity(0.5)).padding(.leading, 6)
+            }
+            Text("Claude wants to run:  pnpm build").font(.system(size: 13, design: .monospaced)).foregroundStyle(.white)
+            Text("❯ 1. Yes   2. No, tell Claude what to do differently").font(.system(size: 13, design: .monospaced)).foregroundStyle(Self.lime)
+        }
+        .padding(14)
+        .frame(maxWidth: 560, alignment: .leading)
+        .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    struct AlertChoice: Identifiable {
+        var preset: AlertPreset
+        var title: String
+        var sampleTitle: String
+        var sampleBody: String
+        var id: AlertPreset { preset }
+    }
+
+    static let choices: [AlertChoice] = [
+        .init(preset: .needsYou, title: "A session needs me", sampleTitle: "Claude Code needs you", sampleBody: "docs-site is waiting for your answer."),
+        .init(preset: .finished, title: "A session finishes", sampleTitle: "Done in 14 min", sampleBody: "212 tool calls, 2 errors. Last step: pnpm test."),
+        .init(preset: .repeatedFailure, title: "A command keeps failing", sampleTitle: "pnpm test failed 3 times", sampleBody: "Three in a row in one run, no pass between."),
+        .init(preset: .allowanceLow, title: "My plan is about to run out", sampleTitle: "Weekly limit: out in about 5 hours", sampleBody: "97% used; resets Thursday 6:30 AM."),
+    ]
+
+    var alerts: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Tell me when…").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                Spacer()
                 switch model.notificationStatus {
-                case .authorized, .provisional:
-                    Text("Notifications are allowed").font(.body.weight(.medium))
-                    Text("Nothing is sent until you keep an alert on, in the next step.").font(.callout).foregroundStyle(.secondary)
-                case .denied:
-                    Text("Notifications are off for AgentPlay").font(.body.weight(.medium))
-                    Text("Turn them on in System Settings if you want a nudge when a session needs you.")
-                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                default:
-                    Text("May I notify you?").font(.body.weight(.medium))
-                    Text("Only for what you choose, in the next step.").font(.callout).foregroundStyle(.secondary)
+                case .authorized, .provisional: Label("Notifications allowed", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+                case .denied: Button("Turn On in System Settings") { model.openNotificationSettings() }.font(.caption)
+                default: Button("Allow Notifications") { model.requestNotifications() }.font(.caption)
                 }
             }
-            Spacer(minLength: 8)
-            switch model.notificationStatus {
-            case .authorized, .provisional: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.title3)
-            case .denied: Button("Open System Settings") { model.openNotificationSettings() }
-            default: Button("Allow") { model.requestNotifications() }.buttonStyle(.borderedProminent)
+            ForEach(Self.choices) { c in
+                HStack(spacing: 12) {
+                    Toggle("", isOn: Binding(get: { alertsOn.contains(c.preset) },
+                                             set: { if $0 { alertsOn.insert(c.preset) } else { alertsOn.remove(c.preset) } }))
+                        .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(c.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                        Text("\u{201C}\(c.sampleTitle): \(c.sampleBody)\u{201D}").font(.system(size: 12)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                    }
+                    Spacer()
+                    Button("Send a sample") {
+                        if model.notificationStatus == .authorized || model.notificationStatus == .provisional {
+                            Notifier.postSample(title: c.sampleTitle, body: c.sampleBody)
+                        } else {
+                            model.requestNotifications()
+                        }
+                    }
+                    .font(.caption)
+                }
+                .padding(.vertical, 4)
             }
         }
         .padding(16)
-        .frame(maxWidth: 480)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(maxWidth: 560)
+        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    // MARK: 3. Where I live: the real icon, as it is right now, and what each pose means
+    // MARK: 5. Move in
 
-    var home: some View {
+    var moveIn: some View {
         VStack(spacing: 0) {
             Spacer()
-            title("This is me, in your menu bar.")
-            body("My pose says what\u{2019}s up. Click me for the details; right-click for Settings and Quit.").padding(.top, 12)
-            livePreview.padding(.top, 30)
-            HStack(spacing: 0) {
-                legend(.wave, "Needs you")
-                legend(.cheer, "Finished")
-                legend(.oops, "Keeps failing")
-                legend(.sweat, "Going fast")
-                legend(.limit, "Limit reached")
-            }
-            .frame(maxWidth: 500)
-            .padding(.top, 34)
-            Spacer()
-        }
-        .padding(.horizontal, 40)
-    }
-
-    /// A slice of menu bar with the status item exactly as it draws right now: the pose, the fill, the line.
-    var livePreview: some View {
-        let pose = model.pipPose
-        let lv = Pip.levels(model.snapshot?.limits ?? [], now: Date())
-        let say = Pip.sentence(pose, live: model.snapshot?.live ?? [], limits: model.snapshot?.limits ?? [],
-                               recent: model.pipRecent, now: Date()).title
-        return HStack(spacing: 10) {
-            Image(nsImage: PipIcon.image(pose, session: lv.session, weekly: lv.weekly))
-                .renderingMode(.template).interpolation(.none).resizable()
-                .frame(width: 40, height: 36).foregroundStyle(.primary)
-            Text(say).font(.system(size: 17, weight: .medium))
-        }
-        .padding(.horizontal, 18).frame(height: 56)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.07)))
-        .accessibilityLabel("Menu bar, right now: \(say)")
-    }
-
-    func legend(_ pose: PipPose, _ text: String) -> some View {
-        VStack(spacing: 10) {
-            Image(nsImage: PipIcon.image(pose, session: 0.45, weekly: 0.6))
-                .renderingMode(.template).interpolation(.none).resizable()
-                .frame(width: 40, height: 36).foregroundStyle(.primary)
-            Text(text).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-    }
-
-    // MARK: 4. Three choices
-
-    var choices: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            title("Three choices.")
-            body("On, as I\u{2019}d suggest. Switch any off here, or change them in Settings later.").padding(.top, 12)
-            Form {
-                Toggle(isOn: $wantsAlerts) {
-                    Text("Tell me when a session needs me")
-                    Text("A notification when an agent stops and waits for your answer.")
-                }
-                .disabled(model.notificationStatus == .denied)
-                if model.notificationStatus == .denied {
-                    // Its own row, so the button stays clickable while the toggle above is off.
-                    HStack(spacing: 8) {
-                        Image(systemName: "bell.slash").foregroundStyle(.secondary)
-                        Text("Notifications are off for AgentPlay in System Settings.").font(.callout)
-                        Spacer()
-                        Button("Open System Settings") { model.openNotificationSettings() }
+            pip(.wave, size: 120, fill: 0.45)
+            headline("I\u{2019}ll be up in your menu bar.").padding(.top, 22)
+            line("Click me for what\u{2019}s running and your plan. Right-click for Settings and Quit.").padding(.top, 8)
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(isOn: $wantsAccount) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show Claude usage from my account").foregroundStyle(.white)
+                        Text("Live 5-hour and weekly limits, as claude.ai shows them. macOS asks once for the login Claude Code saved.")
+                            .font(.caption).foregroundStyle(.white.opacity(0.5)).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Toggle(isOn: $wantsAccount) {
-                    Text("Show Claude usage from my account")
-                    Text("Live 5-hour and weekly limits, the same numbers as claude.ai\u{2019}s usage page. Reads the login Claude Code saved in your Keychain; macOS asks once.")
-                }
-                Toggle("Open AgentPlay when I log in", isOn: $wantsLogin)
+                Toggle(isOn: $wantsLogin) { Text("Open when I log in").foregroundStyle(.white) }
             }
-            .formStyle(.grouped).scrollDisabled(true).scrollContentBackground(.hidden)
-            .frame(maxWidth: 500, maxHeight: model.notificationStatus == .denied ? 240 : 200)
-            .padding(.top, 18)
+            .toggleStyle(.switch)
+            .padding(18).frame(maxWidth: 480)
+            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.top, 24)
             Spacer()
+            primaryButton("Move In") { finish() }.padding(.bottom, 60)
         }
         .padding(.horizontal, 40)
     }
 
     // MARK: actions
 
+    /// Filming: advance on the view's own clock (onAppear never fires in a window parked off the screen).
+    func filmAdvance(_ now: Date) {
+        guard filmAutoplay else { return }
+        let el = now.timeIntervalSince(opened)
+        if step == 1, wokeAt == nil, el > 1.2 { DispatchQueue.main.async { wakeUp() } }
+        if step == 1, el > 4.0 { DispatchQueue.main.async { go(2); scan() } }
+        if step == 3, el > 6.0 { DispatchQueue.main.async { go(4) } }
+        if step == 4, !clickedPip, el > 3.0 { DispatchQueue.main.async { withAnimation { clickedPip = true } } }
+    }
+
     func scan() {
         guard !model.isSample else { return }
         scanning = true
         scanError = nil
+        flown = 0
         Task {
             await model.refreshNotificationStatus()
             await model.runFirstScan()
             scanning = false
-            // Failed, or nothing to read with: say why and offer Retry instead of "All read."
             if case .failed(let e) = model.phase { scanError = e.localizedDescription; return }
             if model.snapshot == nil { scanError = "AgentPlay couldn\u{2019}t start reading. Try again in a moment."; return }
-            // A beat on "All read." before moving on.
-            try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 900))
-            if step == 2 { go(3) }
+            // The repos fly into Pip one after another.
+            for i in 0..<repos.count {
+                try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 140))
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) { flown = i + 1 }
+            }
         }
     }
 
     func finish() {
         let wasSample = model.isSample
         if wasSample { model.leaveSample() }
-        // The choices take effect now, not as they were toggled: Back and forth changes nothing until Start.
-        if wantsAlerts, model.notificationStatus != .denied { model.setPreset(.needsYou, on: true) }
+        // The choices take effect now, not as they were toggled.
+        if model.notificationStatus != .denied {
+            for c in Self.choices { model.setPreset(c.preset, on: alertsOn.contains(c.preset)) }
+        }
         if wantsAccount != model.prefs.usesClaudeAccount { model.setClaudeAccount(wantsAccount) }
         if wantsLogin != model.loginItemEnabled { model.setLoginItem(wantsLogin) }
         model.finishOnboarding()
-        // The sample skipped the first read of this Mac's sessions: do it now, in the background. The service
-        // folds the reads leaveSample and finishOnboarding queued into this one full scan.
         if wasSample { Task { await model.runFirstScan() } }
-        Windows.close(.welcome)
+        let thenFix = showFixAfter
+        flyIntoMenuBar {
+            Windows.close(.welcome)
+            if thenFix { model.showInsights(.fixes) }
+        }
+    }
+
+    /// The window shrinks into Pip's spot in the menu bar, then closes.
+    func flyIntoMenuBar(_ done: @escaping () -> Void) {
+        guard !reduceMotion, let w = NSApp.windows.first(where: { $0.title == "Welcome to AgentPlay" && $0.isVisible }),
+              let target = StatusItemController.current?.pipScreenRect else { done(); return }
+        let end = NSRect(x: target.midX - 12, y: target.midY - 10, width: 24, height: 20)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.55
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.6, 0.0, 0.2, 1.0)
+            w.animator().setFrame(end, display: true)
+            w.animator().alphaValue = 0
+        }, completionHandler: {
+            MainActor.assumeIsolated {
+                done()
+                w.alphaValue = 1
+                model.nextTip()   // Pip hops as it lands
+            }
+        })
     }
 }

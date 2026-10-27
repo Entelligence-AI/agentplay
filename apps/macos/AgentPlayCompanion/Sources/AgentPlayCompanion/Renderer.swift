@@ -64,9 +64,9 @@ enum Renderer {
                 shots.append(("submenu-session", AnyView(SessionDetail(line: line, now: fixedNow))))
             }
         }
-        for step in 1...4 {
+        for step in 1...5 {
             let view = AnyView(OnboardingView(step: step).environmentObject(fixtureModel("two-active")))
-            for dark in [false, true] {
+            for dark in [true] {   // the welcome window is a dark stage either way
                 // As the real welcome window: its background, title bar and all.
                 NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                 let w = NSWindow(contentViewController: NSHostingController(rootView: view))
