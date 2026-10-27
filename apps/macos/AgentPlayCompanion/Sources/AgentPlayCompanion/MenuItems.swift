@@ -182,6 +182,13 @@ enum MenuBuilder {
         let busy = working.filter { $0.dot == .working }, idle = working.filter { $0.dot == .idle }
         out += (busy + idle.prefix(1)).prefix(max(1, 3 - trim)).map(MenuEntry.session)
 
+        // 4. The best fix stays on the first screen; Improve has all of them.
+        if let fix = ins?.fixes.first, trim < 4 {
+            out.append(.separator)
+            out.append(.header("Do This Next"))
+            out.append(.fix(fix))
+        }
+
         // 5. Estimated usage: two lines here, the rest one level down.
         if let u = s.usage, u.last30Days.requests > 0 {
             out.append(.separator)

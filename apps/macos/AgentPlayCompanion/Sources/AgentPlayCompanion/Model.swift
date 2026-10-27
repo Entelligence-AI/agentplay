@@ -34,6 +34,8 @@ final class CompanionModel: ObservableObject {
     @Published var menuTab: MenuTab = .now
     /// True while Claude is being asked for suggestions.
     @Published private(set) var askingClaude = false
+    /// When the app last asked, answered or not: a failing ask (logged out, offline) waits an hour, not one refresh.
+    private var lastAskedClaude: Date?
     /// The extra environment for the core, readable from the background scan without touching the main actor.
     private let envBox = EnvBox()
     @Published var settingsPane: SettingsView.Pane = .general
@@ -279,6 +281,8 @@ final class CompanionModel: ObservableObject {
     func askClaude(force: Bool) {
         guard prefs.asksClaudeForSuggestions, !askingClaude, !filmMode, !sampleMode else { return }
         if !force, let at = snapshot?.coach?.generatedAt.flatMap(SnapshotDecoder.parseISO), Date().timeIntervalSince(at) < 20 * 3600 { return }
+        if !force, let last = lastAskedClaude, Date().timeIntervalSince(last) < 3600 { return }
+        lastAskedClaude = Date()
         askingClaude = true
         Task {
             defer { askingClaude = false }

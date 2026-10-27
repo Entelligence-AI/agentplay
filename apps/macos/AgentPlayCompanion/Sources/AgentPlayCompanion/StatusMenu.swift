@@ -208,20 +208,28 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// Fill the menu for the tab showing, at one width for every tab.
     func prepare(now: Date) {
         // One width for every tab, so switching never makes the menu jump sideways: the widest tab's.
+        // Measured once per snapshot: building the other tabs costs tens of milliseconds.
         menu.minimumWidth = 0
-        let shown = model.menuTab
+        let key = "\(model.snapshot?.generatedAt.timeIntervalSince1970 ?? 0)|\(model.prefs.asksClaudeForSuggestions)|\(model.askingClaude)"
         var widest: CGFloat = 0
-        for t in MenuTab.allCases where t != shown {
-            model.menuTab = t
-            let probe = NSMenu()
-            probe.autoenablesItems = false
-            for e in model.menuEntries(now: now) { add(e, to: probe, now: now) }
-            widest = max(widest, probe.size.width)
+        if let w = widthCache, w.key == key {
+            widest = w.width
+        } else {
+            let shown = model.menuTab
+            for t in MenuTab.allCases {
+                model.menuTab = t
+                let probe = NSMenu()
+                probe.autoenablesItems = false
+                for e in model.menuEntries(now: now) { add(e, to: probe, now: now) }
+                widest = max(widest, probe.size.width)
+            }
+            model.menuTab = shown
+            widthCache = (key, widest)
         }
-        model.menuTab = shown
         fill(now: now)
         menu.minimumWidth = max(widest, menu.size.width)
     }
+    private var widthCache: (key: String, width: CGFloat)?
 
     /// How tall the open menu may be: from its top to the bottom of the usable screen.
     private var room: CGFloat = .greatestFiniteMagnitude
