@@ -19,8 +19,12 @@ public struct Forecast: Equatable, Sendable {
     public static func of(used: Double, windowMinutes: Int?, resetsAt: Date?, days: [CostDay], now: Date,
                           calendar: Calendar = .current) -> Forecast? {
         guard let minutes = windowMinutes, minutes >= 24 * 60, let reset = resetsAt, reset > now, used > 0 else { return nil }
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = calendar.timeZone
+        parser.dateFormat = "yyyy-MM-dd"
         let parsed = days.compactMap { d -> (Date, Double)? in
-            guard let day = Self.parser.date(from: d.date) else { return nil }
+            guard let day = parser.date(from: d.date) else { return nil }
             return (calendar.startOfDay(for: day), d.costUsd)
         }
         let today = calendar.startOfDay(for: now)
@@ -85,10 +89,4 @@ public struct Forecast: Equatable, Sendable {
         return "On track: about \(Format.percent(leftAtReset ?? 0)) left when it resets."
     }
 
-    private static let parser: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 }
