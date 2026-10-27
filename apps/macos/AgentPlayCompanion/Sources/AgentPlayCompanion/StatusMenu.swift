@@ -161,27 +161,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         for e in MenuBuilder.contextMenu(hasStore: model.snapshot?.store.available == true) { add(e, to: m, now: now) }
         let r = w.convertToScreen(b.convert(b.bounds, to: nil))
         b.highlight(true)
-        m.popUp(positioning: nil, at: NSPoint(x: r.minX, y: min(r.minY - 4, (w.screen ?? NSScreen.main)?.visibleFrame.maxY ?? r.minY - 4)), in: nil)
+        m.popUp(positioning: nil, at: NSPoint(x: r.minX, y: Self.menuTop(below: r, screen: w.screen)), in: nil)
         b.highlight(false)
     }
 
-    /// Two short bars, session over week, filled as far as each is used and tinted by pace: the row's icon.
-    static func gauge(_ p: ProviderSummary, now: Date) -> NSImage {
-        let img = NSImage(size: NSSize(width: 18, height: 14), flipped: true) { _ in
-            for (row, name) in [(0, "five_hour"), (1, "weekly")] {
-                let y = CGFloat(row) * 7 + 2.5
-                NSColor.tertiaryLabelColor.setFill()
-                NSBezierPath(roundedRect: NSRect(x: 0, y: y, width: 18, height: 3.5), xRadius: 1.75, yRadius: 1.75).fill()
-                guard let w = p.window(name), let used = w.used.value?.usedPercent else { continue }
-                let stale = MeterRow.isStale(w, now: now)
-                let level = MeterRow.pace(w, now: now)?.level
-                let tint: NSColor = stale ? .tertiaryLabelColor : level == .over ? .systemRed : level == .ahead ? .systemOrange : .controlAccentColor
-                tint.setFill()
-                NSBezierPath(roundedRect: NSRect(x: 0, y: y, width: max(3.5, 18 * min(1, used / 100)), height: 3.5), xRadius: 1.75, yRadius: 1.75).fill()
-            }
-            return true
-        }
-        return img
+    /// Where the menu's first row goes. macOS draws the menu's rounded top padding (about 6 pt) above that
+    /// point; if the padding would cross the usable screen edge, macOS pins the window and scrolls the content
+    /// instead, which shows the arrow and hides the first line. Measured with `--film probe`.
+    static func menuTop(below r: NSRect, screen: NSScreen?) -> CGFloat {
+        let edge = (screen ?? NSScreen.main)?.visibleFrame.maxY ?? r.minY
+        return min(r.minY - 4, edge - 8)
     }
 
     /// Light or Dark as set in System Settings, whatever the menu bar or wallpaper looks like.
@@ -197,9 +186,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         // app's look, which follows the system setting, as Apple's menus do.
         if nowOverride == nil { menu.appearance = Self.systemAppearance }
         let r = w.convertToScreen(b.convert(b.bounds, to: nil))
-        // Never above the usable area: the button reaches into the menu bar, and a menu whose top edge starts
-        // even a point inside it gets a scroll arrow and scrolls on hover.
-        let top = min(r.minY - 4, (w.screen ?? NSScreen.main)?.visibleFrame.maxY ?? r.minY - 4)
+        let top = Self.menuTop(below: r, screen: w.screen)
         // Never taller than the screen: a menu that scrolls hides Pip under its arrow. Trim the least
         // important rows until it fits.
         let bottom = ((w.screen ?? NSScreen.main)?.visibleFrame.minY ?? 0) + 8
@@ -271,22 +258,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(i)
 
         case .provider(let p):
-            // A glance row like the others: the name, a two-bar gauge, two percents. The card is one level down.
-            let i = NSMenuItem(title: p.label, action: nil, keyEquivalent: "")
-            i.image = Self.gauge(p, now: now)
-            let pct = { (w: ProviderLimitWindow?) in w?.used.value.map { Format.percent($0.usedPercent) } }
-            let bits = [pct(p.window("five_hour")).map { "\($0) session" }, pct(p.window("weekly")).map { "\($0) week" }].compactMap { $0 }
-            setSubtitle(bits.isEmpty ? (p.provider == "claude-code" ? "Limits are off" : MenuBuilder.shortReason(p)) : bits.joined(separator: " · "), on: i)
-            let m = NSMenu()
-            m.autoenablesItems = false
-            m.addItem(hosted(ProviderCard(provider: p.provider, fallback: p, model: model, now: now)))
-            if p.provider == "claude-code" {
-                if p.windows.isEmpty { add(.enableLimits(provider: p.provider), to: m, now: now) }
-                m.addItem(.separator())
-                add(.claudeAccounts, to: m, now: now)
-            }
-            i.submenu = m
-            menu.addItem(i)
+            menu.addItem(hosted(ProviderCard(provider: p.provider, fallback: p, model: model, now: now)))
 
         case .enableLimits:
             guard !model.prefs.usesClaudeAccount else { return }  // the card says what's wrong with it

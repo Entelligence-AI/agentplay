@@ -122,8 +122,11 @@ enum MenuBuilder {
         let providers = ProviderSummary.build(s.limits, now: now).filter { p in
             !p.windows.isEmpty || (p.provider == "claude-code" && s.sources.contains { $0.agent == p.provider && $0.status == .found })
         }
-        // One row per provider; its account, resets, pace and the account switcher are one level down.
-        for p in providers { out.append(.provider(p)) }
+        for p in providers {
+            out.append(.provider(p))
+            if p.windows.isEmpty, p.provider == "claude-code" { out.append(.enableLimits(provider: p.provider)) }
+            if p.provider == "claude-code" { out.append(.claudeAccounts) }
+        }
         if !providers.isEmpty { out.append(.separator) }
 
         // 3. What's open now. Only live processes: finished runs live in All Sessions (right-click), not here.

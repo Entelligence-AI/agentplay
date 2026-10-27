@@ -254,6 +254,7 @@ enum Film {
 
     /// Name, the scene, and how long the recording runs (a little over the scene; `screencapture` stops by itself).
     static let takes: [(name: String, run: () async -> Void, seconds: Int)] = [
+        ("probe", probe, 8),
         ("needs-you", needsYou, 19),
         ("peek-click", peekClick, 17),
         ("menu-tour", menuTour, 23),
@@ -265,6 +266,33 @@ enum Film {
     ]
 
     /// Pip asleep, an agent starts working, then docs-site needs you: the wave, the line beside Pip, the notification.
+    /// Clicks Pip for real and reports where macOS put the menu: its window frame against the usable screen,
+    /// the first row, and how far the menu is scrolled (non-zero is the arrow at the top).
+    static func probe() async {
+        await Cursor.moveTo(pipCenter, over: 0.4)
+        await sleep(0.3)
+        await Cursor.click()
+        await sleep(0.9)
+        print("probe: pip \(pipRect) visibleMaxY \(screen.visibleFrame.maxY) frameMaxY \(screen.frame.maxY)")
+        for (w, rows) in menuWindows() {
+            var scroll = "none"
+            func walk(_ v: NSView) {
+                if let sv = v as? NSScrollView {
+                    scroll = "docVisible.y=\(sv.documentVisibleRect.origin.y) docH=\(sv.documentView?.frame.height ?? 0) clipH=\(sv.contentView.bounds.height)"
+                }
+                v.subviews.forEach(walk)
+            }
+            if let root = w.contentView { walk(root) }
+            print("probe: menu window \(w.frame) maxY \(w.frame.maxY) firstRow \(rows.first ?? .zero) rows \(rows.count) scroll \(scroll)")
+        }
+        for (i, it) in status.menu.items.enumerated() where it.view != nil {
+            let v = it.view!
+            print("probe: item \(i) \(type(of: v)) frame \(v.frame.size) intrinsic \(v.intrinsicContentSize) fitting \(v.fittingSize)")
+        }
+        status.menu.cancelTracking()
+        await sleep(0.3)
+    }
+
     static func needsYou() async {
         print("film: notifications \(model.notificationStatus.rawValue) (2 = authorized)")
         let all = live
