@@ -82,11 +82,9 @@ public enum Pip {
         case .cheer:
             return (recent?.text ?? "Done", detail)
         case .sweat:
+            // Which window, not its numbers: the plan card right under this line carries those.
             guard let w = hotWindow(limits, now: now) else { return ("Going fast", detail) }
-            let name = w.window == "five_hour" ? "session" : "week"
-            let used = Format.percent(w.used.value?.usedPercent ?? 0)
-            let left = w.resetsAt.map { ", \(Format.duration($0.timeIntervalSince(now))) left" } ?? ""
-            return ("Going fast: \(name) at \(used)\(left)", detail)
+            return (w.window == "five_hour" ? "Going fast this session" : "Going fast this week", detail)
         case .work:
             return (working == 1 ? "1 agent working" : "\(working) agents working", detail)
         case .sleep:
@@ -125,14 +123,7 @@ public enum Pip {
         if let w = (s.live ?? []).first(where: { $0.status == .waiting }) {
             out.append(Tip(text: "\(w.project ?? "A session") is waiting for you.", action: .goTo(sessionId: w.sessionId, pid: w.pid)))
         }
-        if let hot = hotWindow(s.limits, now: now) {
-            let name = hot.window == "five_hour" ? "This session's window" : "This week"
-            let used = Format.percent(hot.used.value?.usedPercent ?? 0)
-            let out_ = Pace.of(used: hot.used.value?.usedPercent ?? 0, windowMinutes: hot.windowMinutes,
-                               resetsAt: hot.resetsAt, now: now)?.runsOutAt
-            out.append(Tip(text: "\(name) is at \(used)" + (out_.map { ", gone in \(Format.duration($0.timeIntervalSince(now))) at this pace." } ?? "."),
-                           action: .usagePage))
-        }
+        // No tip about the plan windows: the card in the same menu already shows them, with the pace on each line.
         if let f = s.insights?.fixes.first {
             let pts = f.points.map { " (+\(Format.points($0)) points)" } ?? ""
             out.append(Tip(text: f.title.replacingOccurrences(of: "`", with: "") + pts + ".", action: .fix(f)))

@@ -66,7 +66,7 @@ import Testing
         // Sweating about the week, not the calm session: say so.
         let week = [window("five_hour", used: 4, minutes: 300, resetsIn: 4 * 3600),
                     window("weekly", used: 71, minutes: 10080, resetsIn: 5 * 86400)]
-        #expect(Pip.sentence(.sweat, live: [], limits: week, recent: nil, now: now).title == "Going fast: week at 71%, 5d left")
+        #expect(Pip.sentence(.sweat, live: [], limits: week, recent: nil, now: now).title == "Going fast this week")
     }
 
     @Test func eventsAreTransitionsNotStates() {

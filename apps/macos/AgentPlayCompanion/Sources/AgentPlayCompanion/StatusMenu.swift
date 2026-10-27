@@ -295,7 +295,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             sub.addItem(add)
             sub.addItem(item("Manage Accounts…") { [model] in model.settingsPane = .account; Windows.show(.settings) })
             i.submenu = sub
-            if let cur = model.savedAccounts.first(where: { $0.accountUuid == me.accountUuid }) { setSubtitle(cur.title, on: i) }
             menu.addItem(i)
 
         case .session(let s):
