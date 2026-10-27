@@ -1,4 +1,4 @@
-"""Local filesystem source — walks ~/.claude / ~/.codex / ~/.gemini / Copilot dirs.
+"""Local filesystem source — walks ~/.claude / ~/.codex / ~/.gemini / ~/.commandcode / Copilot dirs.
 
 Indexes JSONL session files under per-agent homes, detects the agent
 from the file head, and emits the universal `SpanData` shape via the
@@ -34,6 +34,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     detect_agent,
     parse_claude_code,
     parse_codex,
+    parse_command_code,
     parse_copilot,
     parse_copilot_vscode,
     parse_cursor_agent_transcript,
@@ -42,6 +43,9 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_gemini,
     parse_kiro,
     parse_opencode,
+)
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.command_code import (
+    _user_prompt as _command_code_user_prompt,
 )
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.gemini import (
     _user_prompt as _gemini_user_prompt,
@@ -1175,6 +1179,57 @@ def _gemini_has_messages(path: Path) -> bool:
     return False
 
 
+def _command_code_header(head: bytes) -> dict | None:
+    """The Command Code session header: the first `type="session"` record."""
+    for line in head.split(b"\n"):
+        try:
+            obj = json.loads(line)
+        except (ValueError, RecursionError):  # blank, truncated, split mid-character, or deeply nested
+            continue
+        if isinstance(obj, dict) and obj.get("type") == "session" and isinstance(obj.get("id"), str):
+            return obj
+    return None
+
+
+def _command_code_has_messages(path: Path) -> bool:
+    """True when the file holds a real prompt or an assistant message.
+
+    Streams like ``_gemini_has_messages``: one line at a time, at most
+    ``MAX_SOURCE_BYTES``, stopping at the first qualifying record. A file of
+    only the header (a session opened and closed without a prompt), or whose
+    only user text is ``meta.injected`` (which the parser opens no turn for),
+    is skipped.
+    """
+    remaining = MAX_SOURCE_BYTES
+    with path.open("rb") as handle:
+        while remaining > 0:
+            line = handle.readline(remaining)
+            if not line:
+                break
+            remaining -= len(line)
+            at_cap = remaining == 0 and not line.endswith(b"\n")
+            try:
+                obj = json.loads(line)
+            except (ValueError, RecursionError):
+                if at_cap:
+                    break
+                continue
+            if not isinstance(obj, dict) or obj.get("type") != "message":
+                continue
+            message = obj.get("message")
+            if not isinstance(message, dict):
+                continue
+            role = message.get("role")
+            meta = message.get("meta")
+            if role == "user" and isinstance(meta, dict) and meta.get("injected"):
+                continue
+            if role == "assistant" or (
+                role == "user" and _command_code_user_prompt(message.get("content")) is not None
+            ):
+                return True
+    return False
+
+
 def _cwd_from_gemini_project(jsonl_file: Path, header: dict | None) -> str | None:
     """The project root of a Gemini CLI session.
 
@@ -1331,6 +1386,7 @@ class LocalSource:
         copilot_vscode_homes: list[Path] | None = None,
         gemini_homes: list[Path] | None = None,
         antigravity_homes: list[Path] | None = None,
+        command_code_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1369,6 +1425,11 @@ class LocalSource:
         self.gemini_homes = gemini_homes or []
         # Antigravity CLI step logs; discovery lives in antigravity_index.py.
         self.antigravity_homes = antigravity_homes or []
+        # Command Code writes a real per-session JSONL itself:
+        # `<home>/projects/<project-slug>/<session-id>.jsonl`, next to a
+        # `<session-id>.checkpoints.jsonl` that is not a transcript. The
+        # session id and cwd come from the `type="session"` header.
+        self.command_code_homes = command_code_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1394,6 +1455,7 @@ class LocalSource:
             *self.copilot_vscode_homes,
             *self.gemini_homes,
             *self.antigravity_homes,
+            *self.command_code_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1616,6 +1678,20 @@ class LocalSource:
             for sid, fields in index_antigravity_home(home, transcripts, self._record_discovery):
                 _index_put(index, sid, _FileRef(**fields), newest)
 
+        # Command Code: `<home>/projects/<project-slug>/<session-id>.jsonl`.
+        # `detect_agent` sniffs the header, so a stray `.jsonl` is skipped.
+        for home in self.command_code_homes:
+            projects_dir = home / "projects"
+            if not projects_dir.is_dir():
+                logger.debug("Skipping non-existent path: %s", projects_dir)
+                continue
+            for jsonl_file in projects_dir.glob("*/*.jsonl"):
+                if jsonl_file.name.endswith(".checkpoints.jsonl"):
+                    continue
+                ref = self._index_command_code_file(jsonl_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1629,7 +1705,8 @@ class LocalSource:
             + len(self.copilot_homes)
             + len(self.copilot_vscode_homes)
             + len(self.gemini_homes)
-            + len(self.antigravity_homes),
+            + len(self.antigravity_homes)
+            + len(self.command_code_homes),
         )
         return index
 
@@ -2006,6 +2083,75 @@ class LocalSource:
         project_name = _project_from_cwd(cwd) if cwd else None
 
         self._record_discovery("gemini-cli", "indexed")
+        return session_id, _FileRef(
+            path=jsonl_file,
+            agent=agent,
+            mtime=mtime,
+            project_name=project_name,
+            cwd=cwd,
+            home=home,
+        )
+
+    def _index_command_code_file(
+        self,
+        jsonl_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Command Code session JSONL."""
+        if not jsonl_file.is_file():
+            # See _index_cc_file's identical guard: a directory/broken symlink
+            # is never tallied, only a genuinely empty real file is.
+            return None
+        size = jsonl_file.stat().st_size
+        if size == 0:
+            self._record_discovery("command-code", "empty_or_unreadable")
+            return None
+        # `build_map` refuses the same cap with SkipSession("too_large"). Skip
+        # here, before any read, so discovery does not allocate the file.
+        if size > MAX_SOURCE_BYTES:
+            logger.debug("command-code: %s exceeds the source byte cap; session skipped", jsonl_file)
+            self._record_discovery("command-code", "too_large")
+            return None
+        try:
+            head = _read_head(jsonl_file, stop_when=_agent_detected)
+        except OSError:
+            self._record_discovery("command-code", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            logger.warning(
+                "agent detection failed for %s (%d bytes); session skipped",
+                jsonl_file,
+                size,
+            )
+            self._record_discovery("command-code", "detection_failed")
+            return None
+        if agent != AgentType.COMMAND_CODE:
+            self._record_discovery("command-code", "different_agent")
+            return None
+
+        try:
+            has_messages = _command_code_has_messages(jsonl_file)
+        except OSError:
+            self._record_discovery("command-code", "empty_or_unreadable")
+            return None
+        if not has_messages:
+            logger.debug("command-code: %s has no messages; session skipped", jsonl_file)
+            self._record_discovery("command-code", "empty_events")
+            return None
+
+        header = _command_code_header(head) or {}
+        native_id = header.get("id") or jsonl_file.stem
+        session_id = f"local:{agent}:{native_id}"
+        mtime = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=UTC)
+
+        raw_cwd = header.get("cwd")
+        cwd = raw_cwd if isinstance(raw_cwd, str) and raw_cwd else None
+        project_name = _project_from_cwd(cwd) if cwd else None
+
+        self._record_discovery("command-code", "indexed")
         return session_id, _FileRef(
             path=jsonl_file,
             agent=agent,
@@ -2428,6 +2574,7 @@ class LocalSource:
             AgentType.KIRO: parse_kiro,
             AgentType.GEMINI_CLI: parse_gemini,
             AgentType.ANTIGRAVITY_CLI: parse_antigravity,
+            AgentType.COMMAND_CODE: parse_command_code,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label
