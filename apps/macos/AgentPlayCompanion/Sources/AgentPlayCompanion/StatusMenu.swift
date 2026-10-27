@@ -161,7 +161,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         for e in MenuBuilder.contextMenu(hasStore: model.snapshot?.store.available == true) { add(e, to: m, now: now) }
         let r = w.convertToScreen(b.convert(b.bounds, to: nil))
         b.highlight(true)
-        m.popUp(positioning: nil, at: NSPoint(x: r.minX, y: r.minY - 4), in: nil)
+        m.popUp(positioning: nil, at: NSPoint(x: r.minX, y: min(r.minY - 4, (w.screen ?? NSScreen.main)?.visibleFrame.maxY ?? r.minY - 4)), in: nil)
         b.highlight(false)
     }
 
@@ -197,7 +197,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         // app's look, which follows the system setting, as Apple's menus do.
         if nowOverride == nil { menu.appearance = Self.systemAppearance }
         let r = w.convertToScreen(b.convert(b.bounds, to: nil))
-        let top = r.minY - 4
+        // Never above the usable area: the button reaches into the menu bar, and a menu whose top edge starts
+        // even a point inside it gets a scroll arrow and scrolls on hover.
+        let top = min(r.minY - 4, (w.screen ?? NSScreen.main)?.visibleFrame.maxY ?? r.minY - 4)
         // Never taller than the screen: a menu that scrolls hides Pip under its arrow. Trim the least
         // important rows until it fits.
         let bottom = ((w.screen ?? NSScreen.main)?.visibleFrame.minY ?? 0) + 8
