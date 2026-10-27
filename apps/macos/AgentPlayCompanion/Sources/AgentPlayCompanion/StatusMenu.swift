@@ -239,13 +239,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let h = NSMenuItem()
             h.view = host
             menu.addItem(h)
-            // What Pip suggests, as a real menu item: its label says what a click does.
-            if let tip = model.currentTip, tip.action != .none {
-                let i = item(Self.label(tip.action)) { [model] in model.perform(tip) }
-                i.image = symbol("sparkles")
-                setSubtitle("Click Pip for another suggestion", on: i)
-                menu.addItem(i)
-            }
 
         case .header(let t):
             menu.addItem(.sectionHeader(title: t))
@@ -390,18 +383,21 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(i)
 
         case .signals(let sig):
-            // The card people stop at: two numbers, their trend, one sentence. It is the row: pointing at it
-            // opens the four rates in full one level down, like Run Health, so nothing is said twice.
-            let card = hosted(SteeringCard(signals: sig))
-            card.isEnabled = true
-            card.setAccessibilityLabel("How you steer. " + SteeringCard.sentence(sig))
+            // One row, like Run Health: the two numbers people react to in its subtitle; the card with its
+            // trend lines, the sentence and all four rates one level down.
+            let c = sig.current
+            let i = NSMenuItem(title: "How You Steer", action: nil, keyEquivalent: "")
+            let bits = [c.correctionRate.map { "\(Format.percent($0)) corrected" }, c.frustrationRate.map { "\(Format.percent($0)) frustrated" }].compactMap { $0 }
+            setSubtitle(bits.isEmpty ? "\(c.messages) messages you typed" : bits.joined(separator: " · "), on: i)
+            i.image = symbol("steeringwheel")
             let m = NSMenu()
             m.autoenablesItems = false
+            m.addItem(hosted(SteeringCard(signals: sig)))
             m.addItem(hosted(SignalsCard(signals: sig)))
             m.addItem(.separator())
             m.addItem(item("Open Insights in AgentPlay…") { [model] in model.openInsights(page: "overview") })
-            card.submenu = m
-            menu.addItem(card)
+            i.submenu = m
+            menu.addItem(i)
 
         case .fix(let f):
             let i = NSMenuItem(title: Plain.text(f.title), action: nil, keyEquivalent: "")
@@ -810,8 +806,6 @@ struct SteeringCard: View {
                 Text("How you steer").font(.headline).foregroundStyle(Ink.primary)
                 Spacer()
                 Text("\(c.messages) messages you typed").font(.subheadline).foregroundStyle(Ink.secondary)
-                // The row opens a submenu; a custom view draws its own disclosure.
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
             }
             HStack(alignment: .top, spacing: 14) {
                 figure("corrected", c.correctionRate, p.correctionRate, \.correctionRate)
@@ -1105,12 +1099,9 @@ struct MeterRow: View {
         let pace = Self.pace(window, now: now)
         let tint: PaceTint = stale ? .stale
             : pace.map { $0.level == .over ? .over : $0.level == .ahead ? .ahead : .normal } ?? .normal
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.body).foregroundStyle(Ink.primary)
-                Spacer()
-                Text(detail(stale, used: used)).font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
-            }
+        // One line: the name, the bar, the number. Two of these are a plan card; they must not stack up.
+        HStack(alignment: .center, spacing: 10) {
+            Text(title).font(.subheadline).foregroundStyle(Ink.primary).frame(width: 56, alignment: .leading)
             GeometryReader { g in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(nsColor: .quaternaryLabelColor))
@@ -1118,6 +1109,8 @@ struct MeterRow: View {
                 }
             }
             .frame(height: 5)
+            Text(detail(stale, used: used)).font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+                .lineLimit(1).fixedSize()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail(stale, used: used))")

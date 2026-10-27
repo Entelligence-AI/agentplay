@@ -125,7 +125,6 @@ enum MenuBuilder {
         for p in providers {
             out.append(.provider(p))
             if p.windows.isEmpty, p.provider == "claude-code" { out.append(.enableLimits(provider: p.provider)) }
-            if p.provider == "claude-code" { out.append(.claudeAccounts) }
         }
         if !providers.isEmpty { out.append(.separator) }
 
@@ -147,9 +146,9 @@ enum MenuBuilder {
                 out.append(.message(title: "No agent is running", detail: "Right-click Pip for all sessions."))
             }
         }
-        // Idle processes are often forgotten tabs: two at most, the working ones always.
+        // Three rows at most, the working ones first; idle processes are often forgotten tabs. All Sessions has the rest.
         let busy = working.filter { $0.dot == .working }, idle = working.filter { $0.dot == .idle }
-        out += (busy + idle.prefix(2)).prefix(max(1, 5 - trim)).map(MenuEntry.session)
+        out += (busy + idle.prefix(1)).prefix(max(1, 3 - trim)).map(MenuEntry.session)
 
         // 4. Insights: how you steer first (the thing people react to), then run health and what would raise it.
         let errs = errorLines(s, prefs: prefs, now: now)
@@ -158,7 +157,7 @@ enum MenuBuilder {
         var insights: [MenuEntry] = []
         if let sig { insights.append(.signals(sig)) }
         if let ins { insights.append(.health(ins)) }
-        if let ins { insights += ins.fixes.prefix(max(1, 2 - trim)).map(MenuEntry.fix) }
+        if let ins, let fix = ins.fixes.first { insights.append(.fix(fix)) }   // the best one; Run Health has the rest
         if !errs.isEmpty, trim < 2 { insights.append(.errors(Array(errs.prefix(1)))) }
         // The section exists only for the rows the trim left it; never a header over nothing.
         if !insights.isEmpty {
@@ -185,7 +184,8 @@ enum MenuBuilder {
     static func contextMenu(hasStore: Bool) -> [MenuEntry] {
         var out: [MenuEntry] = [.action(.openViewer)]
         if hasStore { out.append(.action(.showAllSessions)) }
-        out += [.action(.refresh), .separator, .action(.settings), .action(.quit)]
+        // Switching accounts is a command, not a status: it lives here, not on the plan card.
+        out += [.action(.refresh), .separator, .claudeAccounts, .action(.settings), .action(.quit)]
         return out
     }
 
