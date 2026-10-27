@@ -319,20 +319,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             // submenu doesn't take a click of its own.
             let m = NSMenu()
             m.autoenablesItems = false
-            let state = SessionDetail(line: s, now: now)
-            let context = s.run?.context.value?.percent.flatMap { $0 >= 70 ? "context \(Format.percent($0)) full" : nil }
-            let glance = [state.status, context].compactMap { $0 }.joined(separator: " · ")
+            // How it's going, then the one way in: its terminal. No replay site; the menu says it here.
+            m.addItem(hosted(SessionDetail(line: s, now: now)))
             if let pid = s.pid, let app = TerminalFocus.app(for: pid)?.localizedName {
+                m.addItem(.separator())
                 let go = item("Go to \(app)") { _ = TerminalFocus.bringForward(pid: pid) }
                 go.image = symbol("arrow.up.forward.app")
-                setSubtitle(glance, on: go)
                 m.addItem(go)
             }
-            let replay = item("Open Replay") { [model] in model.openViewer(sessionId: s.sessionId, seq: s.seq) }
-            replay.image = symbol("play.circle")
-            replay.isEnabled = s.openable
-            setSubtitle(s.openable ? "See every step it took" : "Appears after the next refresh", on: replay)
-            m.addItem(replay)
             i.submenu = m
             menu.addItem(i)
 
@@ -595,9 +589,9 @@ struct ProviderCard: View {
                 // With a forecast, the weekly line shows its reset; the forecast says when it really runs out.
                 MeterRow(window: w, now: now, linear: f == nil)
                 if let f, let r = w.resetsAt {
-                    Text(f.short(reset: r, now: now)).font(.caption)
+                    Text(f.short(reset: r, now: now)).font(.subheadline)
                         .foregroundStyle(f.runsOutAt != nil ? Color(nsColor: .systemOrange) : Ink.secondary)
-                        .lineLimit(1).padding(.leading, 66)
+                        .lineLimit(1)
                 }
             }
             if let plans = p.conflictingPlans {
@@ -678,20 +672,49 @@ struct PipHeader: View {
                 .help("Click me for another suggestion")
             VStack(alignment: .leading, spacing: 2) {
                 Text(say.title).font(.headline).foregroundStyle(Ink.primary).lineLimit(1).minimumScaleFactor(0.85)
-                if let tip = model.currentTip {
-                    Text(tip.text).font(.subheadline).foregroundStyle(Ink.primary)
-                        .lineLimit(2, reservesSpace: true).padding(.top, 3)
-                        .id(model.tipIndex)
-                        .transition(.opacity)
-                }
+                Text(model.tipIndex > 0 ? Self.quip(model, n: model.tipIndex) : Self.now(model, now: now))
+                    .font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(1)
+                    .id(model.tipIndex).transition(.opacity)
             }
             Spacer(minLength: 0)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.tipIndex)
         .padding(.horizontal, Menu.inset)
-        .padding(.vertical, 6)
-        // A fixed height: the menu measures rows once, and the tip changes under it.
-        .frame(minWidth: Menu.width, maxWidth: .infinity, minHeight: 76, maxHeight: 76, alignment: .topLeading)
+        .padding(.top, 8).padding(.bottom, 6)
+        .help("Click Pip")
+        // One height for both lines; the menu measures rows once.
+        .frame(minWidth: Menu.width, maxWidth: .infinity, minHeight: 54, maxHeight: 54, alignment: .leading)
+    }
+
+    /// The one thing worth knowing right now, in a few words.
+    static func now(_ m: CompanionModel, now: Date) -> String {
+        guard let s = m.snapshot else { return "Reading your sessions" }
+        if let w = (s.live ?? []).first(where: { $0.status == .waiting }) {
+            return "\(w.name ?? w.project ?? "A session") is waiting for you"
+        }
+        if let week = ProviderSummary.build(s.limits).first(where: { $0.provider == "claude-code" })?.window("weekly"),
+           let used = week.used.value?.usedPercent, let days = s.usage?.claudeDaily,
+           let f = Forecast.of(used: used, windowMinutes: week.windowMinutes, resetsAt: week.resetsAt, days: days, now: now),
+           let out = f.runsOutAt {
+            return "Week runs out \(Format.weekdayTime(out)) at this pace"
+        }
+        if let n = s.insights?.fixes.count, n > 0 { return n == 1 ? "1 fix ready below" : "\(n) fixes ready below" }
+        let busy = (s.live ?? []).filter { $0.status == .busy }.count
+        return busy > 0 ? "Click me if you're bored" : "Nothing needs you"
+    }
+
+    /// Pip, clicked: something cheeky about your own numbers.
+    static func quip(_ m: CompanionModel, n: Int) -> String {
+        let s = m.snapshot
+        var lines: [String] = []
+        if let f = s?.usage?.signals?.current.frustrationRate, f >= 20 { lines.append("\(Format.percent(f)) of your messages are frustrated. Same.") }
+        if let t = s?.usage?.today, t.costUsd > 0 { lines.append("\(Format.money(t.costUsd)) today. I won't tell finance.") }
+        if let c = s?.usage?.signals?.current.correctionRate, c >= 5 { lines.append("You correct me 1 in \(Int((100 / c).rounded())). Rude, but fair.") }
+        if let k = s?.usage?.last30Days.tokens.total, k > 0 { lines.append("\(Format.tokens(k)) tokens this month. I read every one.") }
+        if let busy = s?.live?.filter({ $0.status == .busy }).count, busy > 1 { lines.append("\(busy) agents at once. I'm sweating for them.") }
+        if let score = s?.insights?.score { lines.append("Run health \(Int(score.rounded())). We can do better. You can.") }
+        lines.append("Boop.")
+        return lines[(n - 1) % lines.count]
     }
 }
 
@@ -835,70 +858,81 @@ struct SteeringCard: View {
     }
 }
 
-/// What one live session is doing: who runs it, which model, how far its context is, and its last few steps.
+/// One live session at a glance: what it's doing, how heavy it is, what it has done so far.
 struct SessionDetail: View {
     var line: SessionLine
     var now: Date
 
     var body: some View {
-        let r = line.run
-        VStack(alignment: .leading, spacing: 6) {
+        let r = line.run, c = r?.counts
+        VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
-                Text(line.title).font(.headline).foregroundStyle(Ink.primary).lineLimit(1)
+                Text(status).font(.headline).foregroundStyle(line.dot == .waiting ? Color(nsColor: .systemOrange) : Ink.primary)
                 Spacer()
-                Text(status).font(.subheadline).foregroundStyle(line.dot == .waiting ? Color(nsColor: .systemOrange) : Ink.secondary)
+                if let m = r?.models?.last { Text(Format.modelName(m)).font(.subheadline).foregroundStyle(Ink.secondary) }
             }
-            Text(who).font(.subheadline).foregroundStyle(Ink.secondary)
-            if let pct = r?.context.value?.percent {
-                HStack(spacing: 8) {
-                    Text("Context").font(.subheadline).foregroundStyle(Ink.primary)
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color(nsColor: .quaternaryLabelColor))
-                        Capsule().fill(pct >= 90 ? Color(nsColor: .systemOrange) : Color(nsColor: .controlAccentColor))
-                            .frame(width: max(3, 120 * min(1, pct / 100)))
-                    }
-                    .frame(width: 120, height: 4)
-                    Text(Format.percent(pct)).font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
-                }
+            if let doing { Text(doing).font(.subheadline).foregroundStyle(Ink.primary).lineLimit(2) }
+            // Weight: money, tokens, and how full its context is.
+            HStack(spacing: 18) {
+                stat(c?.costUsd.flatMap { $0 > 0 ? Format.money($0) : nil } ?? "–", "spent")
+                stat(c?.tokens.flatMap { $0 > 0 ? Format.tokens($0) : nil } ?? "–", "tokens")
+                stat(r?.context.value?.percent.map { Format.percent($0) } ?? "–", "context",
+                     warn: (r?.context.value?.percent ?? 0) >= 80)
             }
-            if let c = r?.counts, let calls = c.calls {
-                Text([ "\(calls) tool calls", c.errors.map { "\($0) error\($0 == 1 ? "" : "s")" }, c.retries.map { "\($0) retr\($0 == 1 ? "y" : "ies")" }]
-                    .compactMap { $0 }.joined(separator: " · "))
-                    .font(.subheadline).foregroundStyle(Ink.secondary)
-            }
-            if let steps = r?.recentEvents.suffix(4), !steps.isEmpty {
-                Text("Last steps").font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary).padding(.top, 2)
-                ForEach(Array(steps.reversed())) { e in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(e.step).font(.caption).foregroundStyle(e.err ? Color(nsColor: .systemOrange) : Ink.primary).lineLimit(1)
-                        Spacer(minLength: 6)
-                        Text(Format.relative(e.at, now: now)).font(.caption.monospacedDigit()).foregroundStyle(Ink.tertiary)
-                    }
-                }
-            } else if r == nil {
-                Text("Its map isn't built yet. The replay and its steps appear after the next refresh.")
-                    .font(.caption).foregroundStyle(Ink.tertiary).fixedSize(horizontal: false, vertical: true)
-            }
+            if let made { Text(made).font(.caption).foregroundStyle(Ink.secondary) }
+            if let mix { Text(mix).font(.caption).foregroundStyle(Ink.secondary) }
         }
         .padding(.horizontal, Menu.inset)
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
         .frame(width: Menu.width, alignment: .leading)
+    }
+
+    func stat(_ v: String, _ label: String, warn: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(v).font(.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(warn ? Color(nsColor: .systemOrange) : Ink.primary)
+            Text(label).font(.caption).foregroundStyle(Ink.secondary)
+        }
     }
 
     var status: String {
         let since = line.live?.statusSince.map { Format.duration(now.timeIntervalSince($0)) }
+        let age = (line.live?.startedAt ?? line.run?.startedAt).map { Format.duration(now.timeIntervalSince($0)) }
         switch line.dot {
         case .waiting: return "Waiting on you" + (since.map { " · \($0)" } ?? "")
-        case .working: return "Working" + (since.map { " · \($0)" } ?? "")
-        default: return line.run?.liveStatus?.label ?? "Idle"
+        case .working: return "Working" + (since.map { " · \($0)" } ?? "") + (age.map { ", open \($0)" } ?? "")
+        default: return "Idle" + (since.map { " · \($0)" } ?? "")
         }
     }
 
-    var who: String {
-        var bits = [AgentNames.label(line.live?.agentTool ?? line.run?.agentTool)]
-        if let models = line.run?.models, !models.isEmpty { bits.append(models.map(Format.modelName).joined(separator: ", ")) }
-        if let start = line.live?.startedAt ?? line.run?.startedAt { bits.append("started \(Format.relative(start, now: now))") }
-        return bits.joined(separator: " · ")
+    /// What it's doing right now, in words.
+    var doing: String? {
+        if let p = line.run?.pendingTool { return "Now: " + p.event.label }
+        if let e = line.run?.lastEvent { return "Last: " + e.label }
+        return nil
+    }
+
+    /// What it has produced: files, commits, PRs, turns, errors.
+    var made: String? {
+        guard let c = line.run?.counts else { return nil }
+        var bits: [String] = []
+        if let f = c.filesTouched, f > 0 { bits.append("\(f) file\(f == 1 ? "" : "s") touched") }
+        if let k = c.commits, k > 0 { bits.append("\(k) commit\(k == 1 ? "" : "s")") }
+        if let p = c.prsCreated, p > 0 { bits.append("\(p) PR\(p == 1 ? "" : "s")") }
+        if let t = c.userTurns, t > 0 { bits.append("\(t) message\(t == 1 ? "" : "s") from you") }
+        if let e = c.errors, e > 0 { bits.append("\(e) error\(e == 1 ? "" : "s")") }
+        return bits.isEmpty ? nil : bits.joined(separator: " · ")
+    }
+
+    /// Where its effort goes, as the two biggest kinds of work.
+    var mix: String? {
+        guard let cats = line.run?.categories else { return nil }
+        let names = ["read": "reading", "search": "searching", "edit": "editing", "exec": "running commands",
+                     "verify": "testing", "mcp": "MCP tools", "subagent": "subagents", "web": "the web"]
+        let total = names.keys.reduce(0) { $0 + (cats[$1] ?? 0) }
+        guard total >= 5 else { return nil }
+        let top = names.keys.map { ($0, cats[$0] ?? 0) }.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.prefix(2)
+        return "Mostly " + top.map { "\(names[$0.0]!) \(Int((100 * Double($0.1) / Double(total)).rounded()))%" }.joined(separator: ", ")
     }
 }
 
@@ -1071,24 +1105,41 @@ struct MeterRow: View {
             : pace.map { $0.level == .over ? .over : $0.level == .ahead ? .ahead : .normal } ?? .normal
         // One line: the name, the bar, the number. Two of these are a plan card; they must not stack up.
         HStack(alignment: .center, spacing: 10) {
-            Text(title).font(.subheadline).foregroundStyle(Ink.primary).frame(width: 56, alignment: .leading)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color(nsColor: .quaternaryLabelColor))
-                    Capsule().fill(tint.color).frame(width: max(5, g.size.width * min(1, used / 100)))
-                }
-                .frame(height: 5)
-                .frame(maxHeight: .infinity)   // centred in the row, whatever the text's height
+            Text(title).font(.subheadline).foregroundStyle(Ink.primary).frame(width: 54, alignment: .leading)
+            // A fixed-width bar, so session and week compare at a glance whatever the text says.
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color(nsColor: .quaternaryLabelColor))
+                Capsule().fill(tint.color).frame(width: max(5, Self.barWidth * min(1, used / 100)))
             }
+            .frame(width: Self.barWidth, height: 6)
             Text(detail(stale, used: used)).font(.subheadline.monospacedDigit())
                 .foregroundStyle(tint == .normal || tint == .stale ? Ink.secondary : tint.color)
-                .lineLimit(1).fixedSize()
+                .lineLimit(1)
+            Spacer(minLength: 0)
         }
         .frame(height: 18)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail(stale, used: used))")
     }
 
+    static let barWidth: CGFloat = 72
+
+    /// "Tue", or "tomorrow": short enough to sit beside the bar; the exact time is in the forecast line's tooltip.
+    static func weekday(_ d: Date) -> String {
+        if Calendar.current.isDateInTomorrow(d) { return "tomorrow" }
+        let f = DateFormatter(); f.dateFormat = "EEEE"
+        return f.string(from: d)
+    }
+
+    /// "Tue 1:29": a weekday and a time, short enough to sit beside a bar.
+    static func shortDay(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        let t = DateFormatter()
+        t.timeStyle = .short
+        let time = t.string(from: d).replacingOccurrences(of: ":00", with: "").replacingOccurrences(of: " ", with: "").lowercased()
+        return "\(f.string(from: d)) \(time)"
+    }
     var title: String { window.window == "five_hour" ? "Session" : window.windowLabel }
 
     func detail(_ stale: Bool, used: Double) -> String {
@@ -1099,7 +1150,7 @@ struct MeterRow: View {
         }
         guard let r = window.resetsAt else { return Format.percent(used) }
         let left = r.timeIntervalSince(now)
-        let reset = left < 86400 ? "resets in \(Format.duration(left))" : "resets \(Format.weekdayTime(r))"
+        let reset = left < 86400 ? "resets \(Format.duration(left))" : "resets \(Self.weekday(r))"
         return "\(Format.percent(used)) · \(reset)"
     }
 }

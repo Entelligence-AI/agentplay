@@ -81,9 +81,9 @@ public struct Forecast: Equatable, Sendable {
     public func short(reset: Date, now: Date) -> String {
         if let out = runsOutAt {
             let budget = perDay < 1 ? String(format: "%.1f%%", perDay) : Format.percent(perDay)
-            return "At your pace: out \(Format.weekdayTime(out)). Lasts at \(budget) a day."
+            return "Runs out \(Format.weekdayTime(out)) at your pace. Keep to \(budget) a day."
         }
-        return "At your pace: lasts, about \(Format.percent(leftAtReset ?? 0)) spare."
+        return "Lasts the week at your pace, \(Format.percent(leftAtReset ?? 0)) to spare."
     }
 
     /// One line for the plan card.

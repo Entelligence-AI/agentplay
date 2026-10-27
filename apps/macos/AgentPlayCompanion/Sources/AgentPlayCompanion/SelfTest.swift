@@ -131,6 +131,9 @@ extension Renderer {
             for dark in [false, true] {
                 captureMenu(m, now: snap.generatedAt, to: dir.appendingPathComponent("live-menu-\(dark ? "dark" : "light").png"), dark: dark)
             }
+            if let line = MenuBuilder.sessionLines(snap, now: Date()).first {
+                write(AnyView(SessionDetail(line: line, now: Date())), to: dir.appendingPathComponent("live-session.png"), dark: true, material: true)
+            }
             if let f = snap.insights?.fixes.first {
                 write(AnyView(FixDetail(fix: f)), to: dir.appendingPathComponent("live-fix-detail.png"), dark: true, material: true)
             }

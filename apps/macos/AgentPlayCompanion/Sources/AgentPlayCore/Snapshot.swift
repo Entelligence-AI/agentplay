@@ -204,6 +204,13 @@ public struct RunCounts: Codable, Sendable, Equatable {
     public var errors: Int?
     public var retries: Int?
     public var compactions: Int?
+    public var costUsd: Double?
+    public var tokens: Int?
+    public var filesTouched: Int?
+    public var commits: Int?
+    public var prsCreated: Int?
+    public var userTurns: Int?
+    public var subagents: Int?
 }
 
 public struct RunActivity: Codable, Sendable, Equatable, Identifiable {

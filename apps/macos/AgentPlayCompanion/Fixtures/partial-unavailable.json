@@ -128,7 +128,14 @@
         "calls": 2,
         "errors": 0,
         "retries": 0,
-        "compactions": 0
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 1,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
       },
       "categories": {
         "read": 1,
@@ -246,7 +253,14 @@
         "calls": 9,
         "errors": 3,
         "retries": 0,
-        "compactions": 0
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 2,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
       },
       "categories": {
         "read": 3,

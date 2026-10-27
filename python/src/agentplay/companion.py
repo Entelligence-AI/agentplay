@@ -868,7 +868,10 @@ def _run(doc: dict[str, Any], row: dict[str, Any], now: datetime, live: dict[str
         "counts": {"events": len(events), "calls": (doc.get("totals") or {}).get("calls", 0),
                    "errors": (doc.get("totals") or {}).get("errors", 0),
                    "retries": (doc.get("totals") or {}).get("retries", 0),
-                   "compactions": (doc.get("totals") or {}).get("compactions", 0)},
+                   "compactions": (doc.get("totals") or {}).get("compactions", 0),
+                   # How heavy the session is: what it cost, what it touched, how much back and forth.
+                   **{k: (doc.get("totals") or {}).get(k, 0) for k in
+                      ("costUsd", "tokens", "filesTouched", "commits", "prsCreated", "userTurns", "subagents")}},
         "categories": {k: cats.get(k, 0) for k in ("read", "search", "edit", "exec", "verify", "mcp", "subagent",
                                                    "web", "error", "compaction")},
         "lastEvent": tail[-1] if tail else None,
