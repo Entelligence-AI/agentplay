@@ -23,6 +23,7 @@ import pytest
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_claude_code,
     parse_codex,
+    parse_command_code,
     parse_copilot,
     parse_copilot_vscode,
     parse_cursor_agent_transcript,
@@ -317,9 +318,34 @@ def _gemini() -> list[dict]:
     ]
 
 
+def _command_code() -> list[dict]:
+    def message(msg_id, role, source, content, ts, **extra):
+        return {
+            "type": "message",
+            "id": msg_id,
+            "parentId": None,
+            "timestamp": TS.format(ts),
+            **extra,
+            "message": {"role": role, "content": content, "meta": {"source": source, "messageId": msg_id}},
+        }
+
+    usage = {"inputTokens": 10, "outputTokens": 5, "cacheReadTokens": 2, "cacheWriteTokens": 0, "costUsd": 0.01}
+    shell = {"type": "tool_use", "id": "c1", "name": "shell_command", "input": {"command": "ls", "cwd": "/repo"}}
+    result = {"type": "tool_result", "tool_use_id": "c1", "content": [{"type": "text", "text": "Exit code: 1\nx"}]}
+    return [
+        {"type": "session", "id": "s1", "cwd": "/repo", "version": 3, "timestamp": TS.format(0)},
+        message("u1", "user", "user", [{"type": "text", "text": "list files"}], 0),
+        message("a1", "assistant", "model", [{"type": "thinking", "thinking": "t", "signature": ""}, shell], 1,
+                model="m", usage=usage),
+        message("r1", "user", "tool", [result], 2),
+        message("a2", "assistant", "model", [{"type": "text", "text": "done"}], 3, model="m", usage=usage),
+    ]
+
+
 PARSERS = {
     "claude_code": (parse_claude_code, _claude),
     "codex": (parse_codex, _codex),
+    "command_code": (parse_command_code, _command_code),
     "copilot": (parse_copilot, _copilot),
     "copilot_vscode": (parse_copilot_vscode, _copilot_vscode),
     "cursor_store": (parse_cursor_store, _cursor_store),

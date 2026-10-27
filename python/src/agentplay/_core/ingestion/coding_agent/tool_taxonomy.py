@@ -272,9 +272,33 @@ _ANTIGRAVITY_ALIASES: dict[str, str] = {
     "invoke_subagent": "Task",
 }
 
+# Command Code's built-in tool names, all seen in real Command Code sessions
+# (format version 3). It has two shell tools, `shell_command` and `powershell`;
+# `shell_output` (poll a background shell), `shell_tasks` and `kill_shell`
+# manage background shells and pass through unaliased, so they are not counted
+# as commands run. `edit_file` is an in-place old_string/new_string edit and
+# `write_file` writes the whole file. Meta tools (`ask_user_question`,
+# `enter_plan_mode`, `exit_plan_mode`, `sleep`, `vision`, `activate_skill`,
+# `search_tools`, ...) pass through unaliased.
+_COMMAND_CODE: dict[str, str] = {
+    "shell_command": "Bash",
+    "powershell": "Bash",
+    "read_file": "Read",
+    "edit_file": "Edit",
+    "write_file": "Write",
+    "grep": "Grep",
+    "glob": "Glob",
+    "read_directory": "ListDir",
+    "web_fetch": "WebFetch",
+    "web_search": "WebSearch",
+    "todo_write": "TodoWrite",
+    "agent": "Task",
+}
+
 TOOL_ALIASES: dict[str, dict[str, str]] = {
     "antigravity-cli": _ANTIGRAVITY_ALIASES,
     "codex": _CODEX,
+    "command-code": _COMMAND_CODE,
     "gemini-cli": _GEMINI_CLI,
     "cursor": _CURSOR,
     "copilot": _COPILOT,
