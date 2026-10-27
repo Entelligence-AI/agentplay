@@ -28,7 +28,7 @@ struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let size = CGSize(width: 720, height: 600)
-    static let lime = Color(red: 0xA2 / 255, green: 0xE4 / 255, blue: 0x35 / 255)
+    static let lime = Color.accentColor
 
     var body: some View {
         ZStack {
@@ -49,7 +49,7 @@ struct OnboardingView: View {
                 Spacer()
                 HStack(spacing: 7) {
                     ForEach(1...5, id: \.self) { i in
-                        Capsule().fill(i == step ? Self.lime : Color.white.opacity(0.18)).frame(width: i == step ? 18 : 6, height: 6)
+                        Capsule().fill(i == step ? Self.lime : Color.primary.opacity(0.18)).frame(width: i == step ? 18 : 6, height: 6)
                     }
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: step)
@@ -58,24 +58,12 @@ struct OnboardingView: View {
             }
         }
         .frame(width: Self.size.width, height: Self.size.height)
-        .environment(\.colorScheme, .dark)
         .animation(reduceMotion ? nil : .spring(response: 0.55, dampingFraction: 0.86), value: step)
     }
 
-    /// The dark stage: near-black with a lime light from the top and a faint grid of dots.
+    /// The stage: the system's own window background, light or dark as the Mac is set. No tint, no texture.
     var stage: some View {
-        ZStack {
-            Color(red: 0.07, green: 0.07, blue: 0.075)
-            RadialGradient(colors: [Self.lime.opacity(0.16), .clear], center: .init(x: 0.5, y: -0.1), startRadius: 10, endRadius: 520)
-            Canvas { ctx, size in
-                for x in stride(from: 0.0, to: size.width, by: 28) {
-                    for y in stride(from: 0.0, to: size.height, by: 28) {
-                        ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 1.4, height: 1.4)), with: .color(.white.opacity(0.05)))
-                    }
-                }
-            }
-        }
-        .ignoresSafeArea()
+        Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
     }
 
     func go(_ s: Int) {
@@ -95,25 +83,24 @@ struct OnboardingView: View {
                                          session: fill, weekly: 0.6, eyes: blink ? .closed : .pose, hop: hop))
                 .renderingMode(.template).interpolation(.none).resizable()
                 .frame(width: size, height: size * 0.9)
-                .foregroundStyle(.white)
-                .shadow(color: Self.lime.opacity(pose == .sleep ? 0 : 0.25), radius: 30)
+                .foregroundStyle(.primary)
                 .accessibilityLabel("Pip, \(PipIcon.description(pose).lowercased())")
         }
     }
 
     func headline(_ s: String) -> some View {
-        Text(s).font(.system(size: 34, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+        Text(s).font(.system(size: 34, weight: .semibold, design: .rounded)).foregroundStyle(.primary)
             .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 560)
     }
 
     func line(_ s: String) -> some View {
-        Text(s).font(.system(size: 18)).foregroundStyle(.white.opacity(0.68)).multilineTextAlignment(.center)
+        Text(s).font(.system(size: 18)).foregroundStyle(.primary.opacity(0.68)).multilineTextAlignment(.center)
             .lineSpacing(3).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 500)
     }
 
     func primaryButton(_ title: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.black)
+            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                 .padding(.horizontal, 22).padding(.vertical, 11)
                 .background(Self.lime, in: Capsule())
         }
@@ -139,11 +126,11 @@ struct OnboardingView: View {
             TimelineView(.periodic(from: .now, by: 0.03)) { t in
                 let n = wokeAt.map { reduceMotion ? Self.hello.count : Int(t.date.timeIntervalSince($0) * 34) } ?? 0
                 if wokeAt == nil {
-                    Text("Pip is asleep. Click to wake it.").font(.system(size: 18)).foregroundStyle(.white.opacity(0.55))
+                    Text("Pip is asleep. Click to wake it.").font(.system(size: 18)).foregroundStyle(.primary.opacity(0.55))
                         .opacity(0.55 + 0.45 * abs(sin(t.date.timeIntervalSinceReferenceDate * 1.6)))
                 } else {
                     Text(String(Self.hello.prefix(n)))
-                        .font(.system(size: 26, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                        .font(.system(size: 26, weight: .semibold, design: .rounded)).foregroundStyle(.primary)
                         .multilineTextAlignment(.center).frame(maxWidth: 520, minHeight: 70, alignment: .top)
                 }
             }
@@ -154,7 +141,7 @@ struct OnboardingView: View {
                     primaryButton("Show Me My Agents") { go(2); scan() }
                 } else {
                     Button("Just show me with sample data") { model.loadSample(); wakeUp(); go(3) }
-                        .buttonStyle(.plain).font(.callout).foregroundStyle(.white.opacity(0.4))
+                        .buttonStyle(.plain).font(.callout).foregroundStyle(.primary.opacity(0.4))
                 }
             }
             .padding(.bottom, 60)
@@ -194,16 +181,16 @@ struct OnboardingView: View {
                 // The agents it reads, around Pip.
                 ForEach(Array(Self.agents.enumerated()), id: \.offset) { i, name in
                     let a = Double(i) / Double(Self.agents.count) * 2 * .pi - .pi / 2
-                    Text(name).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.75))
+                    Text(name).font(.system(size: 13, weight: .medium)).foregroundStyle(.primary.opacity(0.75))
                         .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(.white.opacity(0.08), in: Capsule())
+                        .background(.primary.opacity(0.08), in: Capsule())
                         .offset(x: cos(a) * 210, y: sin(a) * 105)
                         .opacity(scanning || scanError == nil ? 1 : 0.3)
                 }
                 // Your repos, flying in.
                 ForEach(Array(repos.enumerated()), id: \.offset) { i, repo in
                     let a = Double(i) / Double(max(1, repos.count)) * 2 * .pi
-                    Text(repo).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(.black)
+                    Text(repo).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Self.lime, in: Capsule())
                         .offset(x: i < flown ? 0 : cos(a) * 320, y: i < flown ? 0 : sin(a) * 190)
@@ -220,9 +207,9 @@ struct OnboardingView: View {
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(found)").font(.system(size: 54, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white).contentTransition(.numericText())
+                        .foregroundStyle(.primary).contentTransition(.numericText())
                         .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: found)
-                    Text(found == 1 ? "session" : "sessions").font(.system(size: 20)).foregroundStyle(.white.opacity(0.6))
+                    Text(found == 1 ? "session" : "sessions").font(.system(size: 20)).foregroundStyle(.primary.opacity(0.6))
                 }
                 .padding(.top, 6)
                 line(scanning ? "Reading the sessions already on this Mac. Nothing leaves it." : readSummary).padding(.top, 4)
@@ -232,7 +219,7 @@ struct OnboardingView: View {
                 if scanError != nil { primaryButton("Try Again") { scan() } }
                 else if !scanning { primaryButton("What Did You Find?") { go(3) } }
                 else { Text("macOS may ask about your Documents or Desktop: that\u{2019}s me seeing which repo a session worked in.")
-                        .font(.caption).foregroundStyle(.white.opacity(0.4)).multilineTextAlignment(.center).frame(maxWidth: 440) }
+                        .font(.caption).foregroundStyle(.primary.opacity(0.4)).multilineTextAlignment(.center).frame(maxWidth: 440) }
             }
             .padding(.bottom, 60)
         }
@@ -253,22 +240,22 @@ struct OnboardingView: View {
             if let fix = model.snapshot?.insights?.fixes.first {
                 headline("The first thing I noticed.")
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(Plain.text(fix.pattern)).font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
+                    Text(Plain.text(fix.pattern)).font(.system(size: 22, weight: .semibold)).foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let cause = fix.hook?.cause {
                         Text(cause).font(.system(size: 16)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("Fixing it: " + Plain.text(fix.effect)).font(.system(size: 16)).foregroundStyle(.white.opacity(0.7))
+                    Text("Fixing it: " + Plain.text(fix.effect)).font(.system(size: 16)).foregroundStyle(.primary.opacity(0.7))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(22)
                 .frame(maxWidth: 560, alignment: .leading)
-                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Self.lime.opacity(0.35)))
                 .padding(.top, 20)
                 Spacer()
                 HStack(spacing: 14) {
-                    Button("Later") { go(4) }.buttonStyle(.plain).foregroundStyle(.white.opacity(0.6))
+                    Button("Later") { go(4) }.buttonStyle(.plain).foregroundStyle(.primary.opacity(0.6))
                     primaryButton("Show Me the Fix After This") { showFixAfter = true; go(4) }
                 }
                 .padding(.bottom, 60)
@@ -276,9 +263,9 @@ struct OnboardingView: View {
                 headline("Here\u{2019}s what I learnt.")
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(Array((model.snapshot.map(Pip.learnings) ?? []).enumerated()), id: \.offset) { _, l in
-                        Label(l.text, systemImage: l.symbol).font(.system(size: 16)).foregroundStyle(.white)
+                        Label(l.text, systemImage: l.symbol).font(.system(size: 16)).foregroundStyle(.primary)
                             .padding(14).frame(maxWidth: 540, alignment: .leading)
-                            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                 }
                 .padding(.top, 20)
@@ -312,11 +299,11 @@ struct OnboardingView: View {
     var fakeBar: some View {
         HStack(spacing: 18) {
             Spacer()
-            Image(systemName: "wifi").foregroundStyle(.white.opacity(0.7))
+            Image(systemName: "wifi").foregroundStyle(.primary.opacity(0.7))
             Button { withAnimation { clickedPip = true } } label: {
                 HStack(spacing: 6) {
                     pip(clickedPip ? .cheer : .wave, size: 30, fill: 0.45)
-                    if !clickedPip { Text("docs-site").font(.system(size: 13, weight: .medium)).foregroundStyle(.white) }
+                    if !clickedPip { Text("docs-site").font(.system(size: 13, weight: .medium)).foregroundStyle(.primary) }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(clickedPip ? 0.0 : 0.12)))
@@ -329,11 +316,11 @@ struct OnboardingView: View {
                 )
             }
             .buttonStyle(.plain)
-            Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.7))
-            Text("10:42 AM").font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
+            Image(systemName: "magnifyingglass").foregroundStyle(.primary.opacity(0.7))
+            Text("10:42 AM").font(.system(size: 13)).foregroundStyle(.primary.opacity(0.7))
         }
         .padding(.horizontal, 16).frame(height: 34)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .frame(maxWidth: 560)
     }
 
@@ -341,14 +328,15 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 ForEach([Color.red, .yellow, .green], id: \.self) { c in Circle().fill(c.opacity(0.8)).frame(width: 9, height: 9) }
-                Text("Terminal · docs-site").font(.system(size: 12)).foregroundStyle(.white.opacity(0.5)).padding(.leading, 6)
+                Text("Terminal · docs-site").font(.system(size: 12)).foregroundStyle(.primary.opacity(0.5)).padding(.leading, 6)
             }
-            Text("Claude wants to run:  pnpm build").font(.system(size: 13, design: .monospaced)).foregroundStyle(.white)
+            Text("Claude wants to run:  pnpm build").font(.system(size: 13, design: .monospaced)).foregroundStyle(.primary)
             Text("❯ 1. Yes   2. No, tell Claude what to do differently").font(.system(size: 13, design: .monospaced)).foregroundStyle(Self.lime)
         }
         .padding(14)
         .frame(maxWidth: 560, alignment: .leading)
-        .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .environment(\.colorScheme, .dark)
     }
 
     struct AlertChoice: Identifiable {
@@ -369,7 +357,7 @@ struct OnboardingView: View {
     var alerts: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Tell me when…").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                Text("Tell me when…").font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary)
                 Spacer()
                 switch model.notificationStatus {
                 case .authorized, .provisional: Label("Notifications allowed", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
@@ -383,8 +371,8 @@ struct OnboardingView: View {
                                              set: { if $0 { alertsOn.insert(c.preset) } else { alertsOn.remove(c.preset) } }))
                         .labelsHidden().toggleStyle(.switch).controlSize(.small)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(c.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
-                        Text("\u{201C}\(c.sampleTitle): \(c.sampleBody)\u{201D}").font(.system(size: 12)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                        Text(c.title).font(.system(size: 14, weight: .medium)).foregroundStyle(.primary)
+                        Text("\u{201C}\(c.sampleTitle): \(c.sampleBody)\u{201D}").font(.system(size: 12)).foregroundStyle(.primary.opacity(0.5)).lineLimit(1)
                     }
                     Spacer()
                     Button("Send a sample") {
@@ -401,7 +389,7 @@ struct OnboardingView: View {
         }
         .padding(16)
         .frame(maxWidth: 560)
-        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     // MARK: 5. Move in
@@ -415,16 +403,16 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Toggle(isOn: $wantsAccount) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Show Claude usage from my account").foregroundStyle(.white)
+                        Text("Show Claude usage from my account").foregroundStyle(.primary)
                         Text("Live 5-hour and weekly limits, as claude.ai shows them. macOS asks once for the login Claude Code saved.")
-                            .font(.caption).foregroundStyle(.white.opacity(0.5)).fixedSize(horizontal: false, vertical: true)
+                            .font(.caption).foregroundStyle(.primary.opacity(0.5)).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Toggle(isOn: $wantsLogin) { Text("Open when I log in").foregroundStyle(.white) }
+                Toggle(isOn: $wantsLogin) { Text("Open when I log in").foregroundStyle(.primary) }
             }
             .toggleStyle(.switch)
             .padding(18).frame(maxWidth: 480)
-            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(.top, 24)
             Spacer()
             primaryButton("Move In") { finish() }.padding(.bottom, 60)
