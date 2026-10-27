@@ -105,14 +105,18 @@ def estimate_cost_usd(
     cache_read: int,
     output: int,
     *,
+    cache_write_1h: int = 0,
     single_request: bool = True,
 ) -> float | None:
     """Advisory per-request cost from the bundled rate card; ``None`` when unpriced.
 
     Standard multipliers when a card has no cache keys:
-    read 0.1x input, write 1.25x input.
+    read 0.1x input, write 1.25x input. 1-hour cache writes are always
+    2x input, the same rule as ``session_pure._component_rates``.
 
     Args:
+        cache_write: 5-minute cache-write tokens.
+        cache_write_1h: 1-hour cache-write tokens, priced separately.
         single_request: False when the token counts sum several requests (a
             turn aggregate). The long-context tier is a per-request property,
             so an aggregate is priced at base rates.
@@ -129,15 +133,21 @@ def estimate_cost_usd(
     inp, out = float(rates["input"]), float(rates["output"])
     cr = float(rates.get("cache_read", inp * 0.1))
     cw = float(rates.get("cache_write", inp * 1.25))
+    cw1h = inp * 2.0
     # Per-request rule: a request
     # whose cache-inclusive input crosses the card's threshold is billed at the
     # long-context tier for the WHOLE request (gpt-6-astra, gpt-6-luna).
     threshold = rates.get("long_context_threshold")
-    if single_request and threshold is not None and fresh + cache_write + cache_read > threshold:
+    total_in = fresh + cache_write + cache_write_1h + cache_read
+    if single_request and threshold is not None and total_in > threshold:
         in_mult = float(rates["long_context_input_multiplier"])
-        inp, cr, cw = inp * in_mult, cr * in_mult, cw * in_mult
+        inp, cr, cw, cw1h = inp * in_mult, cr * in_mult, cw * in_mult, cw1h * in_mult
         out *= float(rates["long_context_output_multiplier"])
-    return round((fresh * inp + cache_write * cw + cache_read * cr + output * out) / 1e6, 6)
+    return round(
+        (fresh * inp + cache_write * cw + cache_write_1h * cw1h + cache_read * cr + output * out)
+        / 1e6,
+        6,
+    )
 
 
 def _cost_from_events(model: str | None, events: list[dict[str, Any]]) -> float | None:
@@ -153,9 +163,10 @@ def _cost_from_events(model: str | None, events: list[dict[str, Any]]) -> float 
         cost = estimate_cost_usd(
             e.get("model") or model,
             int(e.get("input_tokens") or 0),
-            int(e.get("cache_write_5m_tokens") or 0) + int(e.get("cache_write_1h_tokens") or 0),
+            int(e.get("cache_write_5m_tokens") or 0),
             int(e.get("cache_read_tokens") or 0),
             int(e.get("output_tokens") or 0),
+            cache_write_1h=int(e.get("cache_write_1h_tokens") or 0),
         )
         if cost is None:
             return None
@@ -1836,6 +1847,9 @@ class MapBuilder:
         """
         fresh = int(usage.get("input_tokens") or 0)
         cw = int(usage.get("cache_creation_input_tokens") or 0)
+        # Nested TTL split; without it every write is priced at the 5m rate.
+        nested = usage.get("cache_creation") or {}
+        w1h = min(int(nested.get("ephemeral_1h_input_tokens") or 0), cw)
         cr = int(usage.get("cache_read_input_tokens") or 0)
         out = int(usage.get("output_tokens") or 0)
         ev: dict[str, Any] = {
@@ -1849,7 +1863,9 @@ class MapBuilder:
         }
         cost = _cost_from_events(model, cost_events) if cost_events else None
         if cost is None:
-            cost = estimate_cost_usd(model, fresh, cw, cr, out, single_request=not aggregate)
+            cost = estimate_cost_usd(
+                model, fresh, cw - w1h, cr, out, cache_write_1h=w1h, single_request=not aggregate
+            )
         if cost is not None:
             ev["cost"] = cost
         for k, v in (meta or {}).items():
@@ -2705,6 +2721,9 @@ def build_map_from_spans(
             usage = {
                 "input_tokens": attrs.get("llm.token_count.input_fresh") or 0,
                 "cache_creation_input_tokens": attrs.get("llm.token_count.cache_write") or 0,
+                "cache_creation": {
+                    "ephemeral_1h_input_tokens": attrs.get("llm.token_count.cache_write_1h") or 0
+                },
                 "cache_read_input_tokens": attrs.get("llm.token_count.cache_read") or 0,
                 "output_tokens": attrs.get("llm.token_count.completion") or 0,
             }
