@@ -390,21 +390,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(i)
 
         case .signals(let sig):
-            // The card people stop at: two numbers, their trend, one sentence. Display-only, so it sits on the
-            // same left edge as the provider cards; the four rates are on the row under it.
+            // The card people stop at: two numbers, their trend, one sentence. It is the row: pointing at it
+            // opens the four rates in full one level down, like Run Health, so nothing is said twice.
             let card = hosted(SteeringCard(signals: sig))
+            card.isEnabled = true
             card.setAccessibilityLabel("How you steer. " + SteeringCard.sentence(sig))
-            menu.addItem(card)
-            let i = NSMenuItem(title: "Steering Details", action: nil, keyEquivalent: "")
-            setSubtitle("Corrections, frustration, interruptions, refusals, each against last month", on: i)
-            i.image = symbol("steeringwheel")
             let m = NSMenu()
             m.autoenablesItems = false
             m.addItem(hosted(SignalsCard(signals: sig)))
             m.addItem(.separator())
             m.addItem(item("Open Insights in AgentPlay…") { [model] in model.openInsights(page: "overview") })
-            i.submenu = m
-            menu.addItem(i)
+            card.submenu = m
+            menu.addItem(card)
 
         case .fix(let f):
             let i = NSMenuItem(title: Plain.text(f.title), action: nil, keyEquivalent: "")
@@ -813,6 +810,8 @@ struct SteeringCard: View {
                 Text("How you steer").font(.headline).foregroundStyle(Ink.primary)
                 Spacer()
                 Text("\(c.messages) messages you typed").font(.subheadline).foregroundStyle(Ink.secondary)
+                // The row opens a submenu; a custom view draws its own disclosure.
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
             }
             HStack(alignment: .top, spacing: 14) {
                 figure("corrected", c.correctionRate, p.correctionRate, \.correctionRate)
