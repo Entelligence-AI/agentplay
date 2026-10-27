@@ -1046,3 +1046,30 @@ def test_hook_executable_names_the_script_not_the_launcher():
     assert f("python3.12 /opt/a/notify.py > /tmp/LOG.txt") == "notify.py"
     assert f("my-hook 2>&1 | tee /tmp/out") == "my-hook"
     assert f("lint; notify.sh > /tmp/x.log") == "notify.sh"
+
+
+# ---------------------------------------------------------------- applied changes are measured, not re-offered
+def test_hook_fix_carries_its_own_measure():
+    from agentplay import autotune, health
+
+    rows = [{"sessionId": f"s{i}", "repos": ["r"], "facts": {"hookFails": {"SessionStart:startup": 1}}} for i in range(6)]
+    fx = next(f for f in health.fixes(rows) if f["rule"] == "broken_hook")
+    assert fx["metric"] == {"name": "hook_fails", "verb": "SessionStart:startup"}
+    assert autotune.metric(rows, fx["metric"]) == 1.0
+    assert autotune.metric([{"facts": {}}] * 3, fx["metric"]) == 0.0
+
+
+def test_user_level_change_touches_every_session():
+    from agentplay import autotune
+
+    assert autotune.touches("~/.claude", {"repos": ["anything"]})
+    assert autotune.touches(None, {"repos": []})
+    assert autotune.touches("r", {"repos": ["r"]}) and not autotune.touches("r", {"repos": ["other"]})
+
+
+def test_applied_entry_says_measuring_then_worked_or_no_change():
+    e = {"id": "x", "metric": {"name": "hook_fails", "verb": "h"}, "baseline": 1.0}
+    assert companion._applied_entry({**e, "current": 0.0, "sessionsSince": 1})["verdict"] == "measuring"
+    assert companion._applied_entry({**e, "current": 0.0, "sessionsSince": 5})["verdict"] == "worked"
+    assert companion._applied_entry({**e, "current": 1.0, "sessionsSince": 5})["verdict"] == "no_change"
+    assert companion._applied_entry({"id": "y", "sessionsSince": 5})["verdict"] == "unmeasured"

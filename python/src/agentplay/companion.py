@@ -908,7 +908,7 @@ def _sources(homes: discover.Homes, rows: list[dict[str, Any]], index_error: str
 INSIGHTS_DAYS = 30
 INSIGHTS_TTL_S = 900
 # Bumped when the cached shape changes, so an older companion's cache is recomputed rather than read short.
-INSIGHTS_CACHE_V = 2
+INSIGHTS_CACHE_V = 3
 
 
 def _health_rows(store: Store, lo: str, hi: str) -> list[dict[str, Any]]:
@@ -959,11 +959,11 @@ def insights(store: Store, now: datetime, homes: discover.Homes | None = None) -
         "prevScore": rep["prevScore"],
         "components": [{"key": c["key"], "name": c["name"], "points": c["points"], "prevPoints": c.get("prevPoints")}
                        for c in rep["components"]],
-        "applied": [{"id": e["id"], "fixId": e.get("fixId"), "repo": e.get("repo"), "file": e.get("file"),
-                     "at": e.get("at"), "source": e.get("source"), "title": e.get("title")}
+        "applied": [_applied_entry(_backfill(store, e, {f["id"]: f.get("metric") for f in rep["fixes"]}))
                     for e in _applied(store)][:8],
         "autotune": _autotune_summary(store),
-        "fixes": [_fix_entry(f, homes) for f in rep["fixes"][:6]],
+        # A fix already applied leaves the list: it is measured under Applied now.
+        "fixes": [_fix_entry(f, homes) for f in rep["fixes"] if f["id"] not in {a.get("fixId") for a in _applied(store)}][:6],
     }
     try:
         _atomic_write_text(cache, json.dumps({"generatedAt": iso(now), "v": INSIGHTS_CACHE_V, "insights": out},
@@ -1117,12 +1117,55 @@ def _hook_runs(hooks: Any, event: str, command: str) -> bool:
 
 
 def _applied(store: Store) -> list[dict[str, Any]]:
-    from . import fixes
+    from . import autotune
 
     try:
-        return list(reversed(fixes.active(store.base)))
+        return list(reversed(autotune.effects(store)))
     except Exception:  # noqa: BLE001 - a broken journal must not cost the insights
         return []
+
+
+MEASURE_AFTER = 3  # sessions since the change before a verdict
+
+
+def _backfill(store: Store, e: dict[str, Any], metrics: dict[str, Any]) -> dict[str, Any]:
+    """A change applied before its fix carried a measure: take the measure from today's report and the
+    baseline from the 30 days before it was applied, then measure the sessions since."""
+    from . import autotune
+
+    if e.get("metric") and e.get("baseline") is not None:
+        return e
+    m = e.get("metric") or metrics.get(e.get("fixId"))
+    if not m or not e.get("at"):
+        return e
+    try:
+        at = _parse_iso(e["at"])
+        lo = (at - timedelta(days=INSIGHTS_DAYS)).strftime("%Y-%m-%d")
+        repo_ok = lambda r: autotune.touches(e.get("repo"), r)  # noqa: E731
+        rows = autotune.root_rows(store, since=lo)
+        before = [r for r in rows if repo_ok(r) and (r.get("startedAt") or "") < e["at"]]
+        since = [r for r in rows if repo_ok(r) and (r.get("startedAt") or "") >= e["at"]]
+        return {**e, "metric": m, "baseline": autotune.metric(before, m),
+                "current": autotune.metric(since, m), "sessionsSince": len(since)}
+    except Exception:  # noqa: BLE001
+        return e
+
+
+def _applied_entry(e: dict[str, Any]) -> dict[str, Any]:
+    """One change AgentPlay made, with its measure before and since and a plain verdict."""
+    from . import autotune
+
+    m = e.get("metric") or {}
+    before, after, n = e.get("baseline"), e.get("current"), e.get("sessionsSince") or 0
+    if before is None or m.get("name") is None:
+        verdict = "unmeasured"
+    elif n < MEASURE_AFTER or after is None:
+        verdict = "measuring"
+    else:
+        verdict = "worked" if autotune._improved(m["name"], before, after) else "no_change"
+    return {"id": e["id"], "fixId": e.get("fixId"), "repo": e.get("repo"), "file": e.get("file"),
+            "at": e.get("at"), "source": e.get("source"), "title": e.get("title"),
+            "measure": m.get("name"), "before": before, "after": after, "sessionsSince": n, "verdict": verdict}
 
 
 def _autotune_summary(store: Store) -> dict[str, Any] | None:
@@ -1326,9 +1369,21 @@ def fix_action(store: Store, action: str, ident: str, *, grant: bool = False) ->
         if not grant:
             raise fixes.FixError("not_granted", f"AgentPlay may not write to {repo} yet.")
         fixes.grant(store.base, repo, root)
-    e = fixes.apply(store.base, fx, act, source="button")
+    e = fixes.apply(store.base, fx, act, source="button", baseline=_baseline(store, fx))
     _drop_insights_cache(store)
     return {"entryId": e["id"], "file": e.get("file"), "repo": repo}
+
+
+def _baseline(store: Store, fx: dict[str, Any]) -> float | None:
+    """The fix's own measure over the last 30 days before it is applied, so "since" has something to beat."""
+    from . import autotune
+
+    try:
+        since = (datetime.now(UTC) - timedelta(days=INSIGHTS_DAYS)).strftime("%Y-%m-%d")
+        rows = [r for r in autotune.root_rows(store, since=since) if autotune.touches(fx.get("repo"), r)]
+        return autotune.metric(rows, fx.get("metric"))
+    except Exception:  # noqa: BLE001 - no baseline only costs the before/after, never the apply
+        return None
 
 
 def autotune_action(store: Store, action: str, fix_id: str) -> dict[str, Any]:

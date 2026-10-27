@@ -371,6 +371,7 @@ def fixes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 f"`{name}` failed {m['fails']} of {m['calls']} calls ({round(100 * m['fails'] / m['calls'])}%).",
                 "Agents stop spending turns on a server that errors.",
                 _points(base, changed, "environment"), m["sessions"], [],
+                {"name": "mcp_fail_rate", "verb": name},
             ))
     for name, h in hooks.items():
         if h["fails"] >= 5:
@@ -381,6 +382,7 @@ def fixes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 f"`{name}` failed {h['fails']} times in {len(h['sessions'])} sessions.",
                 "Tool calls stop being blocked by a failing hook.",
                 _points(base, changed, "environment"), h["sessions"], [],
+                {"name": "hook_fails", "verb": name},
             ))
     for name, s in subs.items():
         if s["launches"] >= 5 and s["noResult"] / s["launches"] > 0.3:

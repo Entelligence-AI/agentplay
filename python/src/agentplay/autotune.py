@@ -108,6 +108,14 @@ def metric(rows: list[dict[str, Any]], m: dict[str, Any] | None) -> float | None
     if not m:
         return None
     name, verb = m.get("name"), m.get("verb")
+    if name == "hook_fails":
+        # Failures of this hook per session: 1.0 means it failed every session.
+        return sum((r["facts"].get("hookFails") or {}).get(verb, 0) for r in rows) / len(rows) if rows else None
+    if name == "mcp_fail_rate":
+        ms = [(r["facts"].get("mcp") or {}).get(verb) for r in rows]
+        ms = [x for x in ms if x]
+        calls = sum(x.get("calls", 0) for x in ms)
+        return sum(x.get("fails", 0) for x in ms) / calls if calls else None
     if name == "verified_share":
         edited = [r for r in rows if r["facts"].get("edited")]
         return sum(bool(r["facts"].get("verifyAfterLastEdit")) for r in edited) / len(edited) if edited else None
@@ -132,11 +140,18 @@ def _improved(name: str, before: float, after: float) -> bool:
     return after < before and after <= before * (1 - MIN_GAIN)
 
 
+def touches(repo: str | None, row: dict[str, Any]) -> bool:
+    """Whether a change in ``repo`` can show in this session: a user-level change (no repo, or one in the
+    Claude home such as ``~/.claude``) touches every session."""
+    return not repo or repo.startswith("~") or repo in (row.get("repos") or [])
+
+
 def effects(store: Any) -> list[dict[str, Any]]:
     """Each active Autotune fix with its metric before and since."""
     out = []
     for e in fixes.active(store.base):
-        since = [r for r in root_rows(store, since=e["at"][:10]) if e["repo"] in (r.get("repos") or [])
+        # A user-level change (a hook in ~/.claude, an MCP server) touches every repo.
+        since = [r for r in root_rows(store, since=e["at"][:10]) if touches(e.get("repo"), r)
                  and (r.get("startedAt") or "") >= e["at"]]
         out.append({**e, "sessionsSince": len(since), "current": metric(since, e.get("metric"))})
     return out
