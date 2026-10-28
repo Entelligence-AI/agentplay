@@ -349,8 +349,8 @@ struct SetupPane: View {
                     }
                     .frame(height: 6)
                     Text("\(it.uses)×").font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
-                    Text(it.impact.map { $0.isClear ? $0.verdict : "too soon to tell" } ?? "").font(.caption)
-                        .foregroundStyle(it.impact?.isGood == true ? Color.green : .secondary)
+                    Text(it.measured.map { _ in ImpactCard.subtitle(it).components(separatedBy: " · ").dropFirst(2).joined(separator: " · ") } ?? "")
+                        .font(.caption).foregroundStyle(it.measured.map { ImpactCard.adviceColor($0.advice.kind) } ?? .secondary)
                         .frame(width: 130, alignment: .leading)
                 }
             }

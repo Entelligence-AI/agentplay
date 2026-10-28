@@ -109,67 +109,25 @@ def _keys(it: dict[str, Any]) -> list[tuple[str, str]]:
     return keys
 
 
-MIN_SESSIONS = 5     # fewer sessions than this on either side and there's nothing to compare
-MIN_MESSAGES = 3     # a session with fewer messages from you says nothing about steering
-CLEAR_POINTS = 3.0   # a gap smaller than this, in percentage points, is "no clear difference"
+BUILT_IN_AGENTS = {"general-purpose", "Explore", "Plan", "statusline-setup", "output-style-setup"}
 
 
-def sessions(files: list[dict[str, Any]], since: float) -> dict[str, dict[str, Any]]:
-    """Per session since ``since``: messages from you, corrections, tool calls, failed calls, and what setup it
-    used. A session's subagent transcripts add their uses; its signals come from the main transcript only."""
-    out: dict[str, dict[str, Any]] = {}
-    for f in files:
-        sid = str(f.get("session") or "")
-        if not sid:
-            continue
-        s = out.setdefault(sid, {"msg": set(), "cor": set(), "call": set(), "err": set(), "used": set(), "at": 0})
-        for e in f.get("sig", []):
-            if e[0] >= since and e[1] in ("msg", "cor", "call", "err"):
-                s[e[1]].add(e[2] if len(e) > 2 and e[2] else e[0])
-                s["at"] = max(s["at"], e[0])
-        for u in f.get("use", []):
-            if u[0] >= since:
-                s["used"].add((u[1], u[2]))
-    return {k: {"msg": len(v["msg"]), "cor": len(v["cor"]), "call": len(v["call"]), "err": len(v["err"]),
-                "used": v["used"], "at": v["at"]}
-            for k, v in out.items() if len(v["msg"]) >= MIN_MESSAGES}
-
-
-def _rates(group: list[dict[str, Any]]) -> tuple[float | None, float | None]:
-    msgs, calls = sum(s["msg"] for s in group), sum(s["call"] for s in group)
-    cor = round(100 * sum(s["cor"] for s in group) / msgs, 1) if msgs else None
-    err = round(100 * sum(s["err"] for s in group) / calls, 1) if calls else None
-    return cor, err
-
-
-def compare(with_: list[dict[str, Any]], without: list[dict[str, Any]]) -> dict[str, Any]:
-    """Sessions with something against sessions without it: correction rate (per message from you) and failed
-    tool calls (per call). A verdict only when both sides have enough sessions and the gap is clear. Sessions
-    that use a skill differ in other ways too, so this says "goes with", never "caused"."""
-    cw, ew = _rates(with_)
-    co, eo = _rates(without)
-    out: dict[str, Any] = {"with": len(with_), "without": len(without), "correctionWith": cw, "correctionWithout": co,
-                           "errorWith": ew, "errorWithout": eo}
-    if len(with_) < MIN_SESSIONS or len(without) < MIN_SESSIONS:
-        out["verdict"] = "too few"
-    elif cw is not None and co is not None and cw <= co - CLEAR_POINTS:
-        out["verdict"] = "fewer corrections"
-    elif cw is not None and co is not None and cw >= co + CLEAR_POINTS:
-        out["verdict"] = "more corrections"
-    elif ew is not None and eo is not None and ew <= eo - CLEAR_POINTS:
-        out["verdict"] = "fewer failed calls"
-    elif ew is not None and eo is not None and ew >= eo + CLEAR_POINTS:
-        out["verdict"] = "more failed calls"
-    else:
-        out["verdict"] = "no clear difference"
-    return out
+def _label(kind: str, name: str) -> tuple[str, str]:
+    """Where an item seen in sessions but not installed here comes from, and the name to show."""
+    if kind == "mcp" and name.startswith("claude_ai_"):
+        return name.removeprefix("claude_ai_").replace("_", " "), "claude.ai connector"
+    if kind == "agent" and name in BUILT_IN_AGENTS:
+        return name, "built in"
+    return name, "seen in sessions"
 
 
 def report(claude_home: Path, uses: list[list[Any]], now: datetime, claude_json: Path | None = None,
-           days: int = 30, files: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """The inventory with 30-day use counts and a verdict per item, most used first, unused last. With
-    ``files`` (usage.claude_requests' per-transcript records), each used item also gets ``impact``: how
-    sessions that used it went against sessions that didn't."""
+           days: int = 30, measured: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The inventory with 30-day use counts and a verdict per item, most used first, unused last.
+
+    ``measured`` (impact.measure over the session maps): each item it covers gets ``measured``, its calls,
+    failures, context taken in, linked sessions and next step; items seen in sessions but not installed here
+    (claude.ai connectors, built-in subagents) are added. Then calls from the maps are its use count."""
     since = (now - timedelta(days=days)).timestamp()
     count: Counter[tuple[str, str]] = Counter()
     last: dict[tuple[str, str], int] = {}
@@ -179,15 +137,24 @@ def report(claude_home: Path, uses: list[list[Any]], now: datetime, claude_json:
         count[(kind, name)] += 1
         last[(kind, name)] = max(last.get((kind, name), 0), sec)
     items = installed(claude_home, claude_json)
-    per = list(sessions(files, since).values()) if files else []
+    by = {(m["kind"], m["name"]): m for m in (measured or {}).get("items", [])}
+    matched: set[tuple[str, str]] = set()
+    for it in items:
+        hits = [by[k] for k in _keys(it) if k in by and k not in matched]
+        if hits:
+            matched.update((h["kind"], h["name"]) for h in hits)
+            it["measured"] = {k: v for k, v in hits[0].items() if k not in ("kind", "name")}
+    for key, m in by.items():
+        if key not in matched:
+            label, source = _label(*key)
+            items.append({"kind": key[0], "name": label, "source": source, "installedAt": None, "detail": None,
+                          "measured": {k: v for k, v in m.items() if k not in ("kind", "name")}})
     for it in items:
         keys = _keys(it)
-        if per and it["kind"] != "hook" and any(count.get(k) for k in keys):
-            ks = set(keys)
-            it["impact"] = compare([p for p in per if p["used"] & ks], [p for p in per if not p["used"] & ks])
         n = sum(count.get(k, 0) for k in keys)
         at = max((last.get(k, 0) for k in keys), default=0)
-        it["uses"] = n
+        it["uses"] = it["measured"]["calls"] if it.get("measured") else n
+        n = it["uses"]
         it["lastUsed"] = datetime.fromtimestamp(at, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if at else None
         if it["kind"] == "hook":
             it["verdict"] = "runs"
@@ -199,6 +166,6 @@ def report(claude_home: Path, uses: list[list[Any]], now: datetime, claude_json:
             it["verdict"] = "unused"
     items.sort(key=lambda i: (i["kind"] == "hook", -i["uses"], i["kind"], i["name"]))
     kinds = Counter(i["kind"] for i in items)
-    return {"days": days, "counts": dict(kinds), "sessions": len(per),
+    return {"days": days, "counts": dict(kinds), "sessions": (measured or {}).get("sessions"),
             "unused": sum(1 for i in items if i["verdict"] == "unused" and i["kind"] in ("skill", "mcp", "agent")),
             "items": items}

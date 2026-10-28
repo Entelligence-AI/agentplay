@@ -85,9 +85,11 @@ def facts(snap: dict[str, Any], claude_home: Path) -> dict[str, Any]:
         row = {"kind": it.get("kind"), "name": it.get("name"), "uses30d": it.get("uses", 0)}
         if d := desc.get((it.get("kind"), it.get("name"))):
             row["description"] = d
-        if imp := it.get("impact"):
-            row["sessionsWith"] = imp.get("with")
-            row["verdict"] = imp.get("verdict")
+        if m := it.get("measured"):
+            row.update({"failedCalls": m.get("failed"), "tokensIntoContext": m.get("tokens"),
+                        "sessions": m.get("sessions"), "yourSessions": m.get("yours"),
+                        "comparedToYourOtherSessions": (m.get("compare") or {}).get("verdict"),
+                        "flag": (m.get("advice") or {}).get("kind")})
         items.append(row)
     learn = snap.get("learn") or {}
     return {
@@ -98,6 +100,7 @@ def facts(snap: dict[str, Any], claude_home: Path) -> dict[str, Any]:
         "fixesFound": [f.get("title") for f in ins.get("fixes", [])][:5],
         "fixesApplied": [{"title": a.get("title"), "verdict": a.get("verdict")} for a in (ins.get("applied") or [])][:5],
         "repeatedlyFailingCommand": learn.get("command"),
+        "sessions": setup.get("sessions"),  # yours (2+ messages) and automated one-prompt runs, with cost
         "setup": items,
     }
 

@@ -2854,7 +2854,12 @@
     "agent": 2,
     "hook": 2
    },
-   "sessions": 40,
+   "sessions": {
+    "yours": 40,
+    "automated": 212,
+    "yoursCostUsd": 143.2,
+    "automatedCostUsd": 18.4
+   },
    "unused": 6,
    "items": [
     {
@@ -2866,14 +2871,40 @@
      "lastUsed": "2026-10-23T10:46:00Z",
      "verdict": "used",
      "installedAt": null,
-     "impact": {
-      "with": 9,
-      "without": 31,
-      "correctionWith": 5.1,
-      "correctionWithout": 9.4,
-      "errorWith": 2.8,
-      "errorWithout": 4.1,
-      "verdict": "fewer corrections"
+     "measured": {
+      "calls": 214,
+      "failed": 9,
+      "tokens": 2100000,
+      "ms": 192600,
+      "sessions": 9,
+      "yours": 3,
+      "last": "2026-10-23T10:46:00Z",
+      "errClasses": {},
+      "recent": [
+       {
+        "sessionId": "local:claude-code:sample-7f3a",
+        "startedAt": "2026-10-23T10:46:00Z",
+        "repo": "payments-api",
+        "seq": 12,
+        "calls": 8,
+        "failed": 0
+       }
+      ],
+      "compare": {
+       "with": 3,
+       "without": 37,
+       "errorRateWith": null,
+       "errorRateWithout": null,
+       "compactionsWith": 0.2,
+       "compactionsWithout": 0.6,
+       "costWith": 6.1,
+       "costWithout": 4.9,
+       "verdict": "too few"
+      },
+      "advice": {
+       "kind": "heavy",
+       "text": "Each session that uses it takes in about 233k tokens of its results. Ask for less, or turn it off when you don\u2019t need it."
+      }
      }
     },
     {
@@ -2885,14 +2916,40 @@
      "lastUsed": "2026-10-23T10:46:00Z",
      "verdict": "used",
      "installedAt": null,
-     "impact": {
-      "with": 12,
-      "without": 28,
-      "correctionWith": 4.2,
-      "correctionWithout": 10.3,
-      "errorWith": 3.0,
-      "errorWithout": 3.6,
-      "verdict": "fewer corrections"
+     "measured": {
+      "calls": 37,
+      "failed": 0,
+      "tokens": 9000,
+      "ms": 33300,
+      "sessions": 12,
+      "yours": 12,
+      "last": "2026-10-23T10:46:00Z",
+      "errClasses": {},
+      "recent": [
+       {
+        "sessionId": "local:claude-code:sample-7f3a",
+        "startedAt": "2026-10-23T10:46:00Z",
+        "repo": "payments-api",
+        "seq": 12,
+        "calls": 8,
+        "failed": 0
+       }
+      ],
+      "compare": {
+       "with": 12,
+       "without": 28,
+       "errorRateWith": 2.1,
+       "errorRateWithout": 5.4,
+       "compactionsWith": 0.2,
+       "compactionsWithout": 0.6,
+       "costWith": 6.1,
+       "costWithout": 4.9,
+       "verdict": "fewer failed calls"
+      },
+      "advice": {
+       "kind": "helps",
+       "text": "Your sessions with it had fewer failed calls. Keep using it."
+      }
      }
     },
     {
@@ -2904,14 +2961,40 @@
      "lastUsed": "2026-10-23T10:46:00Z",
      "verdict": "used",
      "installedAt": null,
-     "impact": {
-      "with": 6,
-      "without": 34,
-      "correctionWith": 8.0,
-      "correctionWithout": 8.6,
-      "errorWith": 2.1,
-      "errorWithout": 4.9,
-      "verdict": "fewer failed calls"
+     "measured": {
+      "calls": 11,
+      "failed": 6,
+      "tokens": 4000,
+      "ms": 9900,
+      "sessions": 6,
+      "yours": 6,
+      "last": "2026-10-23T10:46:00Z",
+      "errClasses": {},
+      "recent": [
+       {
+        "sessionId": "local:claude-code:sample-7f3a",
+        "startedAt": "2026-10-23T10:46:00Z",
+        "repo": "payments-api",
+        "seq": 12,
+        "calls": 8,
+        "failed": 0
+       }
+      ],
+      "compare": {
+       "with": 6,
+       "without": 34,
+       "errorRateWith": null,
+       "errorRateWithout": null,
+       "compactionsWith": 0.2,
+       "compactionsWithout": 0.6,
+       "costWith": 6.1,
+       "costWithout": 4.9,
+       "verdict": "too few"
+      },
+      "advice": {
+       "kind": "failing",
+       "text": "6 of 11 calls failed. Check its permissions."
+      }
      }
     },
     {
@@ -2923,14 +3006,40 @@
      "lastUsed": "2026-10-23T10:46:00Z",
      "verdict": "used",
      "installedAt": null,
-     "impact": {
-      "with": 3,
-      "without": 37,
-      "correctionWith": 7.0,
-      "correctionWithout": 8.1,
-      "errorWith": 3.5,
-      "errorWithout": 3.9,
-      "verdict": "too few"
+     "measured": {
+      "calls": 4,
+      "failed": 0,
+      "tokens": 1200,
+      "ms": 3600,
+      "sessions": 3,
+      "yours": 3,
+      "last": "2026-10-23T10:46:00Z",
+      "errClasses": {},
+      "recent": [
+       {
+        "sessionId": "local:claude-code:sample-7f3a",
+        "startedAt": "2026-10-23T10:46:00Z",
+        "repo": "payments-api",
+        "seq": 12,
+        "calls": 4,
+        "failed": 0
+       }
+      ],
+      "compare": {
+       "with": 3,
+       "without": 37,
+       "errorRateWith": null,
+       "errorRateWithout": null,
+       "compactionsWith": 0.2,
+       "compactionsWithout": 0.6,
+       "costWith": 6.1,
+       "costWithout": 4.9,
+       "verdict": "too few"
+      },
+      "advice": {
+       "kind": "fine",
+       "text": "All 4 calls worked."
+      }
      }
     },
     {

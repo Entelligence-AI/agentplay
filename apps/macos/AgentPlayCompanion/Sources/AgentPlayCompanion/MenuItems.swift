@@ -24,7 +24,8 @@ enum MenuEntry: Equatable {
     case askClaude(asking: Bool)                 // turn on suggestions from Claude, or "Asking Claude…"
     case setupItem(SetupReport.Item)             // a skill, subagent or MCP server you use, and how sessions go with it
     case unused(kind: String, names: [String])   // what sits unused, by kind
-    case hook(SetupReport.Item)
+    case split(SetupReport.Split)                // hosted: your sessions and automated runs, with cost
+    case hooks([SetupReport.Item])               // hosted: each hook and its script
     case openInsights(InsightsSection, String)
     case action(MenuAction)
     case separator
@@ -236,6 +237,10 @@ enum MenuBuilder {
             return [.message(title: "No setup found", detail: "Skills, subagents and MCP servers you add to Claude Code show here.")]
         }
         var out: [MenuEntry] = []
+        if let sp = st.sessions, sp.automated > 0 {
+            out.append(.header("Sessions · Last \(st.days) Days"))
+            out.append(.split(sp))
+        }
         let used = st.items.filter { $0.uses > 0 && $0.kind != "hook" }
         out.append(.header("Used · Last \(st.days) Days"))
         if used.isEmpty { out.append(.message(title: "Nothing ran in \(st.days) days", detail: nil)) }
@@ -251,7 +256,7 @@ enum MenuBuilder {
         let hooks = st.items.filter { $0.kind == "hook" }
         if !hooks.isEmpty, trim < 3 {
             out.append(.header("Hooks"))
-            out += hooks.prefix(max(1, 5 - trim)).map(MenuEntry.hook)
+            out.append(.hooks(Array(hooks.prefix(max(1, 5 - trim)))))
         }
         out.append(.separator)
         out.append(.openInsights(.setup, "Open in Insights…"))

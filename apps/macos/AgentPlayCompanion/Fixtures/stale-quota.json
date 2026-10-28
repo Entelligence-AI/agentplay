@@ -852,7 +852,12 @@
     "setup": {
       "days": 30,
       "counts": {},
-      "sessions": 0,
+      "sessions": {
+        "yours": 0,
+        "automated": 1,
+        "yoursCostUsd": 0,
+        "automatedCostUsd": 0.0
+      },
       "unused": 0,
       "items": []
     },

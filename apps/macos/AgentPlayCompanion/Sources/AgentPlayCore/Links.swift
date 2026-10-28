@@ -132,6 +132,13 @@ public enum Format {
     }
 
     /// Middle-truncate a label (`payments-…-api`). Repo names are shown truncated by default.
+    /// 1,729: grouped the way the system formats numbers.
+    public static func count(_ n: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
     /// Names, joined, cut at a whole name: "a, b and 3 more". Never mid-word.
     public static func names(_ names: [String], max: Int = 34) -> String {
         var out: [String] = []

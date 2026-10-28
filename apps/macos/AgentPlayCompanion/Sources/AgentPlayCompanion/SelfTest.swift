@@ -152,8 +152,8 @@ extension Renderer {
                 write(AnyView(HealthCard(insights: ins)), to: dir.appendingPathComponent("live-health.png"), dark: true, material: true)
             }
             if let st = snap.usage?.setup {
-                if let it = st.items.first(where: { $0.impact != nil }) {
-                    write(AnyView(ImpactCard(item: it, sessions: st.sessions)), to: dir.appendingPathComponent("live-impact.png"), dark: true, material: true)
+                for it in st.items.filter({ $0.measured != nil }).prefix(5) {
+                    write(AnyView(ImpactCard(item: it)), to: dir.appendingPathComponent("live-impact-\(it.name.replacingOccurrences(of: " ", with: "-")).png"), dark: true, material: true)
                 }
                 write(AnyView(VStack(alignment: .leading, spacing: 14) { SetupPane(report: st) }.padding(28).frame(width: 720)
                                 .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark)),
@@ -207,10 +207,14 @@ extension Renderer {
             let screen = NSScreen.main!
             let frame = NSRect(x: screen.frame.midX - 420, y: screen.frame.midY - 420, width: 840, height: 840)
             var shots: [String: NSBitmapImageRep] = [:]
-            for tinted in [false, true] {
+            let passes: [(Bool, Bool, Bool, MenuTab)] = [false, true].flatMap { t in [true, false].flatMap { d in [true, false].map { b in (t, d, b, MenuTab.now) } } }
+                + [MenuTab.improve, .setup].flatMap { tab in [true, false].map { d in (true, d, true, tab) } }
+            var lastPair = ""
+            for (tinted, dark, bright, tab) in passes {
                 StatusItemController.glassTintOn = tinted
-                for dark in [true, false] {
-                    for bright in [true, false] {
+                m.menuTab = tab
+                do {
+                    do {
                         let back = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
                         back.level = .floating
                         back.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -221,7 +225,8 @@ extension Renderer {
                         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                         c.menu.appearance = NSApp.appearance
                         c.prepare(now: snap.generatedAt)
-                        let name = "\(tinted ? "tinted" : "system")-\(dark ? "dark" : "light")-over-\(bright ? "white" : "black")"
+                        let name = tab != .now ? "real-\(tab.rawValue)-\(dark ? "dark" : "light")"
+                            : "\(tinted ? "tinted" : "system")-\(dark ? "dark" : "light")-over-\(bright ? "white" : "black")"
                         let url = dir.appendingPathComponent(name + ".png")
                         let timer = Timer(timeInterval: 0.9, repeats: false) { _ in
                             MainActor.assumeIsolated {
@@ -242,6 +247,9 @@ extension Renderer {
                         back.orderOut(nil)
                         RunLoop.current.run(until: Date().addingTimeInterval(0.2))
                     }
+                    let pair = "\(tinted ? "tinted" : "system")-\(dark ? "dark" : "light")"
+                    guard tab == .now, !bright, pair != lastPair else { continue }
+                    lastPair = pair
                     let a = shots["\(tinted ? "tinted" : "system")-\(dark ? "dark" : "light")-over-white"]
                     let b = shots["\(tinted ? "tinted" : "system")-\(dark ? "dark" : "light")-over-black"]
                     if let a, let b {

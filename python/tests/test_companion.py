@@ -1111,43 +1111,67 @@ def test_setup_inventory_counts_uses_by_name_only(tmp_path):
         assert secret not in raw, secret
 
 
-def test_setup_impact_compares_sessions_with_and_without(tmp_path):
+def test_impact_measures_each_tool_from_maps_and_splits_your_sessions(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    from agentplay import impact
+    from agentplay.store import Store
+
+    st = Store(tmp_path / "ap")
+    now = datetime(2026, 10, 27, tzinfo=UTC)
+
+    def put(i: int, turns: int, events: list, errors: int = 0) -> None:
+        sid = f"local:claude-code:s{i}"
+        st.put({"session": {"id": sid}, "events": events},
+               {"sessionId": sid, "startedAt": (now - timedelta(hours=i + 1)).isoformat(), "role": "root",
+                "userTurns": turns, "calls": 100, "errors": errors, "retries": 0, "compactions": 0,
+                "costUsd": 1.0, "repos": ["payments-api"], "sessionTitle": "SECRET PROMPT"})
+
+    fig = lambda seq, err=False: {"kind": "mcp", "server": "figma", "tool": "get", "seq": seq, "err": err,  # noqa: E731
+                                  "errClass": "auth" if err else None, "outBytes": 400_000, "dur": 1000}
+    for i in range(5):  # yours, with figma: big results, few errors
+        put(i, 4, [fig(3), fig(9)], errors=1)
+    for i in range(5, 11):  # yours, without
+        put(i, 4, [{"kind": "exec", "tool": "Bash", "seq": 1}], errors=8)
+    put(11, 1, [fig(1, err=True)] * 4)  # a one-prompt run: counted as automated
+    put(40 * 24, 4, [fig(1)])  # older than the window
+    r = impact.measure(st, now)
+    assert r["sessions"] == {"yours": 11, "automated": 1, "yoursCostUsd": 11.0, "automatedCostUsd": 1.0}
+    f = next(i for i in r["items"] if i["name"] == "figma")
+    assert (f["calls"], f["failed"], f["sessions"], f["yours"]) == (14, 4, 6, 5)
+    assert f["tokens"] == 14 * 100_000
+    assert f["compare"]["with"] == 5 and f["compare"]["without"] == 6
+    assert f["compare"]["verdict"] == "fewer failed calls"
+    assert f["advice"]["kind"] == "failing" and "its login" in f["advice"]["text"]
+    assert len(f["recent"]) == 3 and f["recent"][0]["sessionId"] == "local:claude-code:s0" and f["recent"][0]["seq"] == 3
+    assert "SECRET" not in json.dumps(r)
+
+
+def test_impact_advice_rules():
+    from agentplay import impact
+
+    base = {"calls": 100, "failed": 0, "tokens": 0, "sessions": 2, "errClasses": {}, "compare": {"verdict": "too few"}}
+    assert impact.advice({**base, "failed": 30, "errClasses": {"timeout": 30}})["kind"] == "failing"
+    assert impact.advice({**base, "tokens": 200_000})["kind"] == "heavy"
+    assert impact.advice({**base, "compare": {"verdict": "fewer compactions"}})["kind"] == "helps"
+    assert impact.advice(base) == {"kind": "fine", "text": "All 100 calls worked."}
+
+
+def test_setup_lists_connectors_and_builtins_seen_in_sessions(tmp_path):
     from datetime import UTC, datetime
 
     from agentplay import setup_inventory
 
     home = tmp_path / ".claude"
-    (home / "skills" / "tdd").mkdir(parents=True)
-    (home / "skills" / "tdd" / "SKILL.md").write_text("---\nname: tdd\n---\n")
-    now = datetime(2026, 10, 27, tzinfo=UTC)
-    t = now.timestamp() - 3600
-
-    def session(i: int, used: bool, cor: int) -> dict:
-        sig = [[t, "msg", f"{i}-m{k}"] for k in range(10)] + [[t, "cor", f"{i}-c{k}"] for k in range(cor)]
-        sig += [[t, "call", f"{i}-k{k}"] for k in range(20)]
-        return {"session": f"s{i}", "sig": sig, "use": [[t, "skill", "tdd"]] if used else []}
-
-    files = [session(i, True, 0) for i in range(5)] + [session(i, False, 2) for i in range(5, 11)]
-    uses = [[t, "skill", "tdd"]] * 5
-    it = next(i for i in setup_inventory.report(home, uses, now, files=files)["items"] if i["name"] == "tdd")
-    imp = it["impact"]
-    assert (imp["with"], imp["without"]) == (5, 6)
-    assert imp["correctionWith"] == 0.0 and imp["correctionWithout"] == 20.0
-    assert imp["verdict"] == "fewer corrections"
-    # Under five sessions on a side there is nothing to compare.
-    few = setup_inventory.report(home, uses[:2], now, files=files[:2] + files[5:])["items"]
-    assert next(i for i in few if i["name"] == "tdd")["impact"]["verdict"] == "too few"
-    # A session with fewer than three messages from you says nothing about steering.
-    assert setup_inventory.sessions([{"session": "x", "sig": [[t, "msg", "a"]], "use": []}], 0) == {}
-
-
-def test_failed_tool_calls_are_a_signal():
-    from agentplay import usage
-
-    line = {"type": "user", "timestamp": "2026-10-26T10:00:00Z", "uuid": "u1", "message": {"content": [
-        {"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": "SECRET OUTPUT"}]}}
-    out, _ = usage._signal_line(json.dumps(line).encode(), True)
-    assert [e[1:] for e in out] == [["err", "t1"]]
+    home.mkdir()
+    m = lambda kind, name, calls: {"kind": kind, "name": name, "calls": calls, "failed": 0, "tokens": 0,  # noqa: E731
+                                   "sessions": 1, "yours": 1, "recent": [], "advice": {"kind": "fine", "text": "x"}}
+    rep = setup_inventory.report(home, [], datetime(2026, 10, 27, tzinfo=UTC), measured={
+        "items": [m("mcp", "claude_ai_Slack", 9), m("agent", "Explore", 4)], "sessions": {"yours": 1}})
+    by = {i["name"]: i for i in rep["items"]}
+    assert by["Slack"]["source"] == "claude.ai connector" and by["Slack"]["uses"] == 9
+    assert by["Explore"]["source"] == "built in" and by["Explore"]["verdict"] == "used"
+    assert rep["sessions"] == {"yours": 1}
 
 
 def test_coach_keeps_only_checked_suggestions():

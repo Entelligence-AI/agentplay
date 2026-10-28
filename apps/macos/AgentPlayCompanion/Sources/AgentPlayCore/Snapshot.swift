@@ -448,25 +448,57 @@ public struct SetupReport: Codable, Sendable, Equatable {
         public var uses: Int
         public var lastUsed: String?
         public var verdict: String     // used, rare, unused, runs
-        /// Sessions that used it against sessions that didn't, when it was used at all.
-        public var impact: Impact?
+        /// How it performed, from the session maps: calls, failures, context, linked sessions, a next step.
+        public var measured: Measured?
         public var id: String { "\(kind)|\(name)|\(detail ?? "")" }
     }
-    public struct Impact: Codable, Sendable, Equatable {
-        public var with: Int
-        public var without: Int
-        public var correctionWith: Double?
-        public var correctionWithout: Double?
-        public var errorWith: Double?
-        public var errorWithout: Double?
-        public var verdict: String     // fewer corrections, more corrections, fewer failed calls, more failed calls,
-                                       // no clear difference, too few
-        public var isClear: Bool { verdict != "too few" && verdict != "no clear difference" }
-        public var isGood: Bool { verdict.hasPrefix("fewer") }
+    public struct Measured: Codable, Sendable, Equatable {
+        public struct Recent: Codable, Sendable, Equatable, Identifiable {
+            public var sessionId: String
+            public var startedAt: String?
+            public var repo: String?
+            public var seq: Int?
+            public var calls: Int
+            public var failed: Int
+            public var id: String { sessionId }
+        }
+        public struct Compare: Codable, Sendable, Equatable {
+            public var with: Int
+            public var without: Int
+            public var errorRateWith: Double?
+            public var errorRateWithout: Double?
+            public var compactionsWith: Double?
+            public var compactionsWithout: Double?
+            public var costWith: Double?
+            public var costWithout: Double?
+            public var verdict: String   // fewer/more failed calls, fewer/more compactions, no clear difference, too few
+        }
+        public struct Advice: Codable, Sendable, Equatable {
+            public var kind: String      // failing, heavy, helps, watch, fine
+            public var text: String
+        }
+        public var calls: Int
+        public var failed: Int
+        public var tokens: Int
+        public var ms: Int
+        public var sessions: Int
+        public var yours: Int
+        public var last: String?
+        public var errClasses: [String: Int]?
+        public var recent: [Recent]
+        public var compare: Compare?
+        public var advice: Advice
+    }
+    /// Your sessions (two or more messages from you) and one-prompt runs (scripts, bots, `claude -p`).
+    public struct Split: Codable, Sendable, Equatable {
+        public var yours: Int
+        public var automated: Int
+        public var yoursCostUsd: Double
+        public var automatedCostUsd: Double
     }
     public var days: Int
     public var counts: [String: Int]
-    public var sessions: Int?
+    public var sessions: Split?
     public var unused: Int
     public var items: [Item]
 }

@@ -558,13 +558,33 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         case .setupItem(let it):
             let i = item(it.name) { [model] in model.showInsights(.setup) }
-            var bits = [SetupCard.kindName(it.kind), "\(it.uses)×"]
-            if let imp = it.impact, imp.isClear { bits.append(imp.verdict) }
-            setSubtitle(bits.joined(separator: " · "), on: i)
-            i.image = symbol(SetupCard.symbol(it.kind))
+            setSubtitle(ImpactCard.subtitle(it), on: i)
+            i.image = ImpactCard.flagImage(it) ?? symbol(SetupCard.symbol(it.kind))
             let m = NSMenu()
             m.autoenablesItems = false
-            m.addItem(hosted(ImpactCard(item: it, sessions: model.snapshot?.usage?.setup?.sessions)))
+            m.addItem(hosted(ImpactCard(item: it)))
+            if let recent = it.measured?.recent, !recent.isEmpty {
+                m.addItem(.separator())
+                m.addItem(.sectionHeader(title: "Your Latest Sessions with It"))
+                for r in recent {
+                    let uuid = r.sessionId.split(separator: ":").last.map(String.init) ?? r.sessionId
+                    let ri = item([r.repo, r.startedAt.flatMap(SnapshotDecoder.parseISO).map { Format.relative($0, now: now) }]
+                                    .compactMap { $0 }.joined(separator: " · ")) { [model] in
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString("claude --resume \(uuid)", forType: .string)
+                        model.toast = "Copied claude --resume. Paste it in a terminal in that project."
+                    }
+                    setSubtitle("\(r.calls) call\(r.calls == 1 ? "" : "s")" + (r.failed > 0 ? ", \(r.failed) failed" : "") + " · click to copy resume", on: ri)
+                    ri.image = symbol("arrow.uturn.backward.circle")
+                    m.addItem(ri)
+                }
+            }
+            if it.source == "claude.ai connector" {
+                m.addItem(.separator())
+                let c = item("Manage Connectors on claude.ai") { NSWorkspace.shared.open(URL(string: "https://claude.ai/settings/connectors")!) }
+                c.image = symbol("safari")
+                m.addItem(c)
+            }
             m.addItem(.separator())
             m.addItem(item("Open in Insights…") { [model] in model.showInsights(.setup) })
             i.submenu = m
@@ -587,12 +607,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             i.submenu = m
             menu.addItem(i)
 
-        case .hook(let it):
-            let i = NSMenuItem(title: it.name, action: nil, keyEquivalent: "")
-            i.isEnabled = false
-            if let d = it.detail { setSubtitle(d, on: i) }
-            i.image = symbol("bolt.horizontal")
-            menu.addItem(i)
+        case .split(let sp):
+            menu.addItem(hosted(SplitCard(split: sp)))
+
+        case .hooks(let hooks):
+            menu.addItem(hosted(HooksCard(hooks: hooks)))
 
         case .openInsights(let section, let title):
             let i = item(title) { [model] in model.showInsights(section) }
@@ -1112,11 +1131,11 @@ struct TabStrip: View {
                     if t == .improve, improveCount > 0 {
                         Text("\(improveCount)").font(.caption2.weight(.bold).monospacedDigit())
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Capsule().fill(Color(nsColor: .controlAccentColor)))
-                            .foregroundStyle(Color.white)
+                            .background(Capsule().fill(on ? Color.white : Color(nsColor: .controlAccentColor)))
+                            .foregroundStyle(on ? Color(nsColor: .controlAccentColor) : Color.white)
                     }
                 }
-                .foregroundStyle(on ? Ink.primary : Ink.secondary)
+                .foregroundStyle(on ? Color.white : Ink.primary)
                 .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
                 .background { if on { Knob().matchedGeometryEffect(id: "knob", in: ns) } }
                 .contentShape(Rectangle())
@@ -1132,16 +1151,11 @@ struct TabStrip: View {
         .frame(minWidth: Menu.width, maxWidth: .infinity)
     }
 
-    /// The selected tab: a raised capsule, Liquid Glass where the system has it.
+    /// The selected tab: the accent colour, white text on it, as a selected sidebar row or button is.
     struct Knob: View {
         var body: some View {
-            if #available(macOS 26.0, *) {
-                Capsule().fill(Ink.knob)
-                    .glassEffect(.regular.interactive(), in: .capsule)
-                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-            } else {
-                Capsule().fill(Ink.knob).shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-            }
+            Capsule().fill(Color(nsColor: .controlAccentColor))
+                .shadow(color: .black.opacity(0.22), radius: 2, y: 1)
         }
     }
 }
@@ -1184,62 +1198,173 @@ struct SuggestionCard: View {
     }
 }
 
-/// How sessions went with a skill, subagent or MCP server against sessions without it.
+/// How one MCP server, skill or subagent performed, measured from every session's map: its own calls, what
+/// they cost in context and time, the one thing to do about it, and how your sessions with it compare.
 struct ImpactCard: View {
     var item: SetupReport.Item
-    var sessions: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.name).font(.headline).foregroundStyle(Ink.primary)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(item.name).font(.headline).foregroundStyle(Ink.primary)
+                    Spacer()
+                    Text(Self.sourceLine(item)).font(.subheadline).foregroundStyle(Ink.secondary)
+                }
                 Text(usedLine).font(.subheadline).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            if let imp = item.impact {
-                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                    GridRow {
-                        Text("").gridColumnAlignment(.leading)
-                        Text("With").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary).gridColumnAlignment(.trailing)
-                        Text("Without").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary).gridColumnAlignment(.trailing)
-                    }
-                    row("Corrections", imp.correctionWith, imp.correctionWithout)
-                    row("Failed calls", imp.errorWith, imp.errorWithout)
-                    GridRow {
-                        Text("Sessions").font(.subheadline).foregroundStyle(Ink.secondary)
-                        Text("\(imp.with)").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
-                        Text("\(imp.without)").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
-                    }
+            if let m = item.measured {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+                    row("Failed", m.failed == 0 ? "none" : "\(m.failed) of \(m.calls) (\(Format.percent(100 * Double(m.failed) / Double(max(1, m.calls)))))",
+                        warn: m.advice.kind == "failing")
+                    row("Into context", m.tokens == 0 ? "nothing" : "\(Format.tokens(m.tokens)) tokens · \(Format.tokens(m.tokens / max(1, m.sessions))) a session",
+                        warn: m.advice.kind == "heavy")
+                    if m.ms >= 60_000 { row("Waiting on it", Format.duration(Double(m.ms) / 1000), warn: false) }
                 }
-                Text(verdict(imp)).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: Self.adviceSymbol(m.advice.kind)).font(.subheadline)
+                        .foregroundStyle(Self.adviceColor(m.advice.kind))
+                    Text(m.advice.text).font(.subheadline.weight(.medium)).foregroundStyle(Ink.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+                if let c = m.compare { compare(c) }
             }
         }
         .padding(.horizontal, Menu.inset)
-        .padding(.vertical, 9)
-        .frame(width: Menu.width, alignment: .leading)
+        .padding(.vertical, 10)
+        .frame(width: Menu.width + 40, alignment: .leading)
     }
 
     var usedLine: String {
-        let kind = SetupCard.kindName(item.kind)
-        var s = "\(kind.prefix(1).uppercased() + kind.dropFirst()) · used \(item.uses)×"
-        if let n = item.impact?.with { s += " in \(n) session\(n == 1 ? "" : "s")" }
-        if let at = item.lastUsed.flatMap(SnapshotDecoder.parseISO) { s += ", last \(Format.relative(at, now: Date()))" }
+        guard let m = item.measured else { return "Used \(item.uses)× in the last 30 days" }
+        var s = "\(m.calls) call\(m.calls == 1 ? "" : "s") in \(m.sessions) session\(m.sessions == 1 ? "" : "s")"
+        if m.yours != m.sessions { s += " (\(m.yours) yours, \(m.sessions - m.yours) automated)" }
+        if let at = m.last.flatMap(SnapshotDecoder.parseISO) { s += " · last \(Format.relative(at, now: Date()))" }
         return s
     }
 
-    @ViewBuilder func row(_ label: String, _ with: Double?, _ without: Double?) -> some View {
+    @ViewBuilder func row(_ label: String, _ value: String, warn: Bool) -> some View {
         GridRow {
-            Text(label).font(.subheadline).foregroundStyle(Ink.primary)
-            Text(with.map { Format.percent($0) } ?? "–").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.primary)
-            Text(without.map { Format.percent($0) } ?? "–").font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary)
+            Text(label).font(.subheadline).foregroundStyle(Ink.secondary)
+            Text(value).font(.subheadline.monospacedDigit().weight(warn ? .semibold : .regular))
+                .foregroundStyle(warn ? Color(nsColor: .systemOrange) : Ink.primary)
         }
     }
 
-    func verdict(_ imp: SetupReport.Impact) -> String {
-        switch imp.verdict {
-        case "too few": "Too few sessions to tell yet. It needs 5 with it and 5 without."
-        case "no clear difference": "No clear difference yet."
-        default: "Sessions with it had \(imp.verdict). That goes with it; it doesn't prove it caused it."
+    @ViewBuilder func compare(_ c: SetupReport.Measured.Compare) -> some View {
+        if c.verdict == "too few" {
+            Text("Compared with your other sessions: \(c.with) of yours used it, too few to compare (needs 5).")
+                .font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Your \(c.with) sessions with it vs \(c.without) without").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
+                    pair("Failed calls", c.errorRateWith.map { Format.percent($0) }, c.errorRateWithout.map { Format.percent($0) })
+                    pair("Compactions", c.compactionsWith.map { String(format: "%.1f", $0) }, c.compactionsWithout.map { String(format: "%.1f", $0) })
+                    pair("Cost", c.costWith.map { Format.money($0) }, c.costWithout.map { Format.money($0) })
+                }
+                Text("Goes with it; doesn't prove it caused it.").font(.caption).foregroundStyle(Ink.secondary)
+            }
+            .padding(.top, 2)
         }
+    }
+
+    @ViewBuilder func pair(_ label: String, _ a: String?, _ b: String?) -> some View {
+        GridRow {
+            Text(label).font(.caption).foregroundStyle(Ink.secondary)
+            Text(a ?? "–").font(.caption.monospacedDigit()).foregroundStyle(Ink.primary).gridColumnAlignment(.trailing)
+            Text("vs").font(.caption).foregroundStyle(Ink.secondary)
+            Text(b ?? "–").font(.caption.monospacedDigit()).foregroundStyle(Ink.primary).gridColumnAlignment(.trailing)
+        }
+    }
+
+    static func sourceLine(_ it: SetupReport.Item) -> String {
+        let kind = SetupCard.kindName(it.kind)
+        let k = kind.prefix(1).uppercased() + kind.dropFirst()
+        return it.source == "you" ? k : "\(k), \(it.source)"
+    }
+
+    /// Under the row's name: what it is, how much it ran, and the one flag worth seeing.
+    static func subtitle(_ it: SetupReport.Item) -> String {
+        var bits = [it.kind == "mcp" ? "MCP" : SetupCard.kindName(it.kind), "\(Format.count(it.uses)) call\(it.uses == 1 ? "" : "s")"]
+        if let m = it.measured {
+            switch m.advice.kind {
+            case "failing": bits.append("\(m.failed) failed")
+            case "heavy": bits.append("\(Format.tokens(m.tokens / max(1, m.sessions)))/session")
+            case "helps": bits.append("helps")
+            default: break
+            }
+        }
+        return bits.joined(separator: " · ")
+    }
+
+    static func adviceSymbol(_ k: String) -> String {
+        ["failing": "xmark.octagon.fill", "heavy": "exclamationmark.triangle.fill", "helps": "checkmark.seal.fill",
+         "watch": "eye.fill"][k] ?? "checkmark.circle"
+    }
+
+    static func adviceColor(_ k: String) -> Color {
+        switch k {
+        case "failing": Color(nsColor: .systemRed)
+        case "heavy", "watch": Color(nsColor: .systemOrange)
+        case "helps": Color(nsColor: .systemGreen)
+        default: Ink.secondary
+        }
+    }
+
+    /// Rows that need a look get the flag's own symbol, in colour, instead of the kind's.
+    static func flagImage(_ it: SetupReport.Item) -> NSImage? {
+        guard let k = it.measured?.advice.kind, ["failing", "heavy", "helps"].contains(k) else { return nil }
+        let color: NSColor = k == "failing" ? .systemRed : k == "heavy" ? .systemOrange : .systemGreen
+        return NSImage(systemSymbolName: adviceSymbol(k), accessibilityDescription: k)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
+    }
+}
+
+/// Whose sessions these are: yours, with two or more messages from you, and one-prompt runs from scripts.
+struct SplitCard: View {
+    var split: SetupReport.Split
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            row("Yours", split.yours, split.yoursCostUsd)
+            row("Automated", split.automated, split.automatedCostUsd)
+            Text("Automated: a single prompt from a script, a bot or claude -p.")
+                .font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 6)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+
+    func row(_ label: String, _ n: Int, _ cost: Double) -> some View {
+        HStack {
+            Text(label).font(.subheadline).foregroundStyle(Ink.primary)
+            Spacer()
+            Text("\(Format.count(n)) session\(n == 1 ? "" : "s") · \(Format.money(cost))")
+                .font(.subheadline.monospacedDigit()).foregroundStyle(Ink.primary)
+        }
+    }
+}
+
+/// Each hook: the event it runs on and its script.
+struct HooksCard: View {
+    var hooks: [SetupReport.Item]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(hooks) { h in
+                HStack {
+                    Text(h.name).font(.subheadline).foregroundStyle(Ink.primary)
+                    Spacer()
+                    Text(h.detail ?? "").font(.subheadline.monospaced()).foregroundStyle(Ink.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 6)
+        .frame(width: Menu.width, alignment: .leading)
     }
 }
 
