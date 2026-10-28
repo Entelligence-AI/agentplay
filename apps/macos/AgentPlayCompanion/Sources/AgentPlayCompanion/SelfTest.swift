@@ -380,3 +380,52 @@ struct BusyPage: View {
         .frame(width: 840, height: 840)
     }
 }
+
+extension Renderer {
+    /// `--export-vectors <dir>`: every SF Symbol the app shows as a one-page PDF (for SVG conversion), and each Pip
+    /// pose as a sharp 12x PNG, for rebuilding the design in Figma.
+    @MainActor static func exportVectors(to path: String) {
+        _ = NSApplication.shared
+        let dir = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let symbols = ["person.2", "wrench.and.screwdriver", "xmark.octagon", "xmark.octagon.fill", "gauge.with.dots.needle.67percent",
+                       "gauge.with.dots.needle.33percent", "rectangle.compress.vertical", "hand.thumbsup", "sparkle", "sparkles",
+                       "lightbulb", "trash", "heart.text.square", "steeringwheel", "chart.bar.xaxis", "macwindow",
+                       "puzzlepiece.extension", "folder", "safari", "doc.on.doc", "arrow.uturn.backward.circle",
+                       "checkmark.circle.fill", "checkmark.circle", "exclamationmark.triangle.fill", "checkmark.seal.fill",
+                       "checkmark.seal", "bolt.horizontal", "arrow.up.forward.app", "play.circle", "command", "shippingbox",
+                       "eye.fill", "chevron.right", "circle.fill", "arrow.triangle.2.circlepath", "gearshape", "bell",
+                       "hand.raised", "square.stack.3d.up", "shippingbox", "lock.shield", "bell.badge"]
+        for name in Set(symbols) {
+            guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil),
+                  let img = base.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)) else {
+                print("missing \(name)"); continue
+            }
+            // A 4x black-on-clear mask: Figma tints it with a colour fill, so it follows Light and Dark.
+            let scale: CGFloat = 4
+            let w = Int(ceil(img.size.width * scale)), h = Int(ceil(img.size.height * scale))
+            guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4,
+                                             hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { continue }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            img.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
+            NSGraphicsContext.restoreGraphicsState()
+            try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("sym-\(name).png"))
+            print("symbol \(name) \(img.size.width)x\(img.size.height)")
+        }
+        for pose in PipPose.allCases {
+            let img = PipIcon.image(pose, session: 0.34, weekly: 0.58)
+            let scale: CGFloat = 12
+            let w = Int(img.size.width * scale), h = Int(img.size.height * scale)
+            guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4,
+                                             hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { continue }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            NSGraphicsContext.current?.imageInterpolation = .none
+            img.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
+            NSGraphicsContext.restoreGraphicsState()
+            try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("pip-\(pose.rawValue).png"))
+        }
+        print("exported to \(dir.path)")
+    }
+}
