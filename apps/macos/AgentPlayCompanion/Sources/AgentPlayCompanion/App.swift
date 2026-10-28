@@ -196,6 +196,38 @@ enum CompanionMain {
             sem.wait()
             exit(code)
         }
+        if let dir = LaunchOptions.isDev ? LaunchOptions.value("--banner-check") : nil {
+            MainActor.assumeIsolated { Renderer.bannerCheck(to: dir) }
+            exit(0)
+        }
+        if LaunchOptions.isDev, LaunchOptions.args.contains("--notify-check") {
+            // Dev only: ask macOS for notification permission and print exactly what it answers.
+            let sem = DispatchSemaphore(value: 0)
+            Task.detached {
+                let c = UNUserNotificationCenter.current()
+                do {
+                    let ok = try await c.requestAuthorization(options: [.alert, .sound])
+                    print("notify-check: granted=\(ok)")
+                } catch {
+                    print("notify-check: error \((error as NSError).domain) \((error as NSError).code): \(error.localizedDescription)")
+                }
+                let st = await c.notificationSettings()
+                print("notify-check: status=\(st.authorizationStatus.rawValue) alert=\(st.alertSetting.rawValue)")
+                if LaunchOptions.args.contains("--send") {
+                    let content = UNMutableNotificationContent()
+                    content.title = "Claude Code needs you"
+                    content.body = "docs-site is waiting for your answer."
+                    content.sound = .default
+                    do {
+                        try await c.add(UNNotificationRequest(identifier: "check-\(UUID().uuidString)", content: content, trigger: nil))
+                        print("notify-check: posted")
+                    } catch { print("notify-check: post failed \(error.localizedDescription)") }
+                }
+                sem.signal()
+            }
+            while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            exit(0)
+        }
         if let dir = LaunchOptions.isDev ? LaunchOptions.value("--export-vectors") : nil {
             MainActor.assumeIsolated { Renderer.exportVectors(to: dir) }
             exit(0)

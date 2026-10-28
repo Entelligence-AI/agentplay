@@ -28,6 +28,12 @@ public struct CompanionPrefs: Codable, Sendable, Equatable {
     public var rememberClaudeAccounts: Bool? = nil
     /// Ask Claude (Haiku, through the person's own Claude Code) for suggestions once a day. Off unless turned on.
     public var claudeSuggestions: Bool? = nil
+    /// How alerts appear: "pip" (AgentPlay's animated banner), "system" (macOS notifications) or "both".
+    public var alertStyle: String? = nil
+    public var alertsAs: String { alertStyle ?? "pip" }
+    /// Pip walks along a strip under the menu bar while agents work. Off unless turned on.
+    public var pipWalker: Bool? = nil
+    public var walksWhileWorking: Bool { pipWalker ?? false }
     public var asksClaudeForSuggestions: Bool { claudeSuggestions ?? false }
     public var showsPipIsland: Bool { pipIslandEnabled ?? true }
 

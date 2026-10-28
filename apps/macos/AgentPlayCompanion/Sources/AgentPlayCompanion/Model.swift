@@ -678,7 +678,10 @@ final class CompanionModel: ObservableObject {
         let run = runs.first { $0.sessionId == l.sessionId }
         guard let note = Redacted.finished(l, run: run, busySince: busySince, includeRepo: a.includeRepoInNotifications, now: now)
         else { return }
-        Notifier.postFinished(note, session: l, seq: run?.lastEvent?.seq)
+        let seq = run?.lastEvent?.seq
+        alert(title: note.title, body: note.body, pose: .cheer,
+              action: { [weak self] in self?.goToSession(sessionId: l.sessionId, pid: l.pid, seq: seq) },
+              system: { Notifier.postFinished(note, session: l, seq: seq) })
     }
 
     private func notifyNeedsYou(_ sessions: [LiveSession]) {
@@ -691,7 +694,11 @@ final class CompanionModel: ObservableObject {
         for l in sessions where !a.mutedSessions.contains(l.sessionId) {
             // Already looking at it: its terminal is the frontmost app.
             if let pid = l.pid, let app = TerminalFocus.app(for: pid), app.isActive { continue }
-            Notifier.postNeedsYou(l, includeRepo: a.includeRepoInNotifications)
+            let note = Redacted.needsYou(l, includeRepo: a.includeRepoInNotifications)
+            let include = a.includeRepoInNotifications
+            alert(title: note.title, body: note.body, pose: .wave,
+                  action: { [weak self] in self?.goToSession(sessionId: l.sessionId, pid: l.pid, seq: nil) },
+                  system: { Notifier.postNeedsYou(l, includeRepo: include) })
         }
     }
 
@@ -1120,7 +1127,33 @@ final class CompanionModel: ObservableObject {
         let ctx = AlertContext(now: Date(), timeZone: .current, isPresenting: Self.isPresenting())
         let (send, history) = AlertEngine.evaluate(s, settings: prefs.alerts, history: prefs.history, ctx: ctx)
         prefs.history = history
-        for a in send { Notifier.post(a) }
+        for a in send {
+            let pose: PipPose = switch a.preset { case .allowanceLow: .sweat; case .repeatedFailure, .unresolvedEnd: .oops; case .finished: .cheer; default: .wave }
+            alert(title: a.note.title, body: a.note.body, pose: pose,
+                  action: { [weak self] in self?.handleNotificationTap(sessionId: a.sessionId, seq: a.seq, action: "", patternKey: nil) },
+                  system: { Notifier.post(a) })
+        }
+    }
+
+    /// Every alert goes through here: AgentPlay's animated Pip banner, a macOS notification, or both, as set
+    /// in Settings → Notifications. macOS needs permission; the banner doesn't.
+    func alert(title: String, body: String, pose: PipPose, action: @escaping () -> Void, system: @escaping () -> Void) {
+        let style = prefs.alertsAs
+        if style != "system" { PipBanner.show(.init(title: title, body: body, pose: pose, action: action)) }
+        if style != "pip" {
+            Task {
+                if notificationStatus == .notDetermined { _ = await Notifier.requestAuthorization(); await refreshNotificationStatus() }
+                if notificationStatus == .authorized || notificationStatus == .provisional { system() }
+            }
+        }
+    }
+
+    /// A sample of one alert, as it will really appear (asking macOS first when notifications are part of it).
+    func sendSample(title: String, body: String, pose: PipPose) {
+        alert(title: title, body: body, pose: pose, action: {}, system: { Notifier.postSample(title: title, body: body, pose: pose) })
+        if prefs.alertsAs != "pip", notificationStatus == .denied {
+            toast = "macOS has notifications off for AgentPlay. Turn them on in System Settings → Notifications."
+        }
     }
 
     /// A mirrored display usually means a projector or a shared screen.

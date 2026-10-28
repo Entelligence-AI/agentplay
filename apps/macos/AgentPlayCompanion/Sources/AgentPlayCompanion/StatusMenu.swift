@@ -73,8 +73,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var lastTick = 0
     private var typeFrame = 0
 
+    private var walkerKey = ""
+
+    /// The walking Pip strip, when turned on: shown while any agent works, gone when none does.
+    private func updateWalker() {
+        guard nowOverride == nil else { return }
+        let busy = model.prefs.walksWhileWorking ? (model.snapshot?.live ?? []).filter { $0.status == .busy } : []
+        let line = busy.first.map { "\($0.name ?? $0.project ?? "An agent") is working" }
+        let key = "\(busy.count)|\(line ?? "")"
+        guard key != walkerKey else { return }
+        walkerKey = key
+        PipWalker.update(working: busy.count, line: line, under: statusItem.button)
+    }
+
     func updateIcon() {
         guard let button = statusItem.button else { return }
+        updateWalker()
         let bars = model.statusBars
         let pose = model.pipPose
         if model.prefs.showsPip {

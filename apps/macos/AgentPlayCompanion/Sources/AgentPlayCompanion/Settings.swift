@@ -271,7 +271,7 @@ struct NotificationsPane: View {
     var allowed: Bool { model.notificationStatus == .authorized || model.notificationStatus == .provisional }
 
     var body: some View {
-        if !allowed {
+        if !allowed && model.prefs.alertsAs != "pip" {
             Section {
                 HStack {
                     Label(model.notificationStatus == .denied ? "Notifications are off for AgentPlay" : "AgentPlay can't notify you yet",
@@ -282,6 +282,17 @@ struct NotificationsPane: View {
                 }
             }
         }
+        Section("How alerts look") {
+            Picker("Show alerts as", selection: Binding(get: { model.prefs.alertsAs }, set: { model.prefs.alertStyle = $0 })) {
+                Text("Pip on screen").tag("pip")
+                Text("macOS notifications").tag("system")
+                Text("Both").tag("both")
+            }
+            Toggle(isOn: Binding(get: { model.prefs.walksWhileWorking }, set: { model.prefs.pipWalker = $0 })) {
+                Text("Pip walks along while agents work")
+                Text("A small strip under the menu bar, so you can see from across the room.")
+            }
+        }
         Section("Tell me when") {
             ForEach(OnboardingView.choices) { c in
                 HStack {
@@ -290,8 +301,8 @@ struct NotificationsPane: View {
                         Text("\u{201C}\(c.sampleTitle)\u{201D}").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Send Sample") { Notifier.postSample(title: c.sampleTitle, body: c.sampleBody, pose: c.pose) }
-                        .buttonStyle(.link).font(.caption).disabled(!allowed)
+                    Button("Send Sample") { model.sendSample(title: c.sampleTitle, body: c.sampleBody, pose: c.pose) }
+                        .buttonStyle(.link).font(.caption)
                     Toggle("", isOn: Binding(get: { model.prefs.alerts.enabled.contains(c.preset) }, set: { model.setPreset(c.preset, on: $0) }))
                         .labelsHidden().toggleStyle(.switch)
                 }

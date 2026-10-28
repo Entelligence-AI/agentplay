@@ -376,13 +376,7 @@ struct OnboardingView: View {
                         Text("\u{201C}\(c.sampleTitle): \(c.sampleBody)\u{201D}").font(.system(size: 12)).foregroundStyle(.primary.opacity(0.5)).lineLimit(1)
                     }
                     Spacer()
-                    Button("Send a sample") {
-                        if model.notificationStatus == .authorized || model.notificationStatus == .provisional {
-                            Notifier.postSample(title: c.sampleTitle, body: c.sampleBody, pose: c.pose)
-                        } else {
-                            model.requestNotifications()
-                        }
-                    }
+                    Button("Send a sample") { model.sendSample(title: c.sampleTitle, body: c.sampleBody, pose: c.pose) }
                     .font(.caption)
                 }
                 .padding(.vertical, 4)

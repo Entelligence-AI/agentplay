@@ -50,6 +50,9 @@ What the popover does show is what the viewer shows from the same maps: agent, r
 
 ## Notifications
 
+Alerts show as Pip on screen by default: AgentPlay's own banner, drawn by the app in the top-right corner, with the same title and body a notification would carry and nothing more. Nothing is sent anywhere and nothing is stored; macOS permission isn't needed. "macOS notifications" or "Both" in Settings → Notifications also posts them through Notification Center, which asks permission the first time. The optional walking Pip strip shows only how many agents are working and a session's name.
+
+
 Off by default, except "Session needs you", which onboarding offers switched on once macOS has allowed notifications and applies only when the user presses Start with it still on. macOS is asked for permission from the onboarding button or when the user switches on an alert. A notification carries the agent, the command family and a count, for example "pnpm test failed 3 times in a row." "Session needs you" says "Claude Code needs you" and is skipped when that session's terminal is already the frontmost app. "Session finished" carries how long it worked, tool-call and error counts and the last step's tool or command name, from the map. Repo names, in any of them, only if the user turns that on (`needsYouNamesTheProjectOnlyWhenAllowed`, `finishedNoteNeedsRealWorkAndSaysHowItWent`). The payload holds the session id and event `seq` so a click can open the moment; nothing else. History records alert ids and times only; Settings → Notifications → Forget alert history clears it, and the watermark moves forward so nothing old fires afterwards.
 
 ## What it writes

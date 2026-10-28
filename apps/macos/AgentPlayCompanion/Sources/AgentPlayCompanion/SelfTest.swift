@@ -431,3 +431,51 @@ extension Renderer {
         print("exported to \(dir.path)")
     }
 }
+
+extension Renderer {
+    /// `--banner-check <dir>`: Pip's banner (each pose) and the walking strip, on the real screen over a bright page,
+    /// captured as composited.
+    @MainActor static func bannerCheck(to path: String) {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.accessory)
+        let dir = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let screen = NSScreen.main!
+        let v = screen.visibleFrame
+        let back = NSWindow(contentRect: NSRect(x: v.maxX - 520, y: v.maxY - 360, width: 520, height: 360), styleMask: .borderless, backing: .buffered, defer: false)
+        back.level = .floating
+        back.contentView = NSHostingView(rootView: BusyPage(bright: true))
+        back.orderFrontRegardless()
+        func shoot(_ name: String, _ r: NSRect) {
+            let top = NSScreen.screens[0].frame.maxY
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            p.arguments = ["-x", "-R", "\(Int(r.minX)),\(Int(top - r.maxY)),\(Int(r.width)),\(Int(r.height))", dir.appendingPathComponent(name + ".png").path]
+            try? p.run(); p.waitUntilExit()
+        }
+        for (pose, title, body) in [(PipPose.wave, "Claude Code needs you", "docs-site is waiting for your answer."),
+                                    (.cheer, "Done in 14 min", "212 tool calls, 2 errors. Last step: pnpm test."),
+                                    (.oops, "pnpm test failed 3 times", "Three in a row in one run, no pass between."),
+                                    (.sweat, "Weekly limit: out in about 5 hours", "97% used; resets Thursday 6:30 AM.")] {
+            PipBanner.show(.init(title: title, body: body, pose: pose, action: {}))
+            RunLoop.main.run(until: Date().addingTimeInterval(1.2))
+            let r = NSRect(x: v.maxX - PipBanner.size.width - 30, y: v.maxY - PipBanner.size.height - 26, width: PipBanner.size.width + 36, height: PipBanner.size.height + 36)
+            shoot("banner-\(pose.rawValue)", r)
+            PipBanner.dismiss()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        }
+        let anchor = NSRect(x: v.maxX - 300, y: v.maxY, width: 20, height: 1)
+        PipWalker.update(working: 2, line: nil, under: nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        if let w = NSApp.windows.first(where: { $0 is NSPanel && $0.isVisible && $0.frame.width == PipWalker.size.width }) {
+            w.setFrameOrigin(NSPoint(x: anchor.minX, y: v.maxY - PipWalker.size.height - 40))
+            for i in 0..<3 {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.9))
+                shoot("walker-\(i)", w.frame.insetBy(dx: -14, dy: -14))
+            }
+        }
+        PipWalker.update(working: 0, line: nil, under: nil)
+        back.orderOut(nil)
+        print("banner captures in \(dir.path)")
+    }
+}
