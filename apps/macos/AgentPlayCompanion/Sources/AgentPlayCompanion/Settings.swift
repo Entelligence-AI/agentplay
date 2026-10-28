@@ -58,7 +58,7 @@ enum SettingsWindow {
         tabs.tabStyle = .toolbar
         tabs.transitionOptions = []
         for pane in SettingsView.Pane.allCases {
-            let hc = NSHostingController(rootView: AnyView(SettingsPaneView(pane: pane).environmentObject(model)))
+            let hc = NSHostingController(rootView: AnyView(SettingsPaneView(pane: pane).environmentObject(model).tint(Brand.accent)))
             hc.title = pane.rawValue
             hc.sizingOptions = []
             hc.preferredContentSize = size

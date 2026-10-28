@@ -360,6 +360,8 @@ public struct UsageReport: Codable, Sendable, Equatable {
     public var signals: Signals?
     /// The person's Claude Code setup and how much of it is used.
     public var setup: SetupReport?
+    /// What the session index says about how prompts land: comparisons and totals with their numbers.
+    public var prompting: Prompting?
 }
 
 public enum AlertRuleKind: String, TolerantEnum, Sendable, CaseIterable {
@@ -439,6 +441,18 @@ public struct ProviderLimitWindow: Codable, Sendable, Equatable, Identifiable {
 
 /// How often the user steers: corrections, interruptions and frustration per message they type, refused tool
 /// calls per 100 calls. From Claude Code's transcripts; counts only.
+public struct Prompting: Codable, Sendable, Equatable {
+    public struct Finding: Codable, Sendable, Equatable, Identifiable {
+        public var kind: String
+        public var text: String
+        public var tip: String
+        public var id: String { kind }
+    }
+    public var days: Int
+    public var sessions: Int
+    public var findings: [Finding]
+}
+
 public struct SetupReport: Codable, Sendable, Equatable {
     public struct Item: Codable, Sendable, Equatable, Identifiable {
         public var kind: String        // skill, agent, command, mcp, hook
@@ -450,6 +464,10 @@ public struct SetupReport: Codable, Sendable, Equatable {
         public var verdict: String     // used, rare, unused, runs
         /// How it performed, from the session maps: calls, failures, context, linked sessions, a next step.
         public var measured: Measured?
+        /// What it's for, in its author's words (or a plain line for built-ins and connectors).
+        public var what: String?
+        /// Hooks: failures at the moment it runs, from the session index.
+        public var failed: Int?
         /// Hooks that run it, and the subagents it drives: how a skill is in use beyond direct calls.
         public var runBy: [String]?
         public var worksWith: [String]?
@@ -490,6 +508,11 @@ public struct SetupReport: Codable, Sendable, Equatable {
         public var errClasses: [String: Int]?
         public var recent: [Recent]
         public var compare: Compare?
+        /// A session that used it, on average, and how many of yours with it changed nothing.
+        public var sessionTokens: Int?
+        public var sessionCost: Double?
+        public var noOutput: Int?
+        public var yourSessionsChecked: Int?
         public var advice: Advice
     }
     /// Your sessions (two or more messages from you) and one-prompt runs (scripts, bots, `claude -p`).

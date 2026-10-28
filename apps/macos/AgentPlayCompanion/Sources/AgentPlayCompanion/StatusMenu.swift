@@ -470,13 +470,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         case .signals(let sig):
             let c = sig.current
-            let i = item("How You Steer") { [model] in model.showInsights(.steering) }
+            let i = item("How Your Prompts Land") { [model] in model.showInsights(.steering) }
             let bits = [c.correctionRate.map { "\(Format.percent($0)) corrected" }, c.frustrationRate.map { "\(Format.percent($0)) frustrated" }].compactMap { $0 }
             setSubtitle(bits.isEmpty ? "\(c.messages) messages you typed" : bits.joined(separator: " · "), on: i)
             i.image = symbol("steeringwheel")
             let m = NSMenu()
             m.autoenablesItems = false
-            m.addItem(hosted(SteeringCard(signals: sig)))
+            m.addItem(hosted(SteeringCard(signals: sig, prompting: model.snapshot?.usage?.prompting), width: SteeringCard.width))
             m.addItem(.separator())
             m.addItem(item("Open in Insights…") { [model] in model.showInsights(.steering) })
             i.submenu = m
@@ -613,13 +613,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             i.submenu = m
             menu.addItem(i)
 
-        case .unused(let kind, let names):
+        case .unused(let kind, let items):
+            let names = items.map(\.name)
             let i = NSMenuItem(title: "\(names.count) \(SetupCard.kindName(kind, plural: names.count != 1))", action: nil, keyEquivalent: "")
             setSubtitle(Format.names(names), on: i)
             i.image = symbol(SetupCard.symbol(kind))
             let m = NSMenu()
             m.autoenablesItems = false
-            m.addItem(hosted(UnusedCard(kind: kind, names: names)))
+            m.addItem(hosted(UnusedCard(kind: kind, items: items), width: UnusedCard.width))
             if let folder = ["skill": "skills", "agent": "agents", "command": "commands"][kind] {
                 m.addItem(.separator())
                 let show = item("Show \(folder.capitalized) Folder") { NSWorkspace.shared.open(Self.claudeFolder(folder)) }
@@ -634,7 +635,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(hosted(SplitCard(split: sp)))
 
         case .hooks(let hooks):
-            menu.addItem(hosted(HooksCard(hooks: hooks)))
+            for h in hooks {
+                let i = NSMenuItem(title: HooksCard.moment(h.name), action: nil, keyEquivalent: "")
+                let failed = h.failed ?? 0
+                setSubtitle((h.detail ?? "a command") + (failed > 0 ? " · failed \(Format.count(failed))× this month" : ""), on: i)
+                i.image = failed > 0 ? NSImage(systemSymbolName: "xmark.octagon.fill", accessibilityDescription: "failing")?
+                    .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemRed])) : symbol("bolt.horizontal")
+                let m = NSMenu()
+                m.autoenablesItems = false
+                m.addItem(hosted(HookCard(hook: h, fixReady: (model.snapshot?.insights?.fixes ?? []).contains { $0.rule == "broken_hook" && ($0.subject ?? "").hasPrefix(h.name.components(separatedBy: ":")[0]) })))
+                i.submenu = m
+                menu.addItem(i)
+            }
 
         case .openInsights(let section, let title):
             let i = item(title) { [model] in model.showInsights(section) }
@@ -759,7 +771,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let color: NSColor
         switch d {
         case .waiting: color = .systemOrange
-        case .working: color = .controlAccentColor
+        case .working: color = Brand.accentNS
         case .idle, .recent, .ended: color = .secondaryLabelColor
         }
         let name = d == .recent || d == .ended ? "circle" : "circle.fill"
@@ -1048,7 +1060,7 @@ struct HealthCard: View {
 
     /// Weak parts stand out: under half their 20 points is orange.
     func tint(_ c: Insights.Component) -> Color {
-        (c.points ?? 0) < 10 ? Color(nsColor: .systemOrange) : Color(nsColor: .controlAccentColor)
+        (c.points ?? 0) < 10 ? Color(nsColor: .systemOrange) : Brand.accent
     }
 }
 
@@ -1056,27 +1068,43 @@ struct HealthCard: View {
 /// a sparkline, then one plain sentence. Pointing at it opens the four rates in full.
 struct SteeringCard: View {
     var signals: Signals
+    var prompting: Prompting?
+    static let width: CGFloat = Menu.width + 40
 
     var body: some View {
         let c = signals.current, p = signals.previous
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Of \(c.messages) messages you typed, last 30 days").font(.subheadline).foregroundStyle(Ink.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("How the \(Format.count(c.messages)) messages you typed in the last 30 days landed, against the 30 before.")
+                .font(.subheadline).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
                 GridRow {
-                    figure("corrected", c.correctionRate, p.correctionRate, \.correctionRate)
-                    figure("frustrated", c.frustrationRate, p.frustrationRate, \.frustrationRate)
+                    figure("had to correct it", c.correctionRate, p.correctionRate, \.correctionRate)
+                    figure("sounded frustrated", c.frustrationRate, p.frustrationRate, \.frustrationRate)
                 }
                 GridRow {
-                    figure("interrupted", c.interruptRate, p.interruptRate, \.interruptRate)
-                    figure("refused", c.refusalRate, p.refusalRate, \.refusalRate)
+                    figure("stopped it mid-step", c.interruptRate, p.interruptRate, \.interruptRate)
+                    figure("of its tool calls refused", c.refusalRate, p.refusalRate, \.refusalRate)
                 }
             }
-            Text(Self.sentence(signals)).font(.subheadline).foregroundStyle(Ink.primary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(Self.sentence(signals)).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+            if let f = prompting?.findings, !f.isEmpty {
+                Divider().padding(.vertical, 2)
+                Text("From your \(prompting?.sessions ?? 0) sessions").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
+                ForEach(f) { x in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(x.text).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+                        HStack(alignment: .top, spacing: 4) {
+                            Image(systemName: "arrow.turn.down.right").font(.caption).foregroundStyle(Brand.accent)
+                            Text(x.tip).font(.subheadline.weight(.medium)).foregroundStyle(Brand.accent).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, Menu.inset)
-        .padding(.vertical, 8)
-        .frame(width: Menu.width, alignment: .leading)
+        .padding(.vertical, 9)
+        .frame(width: Self.width, alignment: .leading)
     }
 
     func figure(_ what: String, _ now: Double?, _ before: Double?, _ key: KeyPath<Signals.Day, Double?>) -> some View {
@@ -1087,38 +1115,63 @@ struct SteeringCard: View {
                         .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(Ink.primary)
                     if let now, let before, abs(now - before) >= 0.5 {
-                        // Lower is better for both: up is orange.
+                        // Lower is better for all four: up is orange.
                         Image(systemName: now > before ? "arrow.up.right" : "arrow.down.right")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(now > before ? Color(nsColor: .systemOrange) : Color(nsColor: .systemGreen))
                     }
                 }
-                Text(what).font(.caption).foregroundStyle(Ink.secondary)
+                Text(what).font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Chart(signals.daily.filter { $0.messages > 0 }) { d in
                 LineMark(x: .value("Day", d.date), y: .value("Rate", d[keyPath: key] ?? 0))
-                    .foregroundStyle(Color(nsColor: .controlAccentColor))
+                    .foregroundStyle(Brand.accent)
                     .interpolationMethod(.monotone)
             }
             .chartXAxis(.hidden).chartYAxis(.hidden)
-            .frame(width: 56, height: 26)
+            .frame(width: 52, height: 26)
             .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Two sentences from the rates: how often a message corrects the agent and what kind of correction it
-    /// mostly is (a result that didn't hold points at verification), else which way frustration went.
+    /// What the rates add up to, in a sentence.
     static func sentence(_ s: Signals) -> String {
-        var parts: [String] = []
         let c = s.current
         if let nw = c.notWorking, c.corrections >= 5, Double(nw) / Double(c.corrections) >= 0.5 {
-            parts.append("Most corrections say it still isn't working: the agent calls done too early.")
-        } else if let r = c.correctionRate, r > 0 {
-            let n = Int((100 / r).rounded())
-            parts.append(n <= 1 ? "Nearly every message corrects the agent." : "1 in \(n) messages corrects the agent.")
+            return "Most of your corrections say it still isn't working: it tells you it's done before it is. Ask it to run the check and show you the result."
         }
-        return parts.isEmpty ? "Counted from what you type; no text is kept." : parts.joined(separator: " ")
+        if let r = c.correctionRate, r > 0 {
+            let n = Int((100 / r).rounded())
+            return n <= 1 ? "Nearly every message you send corrects it." : "About 1 in \(n) of your messages corrects it."
+        }
+        return "Counted from what you type; no text is kept."
+    }
+}
+
+/// One hook: when it runs, what it runs, and whether it has been failing.
+struct HookCard: View {
+    var hook: SetupReport.Item
+    var fixReady: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(HooksCard.moment(hook.name)).font(.headline).foregroundStyle(Ink.primary)
+            Text("A hook: a script Claude Code runs on its own \(HooksCard.moment(hook.name).lowercased()). This one runs \(hook.detail ?? "a command"). You set it up in Claude Code's settings.json; it isn't something Claude decides.")
+                .font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+            let n = hook.failed ?? 0
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: n > 0 ? "xmark.octagon.fill" : "checkmark.circle").font(.subheadline)
+                    .foregroundStyle(n > 0 ? Color(nsColor: .systemRed) : Ink.secondary)
+                Text(n > 0 ? "Hooks at this moment failed \(Format.count(n)) times in the last 30 days." + (fixReady ? " Fixes has the cause and a one-click fix." : "")
+                     : "No failures in the last 30 days. Nothing to do.")
+                    .font(.subheadline.weight(.medium)).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 10)
+        .frame(width: Menu.width, alignment: .leading)
     }
 }
 
@@ -1157,11 +1210,11 @@ struct TabStrip: View {
                     if t == .improve, improveCount > 0 {
                         Text("\(improveCount)").font(.caption2.weight(.bold).monospacedDigit())
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Capsule().fill(on ? Color.white : Color(nsColor: .controlAccentColor)))
-                            .foregroundStyle(on ? Color(nsColor: .controlAccentColor) : Color.white)
+                            .background(Capsule().fill(on ? Brand.onAccent : Brand.accent))
+                            .foregroundStyle(on ? Brand.accent : Brand.onAccent)
                     }
                 }
-                .foregroundStyle(on ? Color.white : Ink.primary)
+                .foregroundStyle(on ? Brand.onAccent : Ink.primary)
                 .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
                 .background { if on { Knob().matchedGeometryEffect(id: "knob", in: ns) } }
                 .contentShape(Rectangle())
@@ -1180,7 +1233,7 @@ struct TabStrip: View {
     /// The selected tab: the accent colour, white text on it, as a selected sidebar row or button is.
     struct Knob: View {
         var body: some View {
-            Capsule().fill(Color(nsColor: .controlAccentColor))
+            Capsule().fill(Brand.accent)
                 .shadow(color: .black.opacity(0.22), radius: 2, y: 1)
         }
     }
@@ -1225,59 +1278,84 @@ struct SuggestionCard: View {
     }
 }
 
-/// How one MCP server, skill or subagent performed, measured from every session's map: its own calls, what
-/// they cost in context and time, the one thing to do about it, and how your sessions with it compare.
+/// One skill, subagent or MCP server, in four answers: what it is, what a session with it costs, whether it fails
+/// or runs without producing anything, and what to do about it. The numbers come from every session's map.
 struct ImpactCard: View {
     var item: SetupReport.Item
     /// Wider than the menu's own rows: a label column and numbers side by side.
     static let width: CGFloat = Menu.width + 40
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(item.name).font(.headline).foregroundStyle(Ink.primary)
                     Spacer()
                     Text(Self.sourceLine(item)).font(.subheadline).foregroundStyle(Ink.secondary)
                 }
-                Text(usedLine).font(.subheadline).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(what).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
             }
             if let m = item.measured {
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                    row("Failed", m.failed == 0 ? "none" : "\(m.failed) of \(m.calls) (\(Format.percent(100 * Double(m.failed) / Double(max(1, m.calls)))))",
-                        warn: m.advice.kind == "failing")
-                    if m.tokens >= 1000 {  // under a thousand tokens isn't worth a line
-                        row("Into context", "\(Format.tokens(m.tokens)) tokens · \(Format.tokens(m.tokens / max(1, m.sessions))) a session",
-                            warn: m.advice.kind == "heavy")
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 5) {
+                    row("Used", usedLine(m), warn: false)
+                    if let cost = m.sessionCost, let tok = m.sessionTokens {
+                        row("A session with it", "\(Format.money(cost)) · \(Format.tokens(tok)) tokens, mostly cached", warn: false)
                     }
-                    if m.ms >= 60_000 { row("Waiting on it", Format.duration(Double(m.ms) / 1000), warn: false) }
+                    if m.tokens >= 1000 {
+                        row("Its own results", "\(Format.tokens(m.tokens / max(1, m.sessions))) tokens a session", warn: m.advice.kind == "heavy")
+                    }
+                    row("Fails", failLine(m), warn: m.advice.kind == "failing")
+                    if let n = m.yourSessionsChecked, n > 0, item.kind != "mcp" {
+                        row("Changed nothing", "\(m.noOutput ?? 0) of your \(n) session\(n == 1 ? "" : "s") with it", warn: m.advice.kind == "idle")
+                    }
                 }
                 HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: Self.adviceSymbol(m.advice.kind)).font(.subheadline)
-                        .foregroundStyle(Self.adviceColor(m.advice.kind))
-                    Text(m.advice.text).font(.subheadline.weight(.medium)).foregroundStyle(Ink.primary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Image(systemName: Self.adviceSymbol(m.advice.kind)).font(.subheadline).foregroundStyle(Self.adviceColor(m.advice.kind))
+                    Text(m.advice.text).font(.subheadline.weight(.medium)).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.top, 2)
-                if let c = m.compare { compare(c) }
+            } else {
+                Text("Called \(item.uses)× directly in the last 30 days.").font(.subheadline).foregroundStyle(Ink.secondary)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)  // measured at its full height, never clipped
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 10)
-        // A fixed width: text measured and drawn at the same width wraps the same way, so the height is right.
         .frame(width: Self.width, alignment: .leading)
     }
 
-    var usedLine: String {
-        var extra = ""
-        if let h = item.runBy, !h.isEmpty { extra += " Runs on its own through \(h.joined(separator: ", "))." }
-        if let a = item.worksWith, !a.isEmpty { extra += " Drives \(a.joined(separator: " and "))." }
-        guard let m = item.measured else { return "Called \(item.uses)× directly in the last 30 days." + extra }
-        var s = "\(m.calls) call\(m.calls == 1 ? "" : "s") in \(m.sessions) session\(m.sessions == 1 ? "" : "s")"
-        if m.yours != m.sessions { s += " (\(m.yours) yours, \(m.sessions - m.yours) automated)" }
-        if let at = m.last.flatMap(SnapshotDecoder.parseISO) { s += " · last \(Format.relative(at, now: Date()))." } else { s += "." }
-        return s + extra
+    /// What it is, in plain words: its own description, else what this kind of thing is.
+    var what: String {
+        var s = item.what ?? Self.kindExplainer(item.kind)
+        if let h = item.runBy, !h.isEmpty { s += " Runs on its own through \(h.joined(separator: ", "))." }
+        if let a = item.worksWith, !a.isEmpty { s += " Drives \(a.joined(separator: " and "))." }
+        return s
+    }
+
+    static func kindExplainer(_ k: String) -> String {
+        switch k {
+        case "skill": "A skill: instructions Claude loads when a task matches, or when you type /its-name."
+        case "agent": "A subagent: a helper Claude starts on its own when a task matches what the subagent says it does. You can also ask for it by name."
+        case "mcp": "An MCP server: a set of tools Claude can call, here from another app or service."
+        default: ""
+        }
+    }
+
+    func usedLine(_ m: SetupReport.Measured) -> String {
+        var s = "\(Format.count(m.calls))× in \(m.sessions) session\(m.sessions == 1 ? "" : "s")"
+        if m.yours != m.sessions { s += " (\(m.yours) yours)" }
+        if let at = m.last.flatMap(SnapshotDecoder.parseISO) { s += ", last \(Format.relative(at, now: Date()))" }
+        return s
+    }
+
+    func failLine(_ m: SetupReport.Measured) -> String {
+        guard m.failed > 0 else { return "never" }
+        var s = "\(m.failed) of \(Format.count(m.calls)) (\(Format.percent(100 * Double(m.failed) / Double(max(1, m.calls)))))"
+        if let top = m.errClasses?.max(by: { $0.value < $1.value })?.key {
+            let why = ["auth": "login", "permission": "permissions", "timeout": "timeouts", "not_found": "not found",
+                       "exit_code": "errors", "other": "errors"][top] ?? top
+            s += ", mostly \(why)"
+        }
+        return s
     }
 
     @ViewBuilder func row(_ label: String, _ value: String, warn: Bool) -> some View {
@@ -1285,33 +1363,7 @@ struct ImpactCard: View {
             Text(label).font(.subheadline).foregroundStyle(Ink.secondary)
             Text(value).font(.subheadline.monospacedDigit().weight(warn ? .semibold : .regular))
                 .foregroundStyle(warn ? Color(nsColor: .systemOrange) : Ink.primary)
-        }
-    }
-
-    @ViewBuilder func compare(_ c: SetupReport.Measured.Compare) -> some View {
-        if c.verdict == "too few" {
-            Text("Compared with your other sessions: \(c.with) of yours used it, too few to compare (needs 5).")
-                .font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
-        } else {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Your \(c.with) sessions with it vs \(c.without) without").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
-                    pair("Failed calls", c.errorRateWith.map { Format.percent($0) }, c.errorRateWithout.map { Format.percent($0) })
-                    pair("Compactions", c.compactionsWith.map { String(format: "%.1f", $0) }, c.compactionsWithout.map { String(format: "%.1f", $0) })
-                    pair("Cost", c.costWith.map { Format.money($0) }, c.costWithout.map { Format.money($0) })
-                }
-                Text("Goes with it; doesn't prove it caused it.").font(.caption).foregroundStyle(Ink.secondary)
-            }
-            .padding(.top, 2)
-        }
-    }
-
-    @ViewBuilder func pair(_ label: String, _ a: String?, _ b: String?) -> some View {
-        GridRow {
-            Text(label).font(.caption).foregroundStyle(Ink.secondary)
-            Text(a ?? "–").font(.caption.monospacedDigit()).foregroundStyle(Ink.primary).gridColumnAlignment(.trailing)
-            Text("vs").font(.caption).foregroundStyle(Ink.secondary)
-            Text(b ?? "–").font(.caption.monospacedDigit()).foregroundStyle(Ink.primary).gridColumnAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1330,6 +1382,7 @@ struct ImpactCard: View {
             case "failing": bits.append("\(m.failed) failed")
             case "heavy": bits.append("\(Format.tokens(m.tokens / max(1, m.sessions)))/session")
             case "helps": bits.append("helps")
+            case "idle": bits.append("\(m.noOutput ?? 0) changed nothing")
             default: break
             }
         }
@@ -1338,13 +1391,13 @@ struct ImpactCard: View {
 
     static func adviceSymbol(_ k: String) -> String {
         ["failing": "xmark.octagon.fill", "heavy": "exclamationmark.triangle.fill", "helps": "checkmark.seal.fill",
-         "watch": "eye.fill"][k] ?? "checkmark.circle"
+         "watch": "eye.fill", "idle": "moon.zzz.fill"][k] ?? "checkmark.circle"
     }
 
     static func adviceColor(_ k: String) -> Color {
         switch k {
         case "failing": Color(nsColor: .systemRed)
-        case "heavy", "watch": Color(nsColor: .systemOrange)
+        case "heavy", "watch", "idle": Color(nsColor: .systemOrange)
         case "helps": Color(nsColor: .systemGreen)
         default: Ink.secondary
         }
@@ -1352,8 +1405,8 @@ struct ImpactCard: View {
 
     /// Rows that need a look get the flag's own symbol, in colour, instead of the kind's.
     static func flagImage(_ it: SetupReport.Item) -> NSImage? {
-        guard let k = it.measured?.advice.kind, ["failing", "heavy", "helps"].contains(k) else { return nil }
-        let color: NSColor = k == "failing" ? .systemRed : k == "heavy" ? .systemOrange : .systemGreen
+        guard let k = it.measured?.advice.kind, ["failing", "heavy", "helps", "idle"].contains(k) else { return nil }
+        let color: NSColor = k == "failing" ? .systemRed : (k == "heavy" || k == "idle") ? .systemOrange : .systemGreen
         return NSImage(systemSymbolName: adviceSymbol(k), accessibilityDescription: k)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
     }
@@ -1364,13 +1417,13 @@ struct TipCard: View {
     var tip: SetupReport.Tip
 
     static func label(_ k: String) -> String {
-        ["failing": "Keeps failing", "context": "Fills your context", "room": "Sessions run out of room",
+        ["failing": "Keeps failing", "context": "Fills your context", "room": "Sessions run out of room", "idle": "Runs but changes nothing",
          "unused": "Loads into every session", "use": "Worth using more"][k] ?? "Worth a look"
     }
 
     static func symbol(_ k: String) -> String {
         ["failing": "xmark.octagon", "context": "gauge.with.dots.needle.67percent", "room": "rectangle.compress.vertical",
-         "unused": "shippingbox", "use": "hand.thumbsup"][k] ?? "lightbulb"
+         "unused": "shippingbox", "use": "hand.thumbsup", "idle": "moon.zzz"][k] ?? "lightbulb"
     }
 
     var body: some View {
@@ -1400,9 +1453,9 @@ struct SplitCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            row("Yours", split.yours, split.yoursCostUsd)
-            row("Automated", split.automated, split.automatedCostUsd)
-            Text("Automated: a single prompt from a script, a bot or claude -p.")
+            row("You, typing", split.yours, split.yoursCostUsd, "sessions")
+            row("Scripts and bots", split.automated, split.automatedCostUsd, "one-prompt runs")
+            Text("Every number in Tools counts both. Scripts and bots are runs that got one prompt from a program (claude -p, an SDK pipeline), not from you.")
                 .font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, Menu.inset)
@@ -1410,11 +1463,11 @@ struct SplitCard: View {
         .frame(minWidth: Menu.width, maxWidth: .infinity, alignment: .leading)
     }
 
-    func row(_ label: String, _ n: Int, _ cost: Double) -> some View {
+    func row(_ label: String, _ n: Int, _ cost: Double, _ what: String) -> some View {
         HStack {
             Text(label).font(.subheadline).foregroundStyle(Ink.primary)
             Spacer()
-            Text("\(Format.count(n)) session\(n == 1 ? "" : "s") · \(Format.money(cost))")
+            Text("\(Format.count(n)) \(what) · \(Format.money(cost))")
                 .font(.subheadline.monospacedDigit()).foregroundStyle(Ink.primary)
         }
     }
@@ -1451,24 +1504,35 @@ struct HooksCard: View {
     }
 }
 
-/// What sits unused: every name, and why it matters.
+/// What sits unused: each one, what it says it's for, and why it matters.
 struct UnusedCard: View {
     var kind: String
-    var names: [String]
+    var items: [SetupReport.Item]
+    static let width: CGFloat = Menu.width + 40
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Not used in 30 days").font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
-            Text(names.joined(separator: ", ")).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
-            if kind != "command" {
-                Text("Each one's description loads into every session, used or not.")
-                    .font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 7) {
+            Text(intro).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+            ForEach(items.prefix(8)) { it in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(it.name).font(.subheadline.weight(.semibold)).foregroundStyle(Ink.primary)
+                    if let w = it.what { Text(w).font(.caption).foregroundStyle(Ink.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
+                }
             }
+            if items.count > 8 { Text("and \(items.count - 8) more").font(.caption).foregroundStyle(Ink.secondary) }
         }
-        .fixedSize(horizontal: false, vertical: true)  // measured at its full height, never clipped
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, Menu.inset)
-        .padding(.vertical, 9)
-        .frame(width: Menu.width, alignment: .leading)
+        .padding(.vertical, 10)
+        .frame(width: Self.width, alignment: .leading)
+    }
+
+    var intro: String {
+        switch kind {
+        case "agent": "Subagents are helpers Claude starts on its own when a task matches what they say they do. These never started in 30 days, so either no task matched or their descriptions don't say when to use them."
+        case "skill": "Skills are instructions Claude loads when a task matches, or when you type /their-name. None of these ran in 30 days, yet each one's description loads into every session."
+        default: "Not used in 30 days. Each one still loads into every session."
+        }
     }
 }
 
@@ -1604,7 +1668,7 @@ struct SignalsCard: View {
             Spacer(minLength: 4)
             Chart(signals.daily.filter { $0.messages > 0 }) { d in
                 LineMark(x: .value("Day", d.date), y: .value("Rate", d[keyPath: key] ?? 0))
-                    .foregroundStyle(Color(nsColor: .controlAccentColor))
+                    .foregroundStyle(Brand.accent)
                     .interpolationMethod(.monotone)
             }
             .chartXAxis(.hidden).chartYAxis(.hidden)
@@ -1854,7 +1918,7 @@ struct UsageDetail: View {
                 Text("Tokens per Day").font(.subheadline).foregroundStyle(Ink.secondary)
                 Chart(report.daily.filter { $0.day != nil }) { d in
                     BarMark(x: .value("Day", d.day ?? .distantPast, unit: .day), y: .value("Tokens", d.tokens))
-                        .foregroundStyle(Color.accentColor.opacity(d.id == report.daily.last?.id ? 1 : 0.45))
+                        .foregroundStyle(Brand.accent.opacity(d.id == report.daily.last?.id ? 1 : 0.45))
                         .cornerRadius(2)
                 }
                 .chartYAxis(.hidden)

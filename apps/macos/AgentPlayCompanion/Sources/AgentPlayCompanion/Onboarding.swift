@@ -28,7 +28,7 @@ struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let size = CGSize(width: 720, height: 600)
-    static let lime = Color.accentColor
+    static let lime = Brand.accent
 
     var body: some View {
         ZStack {
@@ -100,7 +100,7 @@ struct OnboardingView: View {
 
     func primaryButton(_ title: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Brand.onAccent)
                 .padding(.horizontal, 22).padding(.vertical, 11)
                 .background(Self.lime, in: Capsule())
         }
@@ -190,7 +190,7 @@ struct OnboardingView: View {
                 // Your repos, flying in.
                 ForEach(Array(repos.enumerated()), id: \.offset) { i, repo in
                     let a = Double(i) / Double(max(1, repos.count)) * 2 * .pi
-                    Text(repo).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(.white)
+                    Text(repo).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Brand.onAccent)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Self.lime, in: Capsule())
                         .offset(x: i < flown ? 0 : cos(a) * 320, y: i < flown ? 0 : sin(a) * 190)

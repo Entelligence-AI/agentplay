@@ -1267,3 +1267,47 @@ def test_coach_runs_isolated_once_a_day_and_sends_no_text(tmp_path, monkeypatch)
     assert not again["ran"] and not (tmp_path / "seen.stdin").exists()
     assert coach.cached(st)["suggestions"] == out["suggestions"]
     assert coach.run(st, str(fake), snap, home, now=now + timedelta(hours=21))["ran"]
+
+
+def test_prompting_findings_compare_and_total_with_numbers(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    from agentplay import prompting
+    from agentplay.store import Store
+
+    st = Store(tmp_path / "ap")
+    now = datetime(2026, 10, 27, tzinfo=UTC)
+    for i in range(12):
+        sid = f"local:claude-code:p{i}"
+        detailed = i < 6
+        st.put({"session": {"id": sid}, "events": []},
+               {"sessionId": sid, "startedAt": (now - timedelta(hours=i + 1)).isoformat(), "role": "root",
+                "userTurns": 12 if detailed else 4, "costUsd": 10.0,
+                "facts": {"firstPromptChars": 900 if detailed else 40, "waste": {"retry": 1.0, "reread": 0.5},
+                          "editedFiles": 10, "blindEdits": 3, "reworkEdits": 1}})
+    r = prompting.report(st, now)
+    kinds = {f["kind"]: f for f in r["findings"]}
+    assert r["sessions"] == 12
+    assert "needed 11 follow-up" in kinds["start"]["text"] and "needed 3" in kinds["start"]["text"]
+    assert kinds["start"]["tip"].startswith("Big asks")
+    assert "$18 of your $120" in kinds["waste"]["text"]
+    assert "30%" in kinds["blind"]["text"]
+    assert "rework" not in kinds  # 12 of 120 edits: under the bar
+
+
+def test_tool_measure_flags_sessions_that_change_nothing(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    from agentplay import impact
+    from agentplay.store import Store
+
+    st = Store(tmp_path / "ap")
+    now = datetime(2026, 10, 27, tzinfo=UTC)
+    for i in range(4):
+        sid = f"local:claude-code:n{i}"
+        st.put({"session": {"id": sid}, "events": [{"kind": "skill", "skill": "deep-dive", "seq": 2, "outBytes": 40}]},
+               {"sessionId": sid, "startedAt": (now - timedelta(hours=i + 1)).isoformat(), "role": "root", "userTurns": 3,
+                "calls": 50, "tokens": 2_000_000, "costUsd": 4.0, "filesTouched": 1 if i == 0 else 0, "outputs": {}})
+    m = next(i for i in impact.measure(st, now)["items"] if i["name"] == "deep-dive")
+    assert (m["noOutput"], m["yourSessionsChecked"], m["sessionTokens"], m["sessionCost"]) == (3, 4, 2_000_000, 4.0)
+    assert m["advice"]["kind"] == "idle" and "3 of your 4 sessions" in m["advice"]["text"]

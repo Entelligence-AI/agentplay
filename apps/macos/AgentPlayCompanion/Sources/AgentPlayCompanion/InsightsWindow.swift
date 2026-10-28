@@ -13,7 +13,7 @@ enum InsightsSection: String, CaseIterable, Identifiable {
         case .applied: "Applied"
         case .setup: "Your Setup"
         case .autotune: "Autotune"
-        case .steering: "How You Steer"
+        case .steering: "How Your Prompts Land"
         case .usage: "Usage"
         }
     }
@@ -34,7 +34,7 @@ enum InsightsSection: String, CaseIterable, Identifiable {
 /// change AgentPlay made with whether it worked, what Autotune is waiting on, and the longer views.
 enum InsightsWindow {
     @MainActor static func make(model: CompanionModel) -> NSWindow {
-        let w = NSWindow(contentViewController: NSHostingController(rootView: AnyView(InsightsView().environmentObject(model))))
+        let w = NSWindow(contentViewController: NSHostingController(rootView: AnyView(InsightsView().environmentObject(model).tint(Brand.accent))))
         w.title = "AgentPlay Insights"
         w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         w.titlebarAppearsTransparent = true
@@ -139,7 +139,7 @@ struct OverviewPane: View {
                         HStack(spacing: 12) {
                             Text(c.name).frame(width: 150, alignment: .leading)
                             ProgressView(value: min(20, max(0, c.points ?? 0)), total: 20)
-                                .tint(((c.points ?? 0) < 10) ? .orange : .accentColor)
+                                .tint(((c.points ?? 0) < 10) ? .orange : Brand.accent)
                             Text(Format.points(c.points ?? 0)).monospacedDigit().frame(width: 34, alignment: .trailing)
                         }
                         .help(Self.meaning(c.key))
@@ -360,7 +360,7 @@ struct SetupPane: View {
                     GeometryReader { g in
                         Capsule().fill(.quaternary).overlay(alignment: .leading) {
                             // Log scale, so one heavy MCP server doesn't flatten everything else.
-                            Capsule().fill(Color.accentColor)
+                            Capsule().fill(Brand.accent)
                                 .frame(width: max(6, g.size.width * log(Double(it.uses) + 1) / log(Double(top) + 1)))
                         }
                     }
@@ -443,7 +443,7 @@ struct AutotunePane: View {
 struct SteeringPane: View {
     var signals: Signals?
     var body: some View {
-        PaneTitle(title: "How you steer", subtitle: "From what you type to Claude Code, the last 30 days against the 30 before.")
+        PaneTitle(title: "How your prompts land", subtitle: "How often what you typed had to correct, stop or argue with the agent, the last 30 days against the 30 before.")
         if let s = signals {
             Card {
                 row("Corrections", s.current.correctionRate, s.previous.correctionRate, "messages that turn the agent around")

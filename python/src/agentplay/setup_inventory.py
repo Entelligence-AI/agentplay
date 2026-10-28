@@ -22,6 +22,38 @@ _NAME = re.compile(r"^[A-Za-z0-9_.:@-]{1,80}$")
 RARE = 3  # fewer uses than this in 30 days is "rarely used"
 
 
+def _description(md: Path) -> str | None:
+    """The one-line ``description:`` a SKILL.md or agent file declares: what it is for, in its author's words."""
+    try:
+        head = md.read_text(encoding="utf-8", errors="replace")[:3000]
+    except OSError:
+        return None
+    if not head.startswith("---") or head.count("---") < 2:
+        return None
+    m = re.search(r"^description:\s*(.+)$", head.split("---", 2)[1], re.M)
+    text = re.sub(r"\s+", " ", m.group(1).strip().strip("\"'>|").strip()) if m else ""
+    return _short(text) or None
+
+
+def _short(text: str, limit: int = 200) -> str:
+    """Whole sentences up to ``limit``; else whole words and an ellipsis. Never cut mid-word."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+    if end >= 60:
+        return cut[:end + 1]
+    return cut[:cut.rfind(" ")].rstrip(",;:") + "\u2026"
+
+
+BUILT_IN_WHAT = {
+    "general-purpose": "Claude's own helper for research and multi-step tasks. Claude starts it by itself when a job is "
+                       "big enough to hand off; you don't call it.",
+    "Explore": "Claude's own read-only helper for finding things in a codebase. Claude starts it by itself.",
+    "Plan": "Claude's own helper for planning a change before it edits. Claude starts it by itself.",
+}
+
+
 def _frontmatter_name(md: Path) -> str | None:
     """The ``name:`` in a SKILL.md or agent file's front matter, if it has one."""
     try:
@@ -47,19 +79,20 @@ def installed(claude_home: Path, claude_json: Path | None = None) -> list[dict[s
     items: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str | None]] = set()
 
-    def add(kind: str, name: str | None, source: str, since: float | None = None, detail: str | None = None) -> None:
+    def add(kind: str, name: str | None, source: str, since: float | None = None, detail: str | None = None,
+            what: str | None = None) -> None:
         if not name or not _NAME.match(name) or (kind, name, detail) in seen:
             return
         seen.add((kind, name, detail))
         items.append({"kind": kind, "name": name, "source": source,
                       "installedAt": datetime.fromtimestamp(since, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if since else None,
-                      "detail": detail})
+                      "detail": detail, "what": what})
 
     def scan(root: Path, source: str) -> None:
         for md in sorted((root / "skills").glob("*/SKILL.md")):
-            add("skill", _frontmatter_name(md) or md.parent.name, source, _mtime(md))
+            add("skill", _frontmatter_name(md) or md.parent.name, source, _mtime(md), what=_description(md))
         for md in sorted((root / "agents").glob("*.md")):
-            add("agent", _frontmatter_name(md) or md.stem, source, _mtime(md))
+            add("agent", _frontmatter_name(md) or md.stem, source, _mtime(md), what=_description(md))
         for md in sorted((root / "commands").glob("*.md")):
             add("command", md.stem, source, _mtime(md))
 
@@ -171,8 +204,19 @@ def report(claude_home: Path, uses: list[list[Any]], now: datetime, claude_json:
     for key, m in by.items():
         if key not in matched:
             label, source = _label(*key)
-            items.append({"kind": key[0], "name": label, "source": source, "installedAt": None, "detail": None,
+            what = BUILT_IN_WHAT.get(label) if source == "built in" else (
+                f"Your {label} account, connected on claude.ai and shared with Claude Code." if source == "claude.ai connector"
+                else "Tools your sessions called, set up in a project's settings rather than for you as a whole.")
+            items.append({"kind": key[0], "name": label, "source": source, "installedAt": None, "detail": None, "what": what,
                           "measured": {k: v for k, v in m.items() if k not in ("kind", "name")}})
+    fails = (measured or {}).get("hookFails") or {}
+    for it in items:
+        if it["kind"] == "hook":
+            it["failed"] = int(fails.get(it["name"].split(":")[0], 0))
+    for it in items:
+        m = it.get("measured")
+        if m and it.get("source") == "built in" and m["advice"]["kind"] == "helps":
+            m["advice"] = {"kind": "fine", "text": "Claude starts it by itself. Your sessions with it went fine; nothing to do."}
     for it in items:
         keys = _keys(it)
         n = sum(count.get(k, 0) for k in keys)

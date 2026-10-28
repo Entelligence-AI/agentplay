@@ -49,6 +49,11 @@ def item_of(e: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
+def _made_anything(r: dict[str, Any]) -> bool:
+    out = r.get("outputs") or {}
+    return int(r.get("filesTouched") or 0) > 0 or int(out.get("commits") or 0) > 0 or int(out.get("prsCreated") or 0) > 0
+
+
 def _session_stats(row: dict[str, Any]) -> dict[str, float]:
     calls = max(1, int(row.get("calls") or 0))
     return {"errorRate": 100 * int(row.get("errors") or 0) / calls, "retries": float(row.get("retries") or 0),
@@ -95,6 +100,10 @@ def advice(s: dict[str, Any]) -> dict[str, str]:
     if per >= HEAVY_TOKENS:
         return {"kind": "heavy", "text": f"Each session that uses it takes in about {round(per / 1000)}k tokens "
                                          "of its results. Ask for less, or turn it off when you don't need it."}
+    checked, none = s.get("yourSessionsChecked", 0), s.get("noOutput", 0)
+    if checked >= 3 and none / checked >= 0.5:
+        return {"kind": "idle", "text": f"{none} of your {checked} sessions with it changed no files and opened nothing. "
+                                        "Check it does what you expect, or turn it off."}
     v = (s.get("compare") or {}).get("verdict", "too few")
     if v.startswith("fewer"):
         return {"kind": "helps", "text": f"Your sessions with it had {v}. Keep using it."}
@@ -148,9 +157,19 @@ def measure(store: Store, now: datetime | None = None, days: int = 30) -> dict[s
                 s["recent"][sid]["calls"] += 1
                 s["recent"][sid]["failed"] += 1 if e.get("err") else 0
     per = {str(r.get("sessionId")): _session_stats(r) for r in yours}
+    by_id = {str(r.get("sessionId")): r for r in rows}
     out = []
     for (kind, name), s in stats.items():
         s["tokens"] = s.pop("bytes") // BYTES_PER_TOKEN
+        # The weight of a session that uses it, and whether those sessions changed anything: a skill or subagent
+        # whose sessions mostly change no file, commit nothing and open no PR may be burning tokens for nothing.
+        used = [by_id[k] for k in used_by[(kind, name)] if k in by_id]
+        if used:
+            s["sessionTokens"] = int(sum(int(r.get("tokens") or 0) for r in used) / len(used))
+            s["sessionCost"] = round(sum(float(r.get("costUsd") or 0) for r in used) / len(used), 2)
+        mine_rows = [r for r in used if int(r.get("userTurns") or 0) >= 2]
+        s["noOutput"] = sum(1 for r in mine_rows if not _made_anything(r))
+        s["yourSessionsChecked"] = len(mine_rows)
         mine = used_by[(kind, name)] & per.keys()
         s["compare"] = compare([per[k] for k in mine], [v for k, v in per.items() if k not in mine])
         s["errClasses"] = dict(s["errClasses"])
@@ -159,7 +178,12 @@ def measure(store: Store, now: datetime | None = None, days: int = 30) -> dict[s
         out.append({"kind": kind, "name": name, **s})
     out.sort(key=lambda i: -i["calls"])
     cost = lambda rs: round(sum(float(r.get("costUsd") or 0) for r in rs), 2)  # noqa: E731
-    return {"days": days, "items": out,
+    # Hook failures by the moment they run at ("SessionStart"): the index keeps the hook's name, not its script.
+    hook_fails: dict[str, int] = defaultdict(int)
+    for r in rows:
+        for name, n in ((r.get("facts") or {}).get("hookFails") or {}).items():
+            hook_fails[str(name).split(":")[0]] += int(n or 0)
+    return {"days": days, "items": out, "hookFails": dict(hook_fails),
             "sessions": {"yours": len(yours), "automated": len(auto), "yoursCostUsd": cost(yours),
                          "automatedCostUsd": cost(auto),
                          "yoursCompacted": sum(1 for r in yours if int(r.get("compactions") or 0) > 0)}}
@@ -205,6 +229,11 @@ def tips(setup: dict[str, Any], descriptions: dict[tuple[str, str], str] | None 
             tech(it),
             "connectors" if it.get("source") == "claude.ai connector" else None)
     unused = [i for i in items if i.get("verdict") == "unused" and i["kind"] in ("skill", "agent")]
+    for it in [i for i in measured if i["measured"]["advice"]["kind"] == "idle"][:2]:
+        m = it["measured"]
+        tip(f"idle:{it['kind']}:{it['name']}", "idle", f"{it['name']} runs but changes nothing",
+            f"{m['noOutput']} of {m['yourSessionsChecked']} sessions changed nothing", m["advice"]["text"],
+            "Open it and check its description says when to use it, or turn it off.", tech(it))
     desc = descriptions or {}
     tok = sum(len(desc.get((i["kind"], i["name"]), "")) + len(i["name"]) + 20 for i in unused) // 4
     if len(unused) >= 3 and tok >= UNUSED_TOKENS:  # a few hundred tokens isn't worth anyone's time
@@ -221,11 +250,13 @@ def tips(setup: dict[str, Any], descriptions: dict[tuple[str, str], str] | None 
             f"{compacted} of your {yours} sessions filled their context and had to compact. After that the agent "
             "works from a summary and forgets details.",
             "Start a new session for each new task, or type /clear between tasks.", "sessions with compactions")
-    for it in [i for i in measured if i["measured"]["advice"]["kind"] == "helps"][:1]:
+    # Built-in subagents are Claude's own: it starts them by itself, so "use it more" isn't something a person can do.
+    for it in [i for i in measured if i["measured"]["advice"]["kind"] == "helps" and i.get("source") != "built in"][:1]:
         c = it["measured"].get("compare") or {}
         tip(f"helps:{it['kind']}:{it['name']}", "use", f"Use {it['name']} more",
             f"{round(c.get('errorRateWith') or 0)}% failed calls with it, {round(c.get('errorRateWithout') or 0)}% without",
             f"Your {c.get('with')} sessions with it had {c.get('verdict')}: {round(c.get('errorRateWith') or 0)}% of calls "
             f"failed, against {round(c.get('errorRateWithout') or 0)}% in the {c.get('without')} without. That goes with it; it may not be the cause.",
-            "Ask for it by name on bigger tasks.", tech(it))
+            (f"Ask for it by name: “use the {it['name']} subagent to …”" if it["kind"] == "agent"
+             else f"Start bigger tasks with /{it['name']}." if it["kind"] == "skill" else "Keep it connected."), tech(it))
     return out

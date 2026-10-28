@@ -307,7 +307,8 @@ extension Renderer {
                     probe.nowOverride = snap.generatedAt
                     NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                     probe.prepare(now: snap.generatedAt)
-                    let subs = probe.menu.items.filter { $0.submenu != nil && $0.view == nil }.prefix(2)
+                    // Every submenu in Tools and Fixes, in Dark; the first two in Light.
+                    let subs = probe.menu.items.filter { $0.submenu != nil && $0.view == nil }.prefix(dark ? 30 : 2)
                     for (n, item) in subs.enumerated() {
                         guard let sub = item.submenu else { continue }
                         sub.appearance = NSApp.appearance
@@ -316,7 +317,8 @@ extension Renderer {
                         back.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
                         back.contentView = NSHostingView(rootView: BusyPage(bright: true))
                         back.orderFrontRegardless()
-                        let url = dir.appendingPathComponent("real-sub-\(tab.rawValue)-\(n)-\(dark ? "dark" : "light").png")
+                        let slug = item.title.lowercased().replacingOccurrences(of: " ", with: "-").filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(28)
+                        let url = dir.appendingPathComponent("real-sub-\(tab.rawValue)-\(n)-\(slug)-\(dark ? "dark" : "light").png")
                         let timer = Timer(timeInterval: 0.9, repeats: false) { _ in
                             MainActor.assumeIsolated {
                                 StatusItemController.tintMenuGlass()

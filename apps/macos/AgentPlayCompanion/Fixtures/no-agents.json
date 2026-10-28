@@ -676,6 +676,11 @@
       "items": [],
       "tips": []
     },
+    "prompting": {
+      "days": 30,
+      "sessions": 0,
+      "findings": []
+    },
     "timingMs": 0
   },
   "insights": {

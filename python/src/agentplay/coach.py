@@ -82,7 +82,8 @@ def facts(snap: dict[str, Any], claude_home: Path) -> dict[str, Any]:
     for it in setup.get("items", []):
         if it.get("kind") == "hook":
             continue
-        row = {"kind": it.get("kind"), "name": it.get("name"), "uses30d": it.get("uses", 0), "status": it.get("verdict")}
+        row = {"kind": it.get("kind"), "name": it.get("name"), "source": it.get("source"), "uses30d": it.get("uses", 0),
+               "status": it.get("verdict")}
         if it.get("runBy"):
             row["runAutomaticallyByHook"] = it["runBy"]
         if it.get("worksWith"):
@@ -119,7 +120,8 @@ Each suggestion must:
 - not repeat or restate anything in "alreadyShown" (those are on screen already);
 - never tell them to use a skill or subagent whose status is "used", or that a hook already runs
   ("runAutomaticallyByHook"), or that "drivesSubagents" that were used: they already use it;
-- name only a skill or subagent from "setup".
+- name only a skill or subagent from "setup", and never one whose source is "built in" (Claude starts those
+  itself; a person can't choose to use them more).
 
 Kinds: "use-skill" (a skill they have but rarely use that fits a problem in the numbers), "remove" (setup they
 never use), "habit" (a change in how they work, backed by a number). Plain words a non-programmer understands, no

@@ -548,6 +548,15 @@ def _setup(claude_homes: list[Path] | None, uses: list[list[Any]], now: datetime
         return None
 
 
+def _prompting(store: Store, now: datetime) -> dict[str, Any] | None:
+    from . import prompting
+
+    try:
+        return prompting.report(store, now)
+    except Exception:  # noqa: BLE001 - insights are extra; never cost the usage report
+        return None
+
+
 def report(store: Store, now: datetime | None = None, claude_homes: list[Path] | None = None) -> dict[str, Any]:
     """``claude_homes``: Claude Code homes to read raw transcripts from. None reads none (maps only)."""
     t_start = time.monotonic()
@@ -587,6 +596,7 @@ def report(store: Store, now: datetime | None = None, claude_homes: list[Path] |
         "claudeBlock": claude_block(reqs, now),
         "signals": signals(sig, now) if claude_homes else None,
         "setup": _setup(claude_homes, uses, now, store),
+        "prompting": _prompting(store, now),
         "timingMs": round(1000 * (time.monotonic() - t_start)),
     }
 

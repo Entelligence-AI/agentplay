@@ -24,7 +24,7 @@ enum MenuEntry: Equatable {
     case tip(SetupReport.Tip)                    // a way to improve, from what was measured
     case askClaude(asking: Bool)                 // turn on suggestions from Claude, or "Asking Claude…"
     case setupItem(SetupReport.Item)             // a skill, subagent or MCP server you use, and how sessions go with it
-    case unused(kind: String, names: [String])   // what sits unused, by kind
+    case unused(kind: String, items: [SetupReport.Item])   // what sits unused, by kind
     case split(SetupReport.Split)                // hosted: your sessions and automated runs, with cost
     case hooks([SetupReport.Item])               // hosted: each hook and its script
     case openInsights(InsightsSection, String)
@@ -239,7 +239,7 @@ enum MenuBuilder {
     static func doNext(_ s: Snapshot, ins: Insights?) -> [MenuEntry] {
         let fixes = ins?.fixes ?? []
         let tips = s.usage?.setup?.tips ?? []
-        let order = ["failing", "context", "room", "unused", "use"]
+        let order = ["failing", "idle", "context", "room", "unused", "use"]
         let sorted = tips.sorted { (order.firstIndex(of: $0.kind) ?? 9) < (order.firstIndex(of: $1.kind) ?? 9) }
         return fixes.filter { ($0.points ?? 0) >= 0.5 }.map(MenuEntry.fix)
             + sorted.map(MenuEntry.tip)
@@ -276,8 +276,8 @@ enum MenuBuilder {
         if !unused.isEmpty {
             out.append(.header("Not Used in \(st.days) Days"))
             for kind in ["skill", "agent", "mcp", "command"] {
-                let names = unused.filter { $0.kind == kind }.map(\.name)
-                if !names.isEmpty { out.append(.unused(kind: kind, names: names)) }
+                let these = unused.filter { $0.kind == kind }
+                if !these.isEmpty { out.append(.unused(kind: kind, items: these)) }
             }
         }
         let hooks = st.items.filter { $0.kind == "hook" }

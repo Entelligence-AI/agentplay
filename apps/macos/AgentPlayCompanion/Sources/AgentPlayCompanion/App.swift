@@ -149,7 +149,7 @@ enum Windows {
         case .insights:
             w = InsightsWindow.make(model: model)
         case .welcome:
-            w = NSWindow(contentViewController: NSHostingController(rootView: AnyView(OnboardingView().environmentObject(model))))
+            w = NSWindow(contentViewController: NSHostingController(rootView: AnyView(OnboardingView().environmentObject(model).tint(Brand.accent))))
             w.title = "Welcome to AgentPlay"
             w.styleMask = [.titled, .closable, .fullSizeContentView]
             w.titleVisibility = .hidden
