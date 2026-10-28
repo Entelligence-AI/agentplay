@@ -122,23 +122,28 @@ public enum ClaudeSwitch {
 
     /// A Terminal script that signs Claude Code in to another account. No /logout: that can cancel the saved login.
     /// "Done" is printed only when the sign-in succeeded; otherwise the watcher never sees a new account and the
-    /// user is told so here, instead of being told an account was added.
+    /// user is told so here, instead of being told an account was added. After a sign-in that worked, the window
+    /// closes itself: a helper, detached so the shell's exit doesn't stop it, asks Terminal to close the window
+    /// whose tab is this script's terminal device. A failed sign-in leaves the window open to read.
     public static func loginScript(claude: String) -> String {
         let q = "'" + claude.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        return """
+        return #"""
         #!/bin/sh
         clear
+        TTY=$(tty)
         echo "Sign in with the Claude account you want to add. Your current one is already saved in AgentPlay."
         echo
-        if \(q) auth login --claudeai; then
+        if \#(q) auth login --claudeai; then
           echo
-          echo "Done. AgentPlay saves this account by itself. You can close this window."
+          echo "Done. AgentPlay saves this account by itself. This window closes in a moment."
+          nohup /bin/sh -c "sleep 2; /usr/bin/osascript -e 'tell application \"Terminal\"' -e 'repeat with wid in (get id of every window)' -e 'if (tty of tabs of window id wid) contains \"$TTY\" then' -e 'close window id wid saving no' -e 'return' -e 'end if' -e 'end repeat' -e 'end tell'" >/dev/null 2>&1 &
+          exit 0
         else
           echo
           echo "Sign-in didn't finish, so nothing was added. Close this window and try again from the AgentPlay menu."
           exit 1
         fi
-        """
+        """#
     }
 
     // MARK: Keychain and files

@@ -173,6 +173,10 @@ import Testing
         let done = try #require(s.range(of: "Done.")), then = try #require(s.range(of: "; then")), other = try #require(s.range(of: "else"))
         #expect(then.lowerBound < done.lowerBound && done.lowerBound < other.lowerBound)
         #expect(s.contains("exit 1"))
+        // Only a sign-in that worked closes the window, and only the window on this script's own terminal.
+        let close = try #require(s.range(of: "close window id wid"))
+        #expect(then.lowerBound < close.lowerBound && close.lowerBound < other.lowerBound)
+        #expect(s.contains(#"contains \"$TTY\""#) && s.contains("TTY=$(tty)") && s.contains("nohup"))
     }
 }
 
