@@ -542,6 +542,29 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             i.submenu = m
             menu.addItem(i)
 
+        case .tip(let t):
+            let i = item(t.title) { [model] in model.showInsights(.fixes) }
+            setSubtitle(t.short ?? TipCard.label(t.kind), on: i)
+            i.image = symbol(TipCard.symbol(t.kind))
+            let m = NSMenu()
+            m.autoenablesItems = false
+            m.addItem(hosted(TipCard(tip: t)))
+            switch t.action {
+            case "connectors":
+                m.addItem(.separator())
+                let c = item("Manage Connectors on claude.ai") { NSWorkspace.shared.open(URL(string: "https://claude.ai/settings/connectors")!) }
+                c.image = symbol("safari")
+                m.addItem(c)
+            case "skills_folder":
+                m.addItem(.separator())
+                let f = item("Show Skills Folder") { NSWorkspace.shared.open(Self.claudeFolder("skills")) }
+                f.image = symbol("folder")
+                m.addItem(f)
+            default: break
+            }
+            i.submenu = m
+            menu.addItem(i)
+
         case .askClaude(let asking):
             if asking {
                 let i = NSMenuItem(title: "Asking Claude…", action: nil, keyEquivalent: "")
@@ -929,7 +952,8 @@ struct PipHeader: View {
         guard let s = m.snapshot else { return "Reading your sessions" }
         // A waiting session is Pip's title already; this line says the next thing worth knowing.
         // The week's forecast is on the plan card right below; Pip doesn't say it twice.
-        if let n = s.insights?.fixes.count, n > 0 { return n == 1 ? "1 fix ready in Improve" : "\(n) fixes ready in Improve" }
+        let n = MenuBuilder.doNext(s, ins: s.insights.flatMap { $0.score == nil ? nil : $0 }).count
+        if n > 0 { return n == 1 ? "1 thing to improve" : "\(n) things to improve" }
         let busy = (s.live ?? []).filter { $0.status == .busy }.count
         return busy > 0 ? "Click me if you're bored" : "Nothing needs you"
     }
@@ -1322,6 +1346,40 @@ struct ImpactCard: View {
     }
 }
 
+/// One way to improve: what happened and what to do, in plain words; the technical names last, small.
+struct TipCard: View {
+    var tip: SetupReport.Tip
+
+    static func label(_ k: String) -> String {
+        ["failing": "Keeps failing", "context": "Fills your context", "room": "Sessions run out of room",
+         "unused": "Loads into every session", "use": "Worth using more"][k] ?? "Worth a look"
+    }
+
+    static func symbol(_ k: String) -> String {
+        ["failing": "xmark.octagon", "context": "gauge.with.dots.needle.67percent", "room": "rectangle.compress.vertical",
+         "unused": "shippingbox", "use": "hand.thumbsup"][k] ?? "lightbulb"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(tip.title).font(.headline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+            part("What happened", tip.what)
+            part("What to do", tip.todo)
+            Text(tip.technical).font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Menu.inset)
+        .padding(.vertical, 9)
+        .frame(width: Menu.width, alignment: .leading)
+    }
+
+    func part(_ label: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
+            Text(text).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 /// Whose sessions these are: yours, with two or more messages from you, and one-prompt runs from scripts.
 struct SplitCard: View {
     var split: SetupReport.Split
@@ -1542,12 +1600,11 @@ struct FixDetail: View {
                 Spacer()
                 if let p = fix.points { Text("+\(Format.points(p))").font(.headline.monospacedDigit()).foregroundStyle(Color(nsColor: .systemGreen)) }
             }
-            labelled("What happened", Plain.text(fix.pattern), Ink.primary)
-            if let cause = fix.hook?.cause { labelled("Why", cause, Color(nsColor: .systemOrange)) }
-            labelled("After the fix", Plain.text(fix.effect), Ink.primary)
-            Text([Insights.componentName(fix.component), fix.repo, "seen in \(fix.sessions) session\(fix.sessions == 1 ? "" : "s")"]
+            labelled("What happened", [Plain.text(fix.pattern), fix.hook?.cause].compactMap { $0 }.joined(separator: " "))
+            labelled("What to do", fix.hook?.remedy ?? Plain.text(fix.effect))
+            Text([fix.rule == "broken_hook" ? fix.subject.map { "\($0) hook" } : nil, Insights.componentName(fix.component), fix.repo]
                 .compactMap { $0 }.joined(separator: " · "))
-                .font(.caption).foregroundStyle(Ink.tertiary)
+                .font(.caption).foregroundStyle(Ink.secondary)
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, Menu.inset)
@@ -1555,10 +1612,10 @@ struct FixDetail: View {
         .frame(width: Menu.width, alignment: .leading)
     }
 
-    func labelled(_ label: String, _ text: String, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.caption.weight(.semibold)).foregroundStyle(Ink.tertiary)
-            Text(text).font(.subheadline).foregroundStyle(color)
+    func labelled(_ label: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption.weight(.semibold)).foregroundStyle(Ink.secondary)
+            Text(text).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
         }
     }
 

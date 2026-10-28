@@ -21,6 +21,7 @@ enum MenuEntry: Equatable {
     case applied(Insights)                       // what AgentPlay changed and whether it worked
     case tabs(improve: Int)                      // hosted: Now · Improve · Setup, switched in place
     case suggestion(Coach.Suggestion)            // one of Claude's suggestions
+    case tip(SetupReport.Tip)                    // a way to improve, from what was measured
     case askClaude(asking: Bool)                 // turn on suggestions from Claude, or "Asking Claude…"
     case setupItem(SetupReport.Item)             // a skill, subagent or MCP server you use, and how sessions go with it
     case unused(kind: String, names: [String])   // what sits unused, by kind
@@ -129,8 +130,8 @@ enum MenuBuilder {
         if !isSample, prefs.showsPip { out.append(.pip) }
         let ins = s.insights.flatMap { $0.score == nil ? nil : $0 }
         // The badge counts what the Improve tab shows: fixes, and Claude's suggestions when they're on.
-        let suggestions = prefs.asksClaudeForSuggestions ? (s.coach?.suggestions.count ?? 0) : 0
-        out.append(.tabs(improve: (ins?.fixes.count ?? 0) + suggestions))
+        // The same count Pip says: the next steps measured here (Claude's suggestions are extra, below them).
+        out.append(.tabs(improve: doNext(s, ins: ins).count))
         switch tab {
         case .now: break
         case .improve: return out + improve(s, ins: ins, prefs: prefs, trim: trim, askingClaude: askingClaude) + footer()
@@ -183,11 +184,11 @@ enum MenuBuilder {
         let busy = working.filter { $0.dot == .working }, idle = working.filter { $0.dot == .idle }
         out += (busy + idle.prefix(1)).prefix(max(1, 3 - trim)).map(MenuEntry.session)
 
-        // 4. The best fix stays on the first screen; Improve has all of them.
-        if let fix = ins?.fixes.first, trim < 4 {
+        // 4. The best next step stays on the first screen; Improve has all of them.
+        if let first = doNext(s, ins: ins).first, trim < 4 {
             out.append(.separator)
             out.append(.header("Do This Next"))
-            out.append(.fix(fix))
+            out.append(first)
         }
 
         // 5. Estimated usage: two lines here, the rest one level down.
@@ -203,9 +204,10 @@ enum MenuBuilder {
     /// Improve: what to fix, what Claude suggests, what was changed and whether it worked, and how runs are going.
     static func improve(_ s: Snapshot, ins: Insights?, prefs: CompanionPrefs, trim: Int, askingClaude: Bool) -> [MenuEntry] {
         var out: [MenuEntry] = []
-        if let ins, !ins.fixes.isEmpty {
+        let next = doNext(s, ins: ins)
+        if !next.isEmpty {
             out.append(.header("Do This Next"))
-            out += ins.fixes.prefix(max(1, 3 - trim)).map(MenuEntry.fix)
+            out += next.prefix(max(2, 6 - trim))
         }
         out.append(.header("Claude Suggests"))
         if let c = s.coach, !c.suggestions.isEmpty, prefs.asksClaudeForSuggestions {
@@ -229,6 +231,18 @@ enum MenuBuilder {
         out.append(.separator)
         out.append(.openInsights(.fixes, "Open Insights…"))
         return out
+    }
+
+    /// Every next step, best first: fixes worth points, then what was measured (failing and heavy tools,
+    /// sessions that run out of room, unused setup, tools worth using more), then fixes worth no points.
+    static func doNext(_ s: Snapshot, ins: Insights?) -> [MenuEntry] {
+        let fixes = ins?.fixes ?? []
+        let tips = s.usage?.setup?.tips ?? []
+        let order = ["failing", "context", "room", "unused", "use"]
+        let sorted = tips.sorted { (order.firstIndex(of: $0.kind) ?? 9) < (order.firstIndex(of: $1.kind) ?? 9) }
+        return fixes.filter { ($0.points ?? 0) >= 0.5 }.map(MenuEntry.fix)
+            + sorted.map(MenuEntry.tip)
+            + fixes.filter { ($0.points ?? 0) < 0.5 }.map(MenuEntry.fix)
     }
 
     /// Setup: what Claude Code loads for you, how often each ran, and how sessions went with it.

@@ -27,6 +27,7 @@ FAILING = 0.2             # a fifth of its own calls failing, over at least FAIL
 FAILING_CALLS = 3          # failed calls, at least, before "failing"
 HEAVY_TOKENS = 40_000     # this much returned into one session's context, on average, is heavy
 BYTES_PER_TOKEN = 4
+UNUSED_TOKENS = 2000      # unused setup must cost at least this much per session to be worth a tip
 RECENT = 3                # your latest sessions that used it, linked by id
 
 
@@ -158,4 +159,71 @@ def measure(store: Store, now: datetime | None = None, days: int = 30) -> dict[s
     cost = lambda rs: round(sum(float(r.get("costUsd") or 0) for r in rs), 2)  # noqa: E731
     return {"days": days, "items": out,
             "sessions": {"yours": len(yours), "automated": len(auto), "yoursCostUsd": cost(yours),
-                         "automatedCostUsd": cost(auto)}}
+                         "automatedCostUsd": cost(auto),
+                         "yoursCompacted": sum(1 for r in yours if int(r.get("compactions") or 0) > 0)}}
+
+
+def _tokens(n: int) -> str:
+    return f"{n / 1_000_000:.1f}M" if n >= 1_000_000 else f"{round(n / 1000)}k" if n >= 1000 else str(n)
+
+
+def tips(setup: dict[str, Any], descriptions: dict[tuple[str, str], str] | None = None) -> list[dict[str, Any]]:
+    """Ways to improve beyond fixing a file, from what was measured: tools that flood context or keep failing,
+    setup that loads into every session unused, sessions that run out of room, and tools worth using more.
+    Each says what happened and what to do in plain words; the technical names go last, small."""
+    items = setup.get("items", [])
+    split = setup.get("sessions") or {}
+    out: list[dict[str, Any]] = []
+
+    def tip(tid: str, kind: str, title: str, short: str, what: str, todo: str, technical: str,
+            action: str | None = None) -> None:
+        out.append({"id": tid, "kind": kind, "title": title, "short": short, "what": what, "todo": todo,
+                    "technical": technical, "action": action})
+
+    def tech(it: dict[str, Any]) -> str:
+        kind = {"mcp": "MCP server", "agent": "Subagent", "skill": "Skill"}.get(it["kind"], it["kind"])
+        return f"{kind} {it['name']}, " + ("set up by you" if it.get("source") == "you" else str(it.get("source")))
+
+    measured = [i for i in items if i.get("measured")]
+    for it in [i for i in measured if i["measured"]["advice"]["kind"] == "failing"][:2]:
+        m = it["measured"]
+        tip(f"failing:{it['kind']}:{it['name']}", "failing", f"{it['name']} keeps failing",
+            f"{m['failed']:,} of {m['calls']:,} calls failed",
+            f"{m['failed']:,} of {m['calls']:,} calls failed in the last {setup.get('days', 30)} days.",
+            m["advice"]["text"].split(". ", 1)[-1], tech(it),
+            "connectors" if it.get("source") == "claude.ai connector" else None)
+    for it in [i for i in measured if i["measured"]["advice"]["kind"] == "heavy"][:2]:
+        m = it["measured"]
+        per = m["tokens"] // max(1, m["sessions"])
+        tip(f"heavy:{it['kind']}:{it['name']}", "context", f"{it['name']} is filling your context",
+            f"About {_tokens(per)} tokens a session",
+            f"Each session that uses it takes in about {_tokens(per)} tokens from it, {_tokens(m['tokens'])} over "
+            f"{m['sessions']} sessions. A fuller context means slower, costlier answers and earlier compaction.",
+            "Ask it for less (one frame or page, not the whole file), and turn it off in sessions that don't need it.",
+            tech(it),
+            "connectors" if it.get("source") == "claude.ai connector" else None)
+    unused = [i for i in items if i.get("verdict") == "unused" and i["kind"] in ("skill", "agent")]
+    desc = descriptions or {}
+    tok = sum(len(desc.get((i["kind"], i["name"]), "")) + len(i["name"]) + 20 for i in unused) // 4
+    if len(unused) >= 3 and tok >= UNUSED_TOKENS:  # a few hundred tokens isn't worth anyone's time
+        tip("unused-setup", "unused", f"Remove {len(unused)} skills and subagents you never use",
+            f"About {_tokens(tok)} tokens in every session",
+            f"None ran in {setup.get('days', 30)} days, yet each one's description loads into every session: about "
+            f"{_tokens(tok)} tokens before you type anything.",
+            "Move the ones you don't need out of ~/.claude/skills and ~/.claude/agents. You can move them back.",
+            ", ".join(i["name"] for i in unused[:6]) + (" and more" if len(unused) > 6 else ""), "skills_folder")
+    yours, compacted = int(split.get("yours") or 0), int(split.get("yoursCompacted") or 0)
+    if compacted >= 3:
+        tip("compactions", "room", "Long sessions run out of room",
+            f"{compacted} of your {yours} sessions",
+            f"{compacted} of your {yours} sessions filled their context and had to compact. After that the agent "
+            "works from a summary and forgets details.",
+            "Start a new session for each new task, or type /clear between tasks.", "sessions with compactions")
+    for it in [i for i in measured if i["measured"]["advice"]["kind"] == "helps"][:1]:
+        c = it["measured"].get("compare") or {}
+        tip(f"helps:{it['kind']}:{it['name']}", "use", f"Use {it['name']} more",
+            f"{round(c.get('errorRateWith') or 0)}% failed calls with it, {round(c.get('errorRateWithout') or 0)}% without",
+            f"Your {c.get('with')} sessions with it had {c.get('verdict')}: {round(c.get('errorRateWith') or 0)}% of calls "
+            f"failed, against {round(c.get('errorRateWithout') or 0)}% in the {c.get('without')} without. That goes with it; it may not be the cause.",
+            "Ask for it by name on bigger tasks.", tech(it))
+    return out

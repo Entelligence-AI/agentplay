@@ -48,7 +48,7 @@ def test_hook_cause_names_the_remedy_and_keeps_the_command_out(tmp_path):
     })
     _failure_transcript(home)
     hc = companion.hook_cause(_homes(home), "SessionStart:startup")
-    assert "wrong event" in hc["cause"]
+    assert "wrong event" in hc["cause"] and "when a session starts" in hc["cause"] and "when you send a message" in hc["cause"]
     assert hc["remedy"].startswith("Apply takes its entry out of SessionStart")
     assert hc["_action"] == {"kind": "hook_event", "file": "settings.json", "root": str(home), "command": CMD,
                              "from": "SessionStart", "to": None}
@@ -64,7 +64,8 @@ def test_hook_cause_moves_the_entry_when_it_is_not_registered_at_the_right_event
     _failure_transcript(home)
     hc = companion.hook_cause(_homes(home), "SessionStart:startup")
     assert hc["_action"]["to"] == "UserPromptSubmit"
-    assert hc["remedy"] == f"Apply moves its entry from SessionStart to UserPromptSubmit in {companion._home_label(home / 'settings.json')}."
+    assert hc["remedy"] == (f"Apply moves its entry from SessionStart to UserPromptSubmit in "
+                            f"{companion._home_label(home / 'settings.json')}, so it runs when you send a message.")
 
 
 def test_hook_event_fix_applies_to_claude_home_and_undoes(tmp_path):

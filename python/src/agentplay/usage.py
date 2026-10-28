@@ -538,8 +538,12 @@ def _setup(claude_homes: list[Path] | None, uses: list[list[Any]], now: datetime
 
     home = Path(claude_homes[0])
     try:
-        return setup_inventory.report(home, uses, now, claude_json=home.parent / ".claude.json",
-                                      measured=impact.measure(store, now))
+        from .coach import descriptions
+
+        rep = setup_inventory.report(home, uses, now, claude_json=home.parent / ".claude.json",
+                                     measured=impact.measure(store, now))
+        rep["tips"] = impact.tips(rep, descriptions(home))
+        return rep
     except Exception:  # noqa: BLE001 - the setup list must never cost the usage report
         return None
 

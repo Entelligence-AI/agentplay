@@ -911,7 +911,7 @@ def _sources(homes: discover.Homes, rows: list[dict[str, Any]], index_error: str
 INSIGHTS_DAYS = 30
 INSIGHTS_TTL_S = 900
 # Bumped when the cached shape changes, so an older companion's cache is recomputed rather than read short.
-INSIGHTS_CACHE_V = 3
+INSIGHTS_CACHE_V = 4  # 4: fixes in plain words (hook titles name the script; no echo "checks")
 
 
 def _health_rows(store: Store, lo: str, hi: str) -> list[dict[str, Any]]:
@@ -977,6 +977,15 @@ def insights(store: Store, now: datetime, homes: discover.Homes | None = None) -
 
 
 _WRONG_EVENT = re.compile(r"expected '(\w+)' but got '(\w+)'")
+# Claude Code's hook events, said the way a person would.
+EVENT_WORDS = {"SessionStart": "when a session starts", "UserPromptSubmit": "when you send a message",
+               "PreToolUse": "before each tool call", "PostToolUse": "after each tool call", "Stop": "when the agent stops",
+               "SubagentStop": "when a subagent finishes", "SessionEnd": "when a session ends",
+               "Notification": "when Claude Code notifies you", "PreCompact": "before context is compacted"}
+
+
+def when(event: str) -> str:
+    return EVENT_WORDS.get(event.split(":")[0], f"at {event}")
 _ENV_ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
@@ -1071,8 +1080,9 @@ def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
                 m = _WRONG_EVENT.search(err)
                 if m:
                     wrong = (m.group(1), m.group(2))
-                    cause = (f"It was written for {m.group(2)}: when Claude Code runs it at {m.group(1)} it answers "
-                             f"as the wrong event, so every run is rejected.")
+                    who = _hook_executable(failing) if failing else None
+                    cause = (f"{who or 'It'} is set to run {when(m.group(1))}, but it was written to run "
+                             f"{when(m.group(2))}, so Claude Code rejects it every time (the wrong event).")
                 elif "not found" in err or "No such file" in err:
                     cause = "Its command can't be found."
                 elif "timed out" in err.lower() or "timeout" in err.lower():
@@ -1082,15 +1092,17 @@ def hook_cause(homes: discover.Homes, hook_name: str) -> dict[str, Any]:
                 else:
                     cause = "It fails when it runs."
                 break
-    out: dict[str, Any] = {"commands": commands[:4], "settingsFiles": sorted(set(files)), "cause": cause, "remedy": None}
+    out: dict[str, Any] = {"commands": commands[:4], "settingsFiles": sorted(set(files)), "cause": cause, "remedy": None,
+                           "script": _hook_executable(failing) if failing else None}
     if wrong and failing:
         action = _hook_event_action(homes, failing, ran_for=wrong[0], answers=wrong[1])
         if action:
             label = _home_label(Path(action["root"]) / action["file"])
             out["remedy"] = (
-                f"Apply takes its entry out of {wrong[0]} in {label}. It keeps running at {wrong[1]}, where it is already registered."
+                f"Apply takes its entry out of {wrong[0]} in {label}, so it stops running {when(wrong[0])}. "
+                f"It keeps running {when(wrong[1])}, as it was written to."
                 if action["to"] is None else
-                f"Apply moves its entry from {wrong[0]} to {wrong[1]} in {label}.")
+                f"Apply moves its entry from {wrong[0]} to {wrong[1]} in {label}, so it runs {when(wrong[1])}.")
             out["_action"] = action
     return out
 
@@ -1318,6 +1330,12 @@ def _fix_entry(f: dict[str, Any], homes: discover.Homes | None) -> dict[str, Any
         hook = hook_cause(homes, str(f.get("subject") or ""))
         out["applicable"] = out["applicable"] or "_action" in hook
         out["hook"] = {k: v for k, v in hook.items() if not k.startswith("_")}
+        # Named for what a person sees: the script, and the moment it fails.
+        event = str(f.get("subject") or "").split(":")[0]
+        if hook.get("script"):
+            out["title"] = f"{hook['script']} fails every time, {when(event)}"
+        else:
+            out["title"] = f"A hook fails {when(event)}"
     return out
 
 

@@ -197,6 +197,19 @@ NAMES = {
 # ------------------------------------------------------------------ fixes
 
 
+# What a check looks like: something that tests, lints, type-checks or builds. Anything else that happened to
+# run after an edit (mkdir, echo, a bare npx or python) isn't one, so it's never offered as "the check to run".
+_CHECK = re.compile(r"(^|[\s:/_-])(test|tests|pytest|jest|vitest|mocha|spec|lint|eslint|biome|tsc|typecheck|type-check|"
+                    r"mypy|pyright|ruff|flake8|clippy|check|build|verify)($|[\s:/_-])")
+
+
+def is_check(verb: str) -> bool:
+    first = verb.split()[0] if verb.split() else ""
+    if first in ("test", "[", "git", "gh", "echo", "mkdir", "ls", "cat"):  # the shell's `test`, git check-ignore
+        return False
+    return bool(_CHECK.search(verb.lower()))
+
+
 def fix_id(rule: str, repo: str, subject: str) -> str:
     return hashlib.sha256(f"{rule}\0{repo}\0{subject}".encode()).hexdigest()[:12]
 
@@ -257,7 +270,8 @@ def fixes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # Verification: name the commands that already pass here.
         if rt.edited >= 5 and rt.verified / rt.edited < 1 - 0.3:
             passing = sorted(
-                (v for v, c in cmds.items() if c["verify"] and c["calls"] >= 3 and 1 - c["fails"] / c["calls"] >= 0.6),
+                (v for v, c in cmds.items() if c["verify"] and c["calls"] >= 3 and 1 - c["fails"] / c["calls"] >= 0.6
+                 and is_check(v)),
                 key=lambda v: -cmds[v]["calls"],
             )[:2]
             if passing:
@@ -379,7 +393,7 @@ def fixes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             out.append(_fix(
                 "broken_hook", "", name, "environment",
                 f"Fix the `{name}` hook",
-                f"`{name}` failed {h['fails']} times in {len(h['sessions'])} sessions.",
+                f"It failed {h['fails']} times, in {len(h['sessions'])} sessions.",
                 "Tool calls stop being blocked by a failing hook.",
                 _points(base, changed, "environment"), h["sessions"], [],
                 {"name": "hook_fails", "verb": name},

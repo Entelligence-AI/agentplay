@@ -669,10 +669,12 @@
         "yours": 0,
         "automated": 0,
         "yoursCostUsd": 0,
-        "automatedCostUsd": 0
+        "automatedCostUsd": 0,
+        "yoursCompacted": 0
       },
       "unused": 0,
-      "items": []
+      "items": [],
+      "tips": []
     },
     "timingMs": 0
   },

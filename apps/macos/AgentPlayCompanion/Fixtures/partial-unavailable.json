@@ -1296,10 +1296,12 @@
         "yours": 0,
         "automated": 3,
         "yoursCostUsd": 0,
-        "automatedCostUsd": 0.0
+        "automatedCostUsd": 0.0,
+        "yoursCompacted": 0
       },
       "unused": 0,
-      "items": []
+      "items": [],
+      "tips": []
     },
     "timingMs": 0
   },

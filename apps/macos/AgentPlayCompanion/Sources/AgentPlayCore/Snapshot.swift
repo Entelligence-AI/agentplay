@@ -495,7 +495,20 @@ public struct SetupReport: Codable, Sendable, Equatable {
         public var automated: Int
         public var yoursCostUsd: Double
         public var automatedCostUsd: Double
+        public var yoursCompacted: Int?
     }
+    /// A way to improve beyond fixing a file, from what was measured (impact.tips).
+    public struct Tip: Codable, Sendable, Equatable, Identifiable {
+        public var id: String
+        public var kind: String       // failing, context, unused, room, use
+        public var title: String
+        public var short: String?     // the row's subtitle: the number behind it
+        public var what: String
+        public var todo: String
+        public var technical: String
+        public var action: String?    // connectors, skills_folder
+    }
+    public var tips: [Tip]?
     public var days: Int
     public var counts: [String: Int]
     public var sessions: Split?

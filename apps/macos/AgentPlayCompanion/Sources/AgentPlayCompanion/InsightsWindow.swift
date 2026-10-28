@@ -215,8 +215,25 @@ struct FixesPane: View {
             }
         }
         let fixes = insights?.fixes ?? []
-        if fixes.isEmpty {
+        let tips = model.snapshot?.usage?.setup?.tips ?? []
+        if fixes.isEmpty && tips.isEmpty {
             EmptyNote(text: "Nothing to fix right now.")
+        }
+        ForEach(tips) { t in
+            Card {
+                Label(t.title, systemImage: TipCard.symbol(t.kind)).font(.headline)
+                Labelled(label: "What happened", text: t.what)
+                Labelled(label: "What to do", text: t.todo)
+                HStack {
+                    Text(t.technical).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if t.action == "skills_folder" {
+                        Button("Show Skills Folder") { NSWorkspace.shared.open(StatusItemController.claudeFolder("skills")) }
+                    } else if t.action == "connectors" {
+                        Button("Manage Connectors") { NSWorkspace.shared.open(URL(string: "https://claude.ai/settings/connectors")!) }
+                    }
+                }
+            }
         }
         ForEach(fixes) { f in
             Card {

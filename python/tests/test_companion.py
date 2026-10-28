@@ -1,3 +1,4 @@
+
 """The companion snapshot: what it derives, and what it must never carry."""
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import sys
 from contextlib import redirect_stdout
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -1136,7 +1138,7 @@ def test_impact_measures_each_tool_from_maps_and_splits_your_sessions(tmp_path):
     put(11, 1, [fig(1, err=True)] * 4)  # a one-prompt run: counted as automated
     put(40 * 24, 4, [fig(1)])  # older than the window
     r = impact.measure(st, now)
-    assert r["sessions"] == {"yours": 11, "automated": 1, "yoursCostUsd": 11.0, "automatedCostUsd": 1.0}
+    assert r["sessions"] == {"yours": 11, "automated": 1, "yoursCostUsd": 11.0, "automatedCostUsd": 1.0, "yoursCompacted": 0}
     f = next(i for i in r["items"] if i["name"] == "figma")
     assert (f["calls"], f["failed"], f["sessions"], f["yours"]) == (14, 4, 6, 5)
     assert f["tokens"] == 14 * 100_000
@@ -1172,6 +1174,29 @@ def test_setup_lists_connectors_and_builtins_seen_in_sessions(tmp_path):
     assert by["Slack"]["source"] == "claude.ai connector" and by["Slack"]["uses"] == 9
     assert by["Explore"]["source"] == "built in" and by["Explore"]["verdict"] == "used"
     assert rep["sessions"] == {"yours": 1}
+
+
+def test_tips_say_what_happened_and_what_to_do():
+    from agentplay import impact
+
+    def m(kind: str, name: str, advice: str, **kw: Any) -> dict:
+        base = {"calls": 100, "failed": 0, "tokens": 0, "sessions": 4, "compare": {}, "advice": {"kind": advice, "text": "x. Check its login."}}
+        return {"kind": kind, "name": name, "source": "you", "verdict": "used", "measured": {**base, **kw}}
+
+    items = [m("mcp", "figma", "heavy", tokens=800_000), m("mcp", "linear", "failing", failed=40),
+             m("agent", "Explore", "helps", compare={"with": 6, "without": 9, "verdict": "fewer failed calls",
+                                                       "errorRateWith": 4.15, "errorRateWithout": 12.2})]
+    items += [{"kind": "skill", "name": f"s{i}", "source": "you", "verdict": "unused"} for i in range(5)]
+    setup = {"days": 30, "items": items, "sessions": {"yours": 20, "yoursCompacted": 4}}
+    few = {t["kind"] for t in impact.tips(setup, {("skill", f"s{i}"): "short" for i in range(5)})}
+    assert few == {"failing", "context", "room", "use"}  # unused setup that costs little isn't a tip
+    big = impact.tips(setup, {("skill", f"s{i}"): "x" * 2000 for i in range(5)})
+    by = {t["kind"]: t for t in big}
+    assert by["unused"]["action"] == "skills_folder" and "tokens" in by["unused"]["what"]
+    assert "200k tokens" in by["context"]["what"] and by["failing"]["todo"] == "Check its login."
+    assert "4% of calls failed, against 12%" in by["use"]["what"]
+    for t in big:
+        assert t["title"] and t["what"] and t["todo"] and "\u2014" not in json.dumps(t)
 
 
 def test_coach_keeps_only_checked_suggestions():
