@@ -17,6 +17,7 @@ import re
 from agentplay._core.code_authorship import extract_edit_evidence
 from agentplay._core.ingestion.coding_agent._paths import basename as path_basename
 from agentplay._core.ingestion.coding_agent._sources._jsonl_utils import (
+    SOURCE_OFFSET_KEY,
     drop_untyped,
     parse_dt,
     parse_jsonl_records,
@@ -130,7 +131,7 @@ def parse_codex(
     project_name: str | None = None,
 ) -> tuple[TraceData, list[SpanData]]:
     """Parse a Codex JSONL file into a span tree."""
-    lines = _parse_jsonl(data)
+    lines = _own_records(_parse_jsonl(data), data)
     if not lines:
         now = datetime.now(UTC)
         trace = TraceData(trace_id=trace_id, start_time=now, end_time=now)
@@ -299,6 +300,12 @@ def parse_codex(
             "harness.agent_version": agent_version,
         },
     )
+    root_span.attributes.update(_thread_attrs(lines))
+    compactions, interruptions = _session_signals(lines)
+    if compactions:
+        root_span.attributes["harness.compactions"] = compactions
+    if interruptions:
+        root_span.attributes["harness.interruptions"] = interruptions
     all_spans.insert(0, root_span)
     incomplete_turns = [turn for turn in turns if turn.get("usage_incomplete")]
     # native_ledger_rejected covers the case a rejected native ledger leaves no
@@ -362,6 +369,117 @@ def _parse_jsonl(data: bytes) -> list[dict]:
             for block in payload["content"]:
                 drop_untyped(block, ("type", "text"), str)
     return records
+
+
+def _own_records(lines: list[dict], data: bytes) -> list[dict]:
+    """Drop the parent history a forked subagent rollout starts with.
+
+    A subagent spawned with `fork_turns` copies the parent's conversation into
+    its own rollout, all stamped with the fork time, and records where its own
+    lines begin in `session_meta.subagent_history_start_ordinal` (the 0-based
+    index of its first own line). Parsing the copy would count the parent's
+    prompts as the subagent's turns and bill the parent's tokens twice. Only
+    the subagent's own `session_meta` (always first) is kept from the copy.
+
+    The ordinal counts physical lines, and the parsed records skip blank or
+    unreadable ones, so the cut is made at that line's byte offset (the same
+    normalized stream `parse_jsonl_records` stamps offsets on).
+
+    Subagents only: a `guardian_review` rollout records the same field, but
+    its own reviews are written BEFORE that ordinal, so cutting there would
+    drop every request it made.
+    """
+    if not lines or lines[0].get("type") != "session_meta":
+        return lines
+    meta = lines[0].get("payload", {})
+    if meta.get("thread_source") != "subagent":
+        return lines
+    start = meta.get("subagent_history_start_ordinal")
+    if type(start) is not int or start <= 1:
+        return lines
+    stream = data.decode("utf-8", errors="replace").encode("utf-8")
+    cut = -1
+    for _ in range(start):
+        cut = stream.find(b"\n", cut + 1)
+        if cut < 0:
+            return lines[:1]  # the whole file is the copied history
+    cut += 1
+    return [lines[0], *(line for line in lines[1:] if line.get(SOURCE_OFFSET_KEY, 0) >= cut)]
+
+
+def _thread_attrs(lines: list[dict]) -> dict:
+    """Who started this thread, from the rollout's own `session_meta`.
+
+    Codex Desktop writes each subagent (and each guardian review) as its own
+    rollout. `thread_source` says which (`user`, `subagent`,
+    `guardian_review`, ...), `parent_thread_id` names the thread that spawned
+    it, and `source.subagent.thread_spawn.agent_path` is the task path the
+    parent's `spawn_agent` call returned, which links a launch to its child.
+    """
+    meta = lines[0].get("payload", {}) if lines and lines[0].get("type") == "session_meta" else {}
+    attrs = {}
+    for key, value in (
+        ("harness.thread_source", meta.get("thread_source")),
+        ("harness.parent_thread_id", meta.get("parent_thread_id")),
+    ):
+        if isinstance(value, str) and value:
+            attrs[key] = value
+    source = meta.get("source")
+    spawn = source.get("subagent") if isinstance(source, dict) else None
+    spawn = spawn.get("thread_spawn") if isinstance(spawn, dict) else None
+    path = spawn.get("agent_path") if isinstance(spawn, dict) else None
+    if isinstance(path, str) and path:
+        attrs["harness.agent_path"] = path[:200]
+    return attrs
+
+
+def _request_input(usage: object) -> int:
+    """A request's full input (cached included): the context it was sent."""
+    value = usage.get("input_tokens") if isinstance(usage, dict) else None
+    return value if type(value) is int and value > 0 else 0
+
+
+def _session_signals(lines: list[dict]) -> tuple[list[dict], list[str]]:
+    """Compactions and user interrupts, each at its own timestamp.
+
+    A `compacted` record is Codex replacing the history with a summary. Its
+    `latest_token_usage_record` is usually null, so the context before it
+    falls back to the last request's input seen in the rollout. A
+    `turn_aborted` event with reason `interrupted` is the user stopping a turn
+    (Esc). Neither carries text into the result.
+    """
+    compactions: list[dict] = []
+    interruptions: list[str] = []
+    last_input = 0
+    for line in lines:
+        kind = line.get("type")
+        payload = line.get("payload", {})
+        ts = line.get("timestamp")
+        if kind == "event_msg" and payload.get("type") == "token_count":
+            info = payload.get("info") or {}
+            last_input = _request_input(info.get("last_token_usage")) or last_input
+        elif kind == "token_usage_record":
+            last_input = _request_input(payload.get("usage")) or last_input
+        elif kind == "compacted" and ts:
+            record = payload.get("latest_token_usage_record")
+            usage = record.get("usage") if isinstance(record, dict) else None
+            compactions.append({"timestamp": ts, "pre_tokens": _request_input(usage) or last_input})
+        elif (
+            kind == "event_msg"
+            and payload.get("type") == "turn_aborted"
+            and payload.get("reason") == "interrupted"
+            and ts
+        ):
+            interruptions.append(ts)
+    return compactions, interruptions
+
+
+# A user-role message whose text starts with one of these is context Codex
+# injected, not a prompt: `<environment_context>`, `<user_instructions>`, ...,
+# the repo's AGENTS.md, and the IDE extension's editor context (whose clean
+# prompt follows as an `event_msg` `user_message`). A prompt the user wrote as
+# a markdown heading (`# Plan`, `## Error Type`) is still a prompt.
+_INJECTED_PREFIXES = ("<", "# AGENTS.md instructions", "# Context from my IDE setup")
 
 
 def _total_only_usage(usage: dict) -> bool:
@@ -528,9 +646,10 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
     """Group Codex lines into turns keyed on user `response_item` messages.
 
     Codex turn boundary = a `response_item` with `role=user` carrying
-    text that isn't a system context injection (lines starting with
-    `<` or `#`). Tokens land on `event_msg` `token_count` lines and
-    accumulate into the current turn.
+    text that isn't a system context injection (`_INJECTED_PREFIXES`).
+    A subagent's rollout has no user message: its first turn opens on the
+    parent's `agent_message`. Tokens land on `event_msg` `token_count`
+    lines and accumulate into the current turn.
     """
     turns: list[dict] = []
     current_turn: dict | None = None
@@ -617,7 +736,7 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
             for block in content if isinstance(content, list) else []:
                 if isinstance(block, dict) and block.get("type") == "input_text":
                     text = block.get("text", "")
-                    if not text.startswith("<") and not text.startswith("#"):
+                    if text and not text.startswith(_INJECTED_PREFIXES):
                         user_text = text
                         break
 
@@ -638,6 +757,30 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
                     "model": current_model,
                     "_native_turn_id": active_native_turn_id,
                 }
+
+        elif (
+            line_type == "response_item"
+            and payload.get("type") == "agent_message"
+            and current_turn is None
+        ):
+            # A subagent's input: its parent's task message, not a user prompt.
+            # It opens the subagent's first turn so the tool calls that follow
+            # have a turn to land in. No prompt text is kept: like Claude Code,
+            # a subagent's instructions are never a user turn.
+            current_turn = {
+                "_src": line,
+                "user_query": "",
+                "start_ts": ts,
+                "end_ts": ts,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "reasoning_tokens": 0,
+                "cache_read": 0,
+                "tools": [],
+                "cost_events": [],
+                "model": current_model,
+                "_native_turn_id": active_native_turn_id,
+            }
 
         elif line_type == "token_usage_record" and native_events is not None:
             event = native_events.get(source_attrs(line)["source.content_hash"])

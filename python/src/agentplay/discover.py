@@ -275,9 +275,10 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
     spans = source.get_spans_by_session(c.session_id)
     if not spans:
         raise SkipSession("no_spans")
-    # A subagent stored as its own conversation (Antigravity CLI) carries its role and parent on the root span.
+    # A subagent stored as its own conversation (Antigravity CLI, Codex) carries its role and parent on the root span.
     root = next((s for s in spans if s.parent_id is None), None)
     root_attrs = root.attributes if root is not None else {}
+    subagents = _codex_subagents(c, source) if c.agent == "codex" else []
     return builder.build_map_from_spans(
         spans,
         session_id=c.session_id,
@@ -289,7 +290,55 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
         parent_session_id=root_attrs.get("harness.parent_session_id") or None,
         resolver=resolver,
         started_at_hint=c.mtime or None,
+        subagents=subagents,
     )
+
+
+def _codex_subagents(c: Candidate, source: Any) -> list[dict[str, Any]]:
+    """The subagent rollouts a Codex session spawned, as lanes for its map.
+
+    Codex Desktop writes each subagent as its own rollout; like a Claude Code
+    subagent, its work belongs inside the parent's map (the store leaves
+    subagent sessions out of every aggregate for that reason). A nested
+    subagent gets its own lane under ``main`` too: the viewer lays out
+    subagent lanes one level deep, as Claude Code writes them. Raises ``SkipSession``
+    when the family is too large to map, the same cap a single transcript has.
+    """
+    lanes: list[dict[str, Any]] = []
+    total = source_bytes(c)
+    pending = [(sid, 1) for sid in source.codex_subagents(c.session_id)]
+    seen = {c.session_id}
+    while pending:
+        sid, depth = pending.pop(0)
+        if sid in seen:
+            continue  # never read one rollout into two lanes
+        seen.add(sid)
+        ref = source._build_index().get(sid)  # noqa: SLF001 - the only session id -> path map
+        with captured():
+            total += ref.path.stat().st_size if ref is not None else 0
+        if total > MAX_SOURCE_BYTES:
+            raise SkipSession("too_large")
+        # A child that yields no lane (unreadable, or no spans) still spawned its
+        # own subagents: queue them first so their lanes are not lost with it.
+        if depth < _CODEX_SUBAGENT_DEPTH:
+            pending.extend((kid, depth + 1) for kid in source.codex_subagents(sid))
+        spans = source.get_spans_by_session(sid)
+        root = next((s for s in spans if s.parent_id is None), None)
+        if root is None:
+            continue
+        lanes.append(
+            {
+                "id": "sa-" + sid[-36:],
+                "parent": "main",
+                "spans": spans,
+                "path": root.attributes.get("harness.agent_path") or "",
+            }
+        )
+    return lanes
+
+
+# Matches the source's own cap on how deep it links Codex subagents.
+_CODEX_SUBAGENT_DEPTH = 4
 
 
 # --------------------------------------------------------------------- titles

@@ -741,6 +741,108 @@ def _cwd_from_codex_head(head: bytes) -> str | None:
     return None
 
 
+#: `session_meta.thread_source` of a thread another thread started to do work
+#: for it: its rollout is folded into the parent's map. A `guardian_review`
+#: (an automatic review of the parent's next action) is not folded, so it
+#: stays a session of its own and its cost stays counted.
+_CODEX_SUBAGENT_SOURCE = "subagent"
+
+
+def _codex_thread_from_head(head: bytes) -> tuple[str, str, str] | None:
+    """`(thread_id, thread_source, parent_thread_id)` from the opening `session_meta`.
+
+    Codex Desktop writes each subagent and guardian review as its own rollout,
+    marked by `thread_source` and `parent_thread_id`. None when the head has
+    no `session_meta` with a thread id (older builds); an absent source or
+    parent reads as "".
+    """
+    for raw_line in head.split(b"\n"):
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            obj = json.loads(raw_line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(obj, dict) or obj.get("type") != "session_meta":
+            continue
+        payload = obj.get("payload")
+        payload = payload if isinstance(payload, dict) else {}
+        values = [payload.get(key) for key in ("id", "thread_source", "parent_thread_id")]
+        values = [value if isinstance(value, str) else "" for value in values]
+        return (values[0], values[1], values[2]) if values[0] else None
+    return None
+
+
+def _link_codex_threads(index: dict[str, _FileRef]) -> dict[str, list[str]]:
+    """Point every Codex subagent rollout at its parent's session.
+
+    Sets `parent_session_id` on each subagent ref, and returns each parent
+    session's subagent sessions. A link that would make a thread its own
+    ancestor is refused, so a malformed `parent_thread_id` can never fold a
+    session into itself. A long thread can be split over several rollouts sharing one
+    thread id (`rollout-<start>-<thread>_<window>.jsonl`); a child belongs to
+    the latest of them that started at or before it did. When every window
+    on disk started after the child, the one it ran in is gone, so the child
+    stays a session of its own rather than being folded into a later window.
+    A rollout's name starts with its local start time, so names sort by start.
+
+    A subagent's activity clock is the newest write across the parent and
+    every subagent below it, so a parent is rebuilt when a subagent grows.
+    """
+    by_thread: dict[str, list[tuple[str, str]]] = {}
+    for session_id, ref in index.items():
+        if ref.codex_thread is not None:
+            by_thread.setdefault(ref.codex_thread[0], []).append((ref.path.name, session_id))
+    parent_thread = {
+        ref.codex_thread[0]: ref.codex_thread[2]
+        for ref in index.values()
+        if ref.codex_thread is not None and ref.codex_thread[1] == _CODEX_SUBAGENT_SOURCE
+    }
+
+    def is_ancestor(thread_id: str, of: str) -> bool:
+        seen: set[str] = set()
+        while of and of not in seen:
+            if of == thread_id:
+                return True
+            seen.add(of)
+            of = parent_thread.get(of, "")
+        return False
+
+    children: dict[str, list[str]] = {}
+    for session_id, ref in index.items():
+        thread = ref.codex_thread
+        if thread is None or thread[1] != _CODEX_SUBAGENT_SOURCE or not thread[2]:
+            continue
+        if is_ancestor(thread[0], thread[2]):
+            continue  # a self-parented or cyclic link: keep it a session of its own
+        windows = sorted(by_thread.get(thread[2], ()))
+        if not windows:
+            continue  # the parent rollout is gone: the child stays a session of its own
+        parent = next((sid for name, sid in reversed(windows) if name <= ref.path.name), None)
+        if parent is None:
+            continue  # its parent window is gone: never fold it into a later one
+        ref.parent_session_id = parent
+        children.setdefault(parent, []).append(session_id)
+    for kids in children.values():
+        kids.sort(key=lambda sid: index[sid].path.name)
+
+    def newest(session_id: str, depth: int = 0) -> datetime:
+        mtime = index[session_id].mtime
+        if depth < _CODEX_MAX_DEPTH:
+            for kid in children.get(session_id, ()):
+                mtime = max(mtime, newest(kid, depth + 1))
+        return mtime
+
+    for parent in children:
+        index[parent].mtime = newest(parent)
+    return children
+
+
+#: How deep Codex subagents nest before the rest are left out of a parent map.
+_CODEX_MAX_DEPTH = 4
+
+
 def _first_field_in_cc_head(head: bytes, key: str) -> str | None:
     """First non-empty string value for `key` among the head's session lines.
 
@@ -1414,6 +1516,8 @@ class LocalSource:
         self._file_index: dict[str, _FileRef] | None = None
         self._branch_history: dict[str, tuple[str | None, list[str]]] = {}
         self._claude_code_families: dict[str, set[Path]] = {}
+        # Codex parent session id -> its subagent session ids (`_link_codex_threads`).
+        self._codex_children: dict[str, list[str]] = {}
         self._slug_cache: dict[str, str | None] = {}
         # Per-agent file-discovery tally, filled in by
         # `_record_discovery` as `_build_index()` walks each home. Pure
@@ -1519,6 +1623,7 @@ class LocalSource:
                     )
                     if ref:
                         _index_put(index, ref[0], ref[1], newest)
+        self._codex_children = _link_codex_threads(index)
 
         # opencode: materialized NDJSON lives at `<home>/<project_id>/*.jsonl`
         # (no fixed sub-dir like Claude's `projects/` or Codex's `sessions/`),
@@ -1821,7 +1926,7 @@ class LocalSource:
         project_name = _project_from_cwd(cwd) if cwd else None
 
         self._record_discovery("codex", "indexed")
-        return session_id, _FileRef(
+        ref = _FileRef(
             path=jsonl_file,
             agent=agent,
             mtime=mtime,
@@ -1829,6 +1934,8 @@ class LocalSource:
             cwd=cwd,
             home=home,
         )
+        ref.codex_thread = _codex_thread_from_head(head)
+        return session_id, ref
 
     def _index_opencode_file(
         self,
@@ -2347,6 +2454,11 @@ class LocalSource:
         results.sort(key=lambda s: s.start_time, reverse=True)
         return results
 
+    def codex_subagents(self, session_id: str) -> list[str]:
+        """The Codex subagent sessions this session spawned, oldest first."""
+        self._build_index()
+        return list(self._codex_children.get(session_id, ()))
+
     def get_spans_by_session(self, session_id: str) -> list[SpanData]:
         index = self._build_index()
         ref = index.get(session_id)
@@ -2457,7 +2569,7 @@ class LocalSource:
         root = next((span for span in spans if span.parent_id is None), None)
         if root is not None:
             root.attributes.update({"git.branch": branch, "git.branches": branches})
-            if ref.parent_session_id:  # a subagent stored as its own conversation (Antigravity CLI)
+            if ref.parent_session_id:  # a subagent stored as its own conversation (Antigravity CLI, Codex)
                 root.attributes["harness.session_role"] = "subagent"
                 root.attributes["harness.parent_session_id"] = ref.parent_session_id
             # A cloud-run session stores selected-repository metadata in a sidecar
@@ -2561,7 +2673,18 @@ class LocalSource:
 class _FileRef:
     """Internal pointer: session_id → file path + index-time metadata."""
 
-    __slots__ = ("agent", "branch", "cwd", "home", "mtime", "parent_session_id", "path", "project_name", "subformat")
+    __slots__ = (
+        "agent",
+        "branch",
+        "codex_thread",
+        "cwd",
+        "home",
+        "mtime",
+        "parent_session_id",
+        "path",
+        "project_name",
+        "subformat",
+    )
 
     def __init__(
         self,
@@ -2594,8 +2717,12 @@ class _FileRef:
         # The home dir under which this file was discovered — used to
         # look up the manifest identity for that home.
         self.home = home
-        # Session id of the conversation that spawned this one (Antigravity CLI subagents).
+        # Session id of the conversation that spawned this one (Antigravity CLI
+        # and Codex subagents).
         self.parent_session_id = parent_session_id
+        # Codex only: `(thread_id, thread_source, parent_thread_id)` from
+        # `session_meta`, read at index time to link subagent rollouts.
+        self.codex_thread: tuple[str, str, str] | None = None
 
 
 __all__ = ["LocalSource", "ManifestIdentity"]
