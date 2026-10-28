@@ -450,6 +450,9 @@ public struct SetupReport: Codable, Sendable, Equatable {
         public var verdict: String     // used, rare, unused, runs
         /// How it performed, from the session maps: calls, failures, context, linked sessions, a next step.
         public var measured: Measured?
+        /// Hooks that run it, and the subagents it drives: how a skill is in use beyond direct calls.
+        public var runBy: [String]?
+        public var worksWith: [String]?
         public var id: String { "\(kind)|\(name)|\(detail ?? "")" }
     }
     public struct Measured: Codable, Sendable, Equatable {

@@ -121,6 +121,30 @@ def _label(kind: str, name: str) -> tuple[str, str]:
     return name, "seen in sessions"
 
 
+def _link(items: list[dict[str, Any]], claude_home: Path) -> None:
+    """What drives a skill besides a direct call: a hook whose script carries its name (validator-nudge.sh runs
+    the validator on every message) and the subagents its SKILL.md names (the validator's judge). A skill run that
+    way is in use, whatever its own call count says. Names only: the SKILL.md text is read here and dropped."""
+    hooks = [str(i.get("detail") or "") for i in items if i["kind"] == "hook"]
+    agents = {i["name"]: i for i in items if i["kind"] == "agent" and i.get("source") == "you"}
+    for it in items:
+        if it["kind"] != "skill":
+            continue
+        run_by = sorted({h for h in hooks if h and it["name"] in h.rsplit(".", 1)[0]})
+        try:
+            text = (claude_home / "skills" / it["name"] / "SKILL.md").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        # Named again and again, not once in passing: "an expert judge scores it" five times over, not "judge it".
+        works = sorted(n for n in agents if len(re.findall(rf"\b{re.escape(n)}\b", text, re.I)) >= 3)
+        if run_by:
+            it["runBy"] = run_by
+        if works:
+            it["worksWith"] = works
+        if run_by or any(agents[n]["uses"] > 0 for n in works):
+            it["verdict"] = "used"
+
+
 def report(claude_home: Path, uses: list[list[Any]], now: datetime, claude_json: Path | None = None,
            days: int = 30, measured: dict[str, Any] | None = None) -> dict[str, Any]:
     """The inventory with 30-day use counts and a verdict per item, most used first, unused last.
@@ -164,7 +188,8 @@ def report(claude_home: Path, uses: list[list[Any]], now: datetime, claude_json:
             it["verdict"] = "rare"
         else:
             it["verdict"] = "unused"
-    items.sort(key=lambda i: (i["kind"] == "hook", -i["uses"], i["kind"], i["name"]))
+    _link(items, claude_home)
+    items.sort(key=lambda i: (i["kind"] == "hook", i["verdict"] == "unused", -i["uses"], i["kind"], i["name"]))
     kinds = Counter(i["kind"] for i in items)
     return {"days": days, "counts": dict(kinds), "sessions": (measured or {}).get("sessions"),
             "unused": sum(1 for i in items if i["verdict"] == "unused" and i["kind"] in ("skill", "mcp", "agent")),

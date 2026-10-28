@@ -1212,7 +1212,15 @@ def test_coach_keeps_only_checked_suggestions():
     got = coach.parse(reply, {"tdd"})
     assert len(got) == 3
     assert got[0] == {"kind": "use-skill", "title": "Use tdd , always", "why": "Fewer corrections.", "name": "tdd"}
-    assert got[1]["name"] is None and got[2]["kind"] == "habit"
+    assert [g["title"] for g in got] == ["Use tdd , always", "Rest", "Four"]  # "use" with no installed name: dropped
+    # Already in use, a fix, or a restatement of a line on screen: dropped.
+    more = '{"suggestions": [' + ",".join([
+        '{"kind": "use-skill", "title": "Use the validator on bigger tasks", "why": "1 use.", "name": "validator"}',
+        '{"kind": "fix", "title": "Make the agent run checks", "why": "x 2.", "name": null}',
+        '{"kind": "habit", "title": "Start a new session per task", "why": "3 of 29 compacted.", "name": null}',
+        '{"kind": "habit", "title": "Say what done looks like", "why": "7% corrected.", "name": null}']) + "]}"
+    kept = coach.parse(more, {"validator"}, in_use={"validator"}, shown=["Long sessions run out of room: start a new session per task"])
+    assert [k["title"] for k in kept] == ["Say what done looks like"]
     assert coach.parse("no json here", {"tdd"}) == []
 
 

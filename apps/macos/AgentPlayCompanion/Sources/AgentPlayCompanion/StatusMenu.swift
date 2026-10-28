@@ -953,7 +953,7 @@ struct PipHeader: View {
         // A waiting session is Pip's title already; this line says the next thing worth knowing.
         // The week's forecast is on the plan card right below; Pip doesn't say it twice.
         let n = MenuBuilder.doNext(s, ins: s.insights.flatMap { $0.score == nil ? nil : $0 }).count
-        if n > 0 { return n == 1 ? "1 thing to improve" : "\(n) things to improve" }
+        if n > 0 { return n == 1 ? "1 fix to look at" : "\(n) fixes to look at" }
         let busy = (s.live ?? []).filter { $0.status == .busy }.count
         return busy > 0 ? "Click me if you're bored" : "Nothing needs you"
     }
@@ -1261,11 +1261,14 @@ struct ImpactCard: View {
     }
 
     var usedLine: String {
-        guard let m = item.measured else { return "Used \(item.uses)× in the last 30 days" }
+        var extra = ""
+        if let h = item.runBy, !h.isEmpty { extra += " Runs on its own through \(h.joined(separator: ", "))." }
+        if let a = item.worksWith, !a.isEmpty { extra += " Drives \(a.joined(separator: " and "))." }
+        guard let m = item.measured else { return "Called \(item.uses)× directly in the last 30 days." + extra }
         var s = "\(m.calls) call\(m.calls == 1 ? "" : "s") in \(m.sessions) session\(m.sessions == 1 ? "" : "s")"
         if m.yours != m.sessions { s += " (\(m.yours) yours, \(m.sessions - m.yours) automated)" }
         if let at = m.last.flatMap(SnapshotDecoder.parseISO) { s += " · last \(Format.relative(at, now: Date()))" }
-        return s
+        return s + extra
     }
 
     @ViewBuilder func row(_ label: String, _ value: String, warn: Bool) -> some View {
@@ -1312,6 +1315,7 @@ struct ImpactCard: View {
     /// Under the row's name: what it is, how much it ran, and the one flag worth seeing.
     static func subtitle(_ it: SetupReport.Item) -> String {
         var bits = [it.kind == "mcp" ? "MCP" : SetupCard.kindName(it.kind), "\(Format.count(it.uses)) call\(it.uses == 1 ? "" : "s")"]
+        if let h = it.runBy?.first { bits.append("run by \(h)") }
         if let m = it.measured {
             switch m.advice.kind {
             case "failing": bits.append("\(m.failed) failed")
@@ -1406,15 +1410,26 @@ struct SplitCard: View {
     }
 }
 
-/// Each hook: the event it runs on and its script.
+/// Each hook: the moment it runs and its script.
 struct HooksCard: View {
     var hooks: [SetupReport.Item]
+
+    /// "SessionStart:startup" as a person says it.
+    static func moment(_ event: String) -> String {
+        let words = ["SessionStart": "When a session starts", "UserPromptSubmit": "When you send a message",
+                     "PreToolUse": "Before each tool call", "PostToolUse": "After each tool call", "Stop": "When the agent stops",
+                     "SubagentStop": "When a subagent finishes", "SessionEnd": "When a session ends",
+                     "Notification": "On a notification", "PreCompact": "Before compacting"]
+        let parts = event.split(separator: ":", maxSplits: 1).map(String.init)
+        let base = words[parts[0]] ?? parts[0]
+        return parts.count > 1 && parts[0].hasSuffix("ToolUse") ? "\(base) (\(parts[1]))" : base
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(hooks) { h in
                 HStack {
-                    Text(h.name).font(.subheadline).foregroundStyle(Ink.primary)
+                    Text(Self.moment(h.name)).font(.subheadline).foregroundStyle(Ink.primary)
                     Spacer()
                     Text(h.detail ?? "").font(.subheadline.monospaced()).foregroundStyle(Ink.secondary)
                 }

@@ -32,14 +32,15 @@ enum MenuEntry: Equatable {
     case separator
 }
 
-/// The menu's three tabs, Blume-style: what's happening, what to make better, and what you've set up.
+/// The menu's three tabs, named for what's in them: Usage (limits, sessions, spend), Fixes (what to do next),
+/// Tools (skills, MCP servers, subagents and hooks, and how each performs).
 enum MenuTab: String, CaseIterable {
     case now, improve, setup
     var title: String {
         switch self {
-        case .now: "Now"
-        case .improve: "Improve"
-        case .setup: "Setup"
+        case .now: "Usage"
+        case .improve: "Fixes"
+        case .setup: "Tools"
         }
     }
 }
@@ -255,10 +256,22 @@ enum MenuBuilder {
             out.append(.header("Sessions · Last \(st.days) Days"))
             out.append(.split(sp))
         }
-        let used = st.items.filter { $0.uses > 0 && $0.kind != "hook" }
-        out.append(.header("Used · Last \(st.days) Days"))
+        // Yours first (what you built or installed), then the MCP servers and connectors you call.
+        let used = st.items.filter { ($0.uses > 0 || $0.verdict == "used") && $0.kind != "hook" }
+        // Yours before built-ins, and what a hook runs before what's merely called most.
+        let mine = used.filter { $0.kind != "mcp" }.sorted {
+            ($0.source == "you" ? 0 : 1, $0.runBy == nil ? 1 : 0, -$0.uses) < ($1.source == "you" ? 0 : 1, $1.runBy == nil ? 1 : 0, -$1.uses)
+        }
+        let servers = used.filter { $0.kind == "mcp" }
         if used.isEmpty { out.append(.message(title: "Nothing ran in \(st.days) days", detail: nil)) }
-        out += used.prefix(max(2, 6 - 2 * trim)).map(MenuEntry.setupItem)
+        if !mine.isEmpty {
+            out.append(.header("Skills & Subagents · Last \(st.days) Days"))
+            out += mine.prefix(max(2, 4 - trim)).map(MenuEntry.setupItem)
+        }
+        if !servers.isEmpty {
+            out.append(.header("MCP Servers"))
+            out += servers.prefix(max(2, 4 - trim)).map(MenuEntry.setupItem)
+        }
         let unused = st.items.filter { $0.verdict == "unused" && $0.kind != "hook" }
         if !unused.isEmpty {
             out.append(.header("Not Used in \(st.days) Days"))

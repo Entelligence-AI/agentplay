@@ -28,7 +28,7 @@ MODEL = "haiku"
 EVERY = timedelta(hours=20)  # "once a day", with slack so a daily refresh never skips a day
 TIMEOUT_S = 120
 MAX_SUGGESTIONS = 3
-KINDS = ("use-skill", "remove", "habit", "fix")
+KINDS = ("use-skill", "remove", "habit")
 
 
 def _cache(store: Store) -> Path:
@@ -82,7 +82,11 @@ def facts(snap: dict[str, Any], claude_home: Path) -> dict[str, Any]:
     for it in setup.get("items", []):
         if it.get("kind") == "hook":
             continue
-        row = {"kind": it.get("kind"), "name": it.get("name"), "uses30d": it.get("uses", 0)}
+        row = {"kind": it.get("kind"), "name": it.get("name"), "uses30d": it.get("uses", 0), "status": it.get("verdict")}
+        if it.get("runBy"):
+            row["runAutomaticallyByHook"] = it["runBy"]
+        if it.get("worksWith"):
+            row["drivesSubagents"] = it["worksWith"]
         if d := desc.get((it.get("kind"), it.get("name"))):
             row["description"] = d
         if m := it.get("measured"):
@@ -97,7 +101,8 @@ def facts(snap: dict[str, Any], claude_home: Path) -> dict[str, Any]:
         "runHealthParts": {c.get("name"): c.get("points") for c in ins.get("components", []) if isinstance(c, dict)},
         "runHealthPartsOutOf": 20,
         "steering": {k: sig.get(k) for k in ("messages", "correctionRate", "frustrationRate", "interruptRate", "refusalRate")},
-        "fixesFound": [f.get("title") for f in ins.get("fixes", [])][:5],
+        # Already in front of the person: Claude must not repeat any of these.
+        "alreadyShown": [f.get("title") for f in ins.get("fixes", [])][:6] + [t.get("title") for t in setup.get("tips", [])],
         "fixesApplied": [{"title": a.get("title"), "verdict": a.get("verdict")} for a in (ins.get("applied") or [])][:5],
         "repeatedlyFailingCommand": learn.get("command"),
         "sessions": setup.get("sessions"),  # yours (2+ messages) and automated one-prompt runs, with cost
@@ -105,17 +110,23 @@ def facts(snap: dict[str, Any], claude_home: Path) -> dict[str, Any]:
     }
 
 
-PROMPT = """You coach one developer on how they use Claude Code. Below are facts about their last 30 days: counts \
-and names only. Suggest at most three changes that would make their sessions go better, best first.
+PROMPT = """You coach one developer on how they use Claude Code. Below are measured facts about their last 30 \
+days: counts and names only. Suggest up to three changes that would make their sessions go better, best first. \
+An empty list is a good answer when nothing clears the bar below.
 
-Prefer, in order: a skill or subagent they already have that fits a problem the numbers show ("use-skill"); \
-removing setup they never use, since every installed skill's description loads into each session ("remove"); \
-a habit ("habit"); one of the fixes listed ("fix"). Only name a skill or subagent that appears in "setup". \
-Plain words a non-programmer understands, no jargon, no em dashes. Each title under 60 characters, each why \
-under 160.
+Each suggestion must:
+- point at something the numbers show, and quote the number in "why";
+- not repeat or restate anything in "alreadyShown" (those are on screen already);
+- never tell them to use a skill or subagent whose status is "used", or that a hook already runs
+  ("runAutomaticallyByHook"), or that "drivesSubagents" that were used: they already use it;
+- name only a skill or subagent from "setup".
+
+Kinds: "use-skill" (a skill they have but rarely use that fits a problem in the numbers), "remove" (setup they
+never use), "habit" (a change in how they work, backed by a number). Plain words a non-programmer understands, no
+jargon, no em dashes. Each title under 60 characters, each why under 160.
 
 Reply with JSON only, no prose:
-{"suggestions": [{"kind": "use-skill|remove|habit|fix", "title": "...", "why": "...", "name": "skill or subagent name, or null"}]}
+{"suggestions": [{"kind": "use-skill|remove|habit", "title": "...", "why": "...", "name": "skill or subagent name, or null"}]}
 
 Facts:
 """
@@ -128,8 +139,15 @@ def _clean(text: Any, limit: int) -> str | None:
     return t[:limit] if t else None
 
 
-def parse(reply: str, installed: set[str]) -> list[dict[str, Any]]:
-    """The suggestions in Claude's reply, checked: known kinds, short strings, installed names only."""
+def _words(t: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", t.lower()) if len(w) > 3}
+
+
+def parse(reply: str, installed: set[str], in_use: set[str] | None = None,
+          shown: list[str] | None = None) -> list[dict[str, Any]]:
+    """The suggestions in Claude's reply, checked: known kinds, short strings, installed names only. Dropped: a
+    "use more" for something already in use, a fix (the fix list has those), and anything that mostly restates
+    a line already on screen."""
     m = re.search(r"\{.*\}", reply, re.S)
     if not m:
         return []
@@ -146,6 +164,11 @@ def parse(reply: str, installed: set[str]) -> list[dict[str, Any]]:
         if not title or not why:
             continue
         name = s.get("name") if isinstance(s.get("name"), str) and s.get("name") in installed else None
+        if s.get("kind") == "fix" or (kind == "use-skill" and (name is None or name in (in_use or set()))):
+            continue
+        w = _words(title)
+        if any(w and len(w & _words(x)) / len(w) >= 0.5 for x in shown or []):
+            continue
         out.append({"kind": kind, "title": title, "why": why, "name": name})
     return out[:MAX_SUGGESTIONS]
 
@@ -164,6 +187,7 @@ def run(store: Store, claude: str, snap: dict[str, Any], claude_home: Path, now:
             pass
     f = facts(snap, claude_home)
     installed = {str(i["name"]) for i in f["setup"] if i.get("name")}
+    in_use = {str(i["name"]) for i in f["setup"] if i.get("status") == "used" or i.get("runAutomaticallyByHook")}
     cwd = store.base / "coach"  # AgentPlay's own folder: no project's CLAUDE.md, one empty entry in ~/.claude
     cwd.mkdir(parents=True, exist_ok=True)
     cmd = [claude, "-p", "--model", MODEL, "--tools", "", "--setting-sources", "", "--strict-mcp-config",
@@ -184,6 +208,6 @@ def run(store: Store, claude: str, snap: dict[str, Any], claude_home: Path, now:
     out = {"generatedAt": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "model": MODEL,
            "tokens": sum(int(u.get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_creation_input_tokens",
                                                        "cache_read_input_tokens")),
-           "suggestions": parse(str(res.get("result") or ""), installed)}
+           "suggestions": parse(str(res.get("result") or ""), installed, in_use, f["alreadyShown"])}
     _atomic_write(_cache(store), json.dumps(out).encode("utf-8"))
     return {**out, "ran": True}
