@@ -196,6 +196,12 @@ enum CompanionMain {
             sem.wait()
             exit(code)
         }
+        if let dir = LaunchOptions.isDev ? LaunchOptions.value("--contrast-check") : nil {
+            let sem = DispatchSemaphore(value: 0)
+            Task.detached { await Renderer.contrastCheck(to: dir); sem.signal() }
+            while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            exit(0)
+        }
         if let dir = LaunchOptions.isDev ? LaunchOptions.value("--render-live") : nil {
             let sem = DispatchSemaphore(value: 0)
             Task.detached { await Renderer.renderLive(to: dir); sem.signal() }

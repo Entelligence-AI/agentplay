@@ -169,7 +169,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         for e in MenuBuilder.contextMenu(hasStore: model.snapshot?.store.available == true) { add(e, to: m, now: now) }
         let r = w.convertToScreen(b.convert(b.bounds, to: nil))
         b.highlight(true)
+        startGlass()
         m.popUp(positioning: nil, at: NSPoint(x: r.minX, y: Self.menuTop(below: r, screen: w.screen)), in: nil)
+        stopGlass()
         b.highlight(false)
     }
 
@@ -276,10 +278,61 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         model.popoverOpen = true
+        startGlass()
     }
 
     func menuDidClose(_ menu: NSMenu) {
         model.popoverOpen = false
+        stopGlass()
+    }
+
+    /// The menu and each submenu draw on Liquid Glass that shows whatever is behind it; tint it solid so text
+    /// reads the same over a white page or a busy photo. Submenus open later: look while it's open.
+    private func startGlass() {
+        glassTimer?.invalidate()
+        let t = Timer(timeInterval: 0.03, repeats: true) { _ in MainActor.assumeIsolated { Self.tintMenuGlass() } }
+        RunLoop.main.add(t, forMode: .eventTracking)
+        RunLoop.main.add(t, forMode: .default)
+        glassTimer = t
+    }
+
+    private func stopGlass() {
+        glassTimer?.invalidate()
+        glassTimer = nil
+    }
+
+    private var glassTimer: Timer?
+    /// Off only for `--contrast-check`'s "before" captures.
+    static var glassTintOn = true
+
+    /// Close to the window background, light or dark, with a little of the glass still showing at the edges.
+    static let glassTint = NSColor(name: nil) { ap in
+        ap.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 0.12, alpha: 0.97) : NSColor(white: 0.975, alpha: 0.9)
+    }
+
+    /// Tints the glass of every open menu window this app shows. Public API on the system's own view; a no-op
+    /// before macOS 26 (the older menu material is already near-opaque) and when Reduce Transparency is on.
+    static func tintMenuGlass() {
+        guard #available(macOS 26.0, *), glassTintOn else { return }
+        for w in NSApp.windows where w.isVisible && w.className.contains("PopupMenuWindow") {
+            guard let root = w.contentView?.superview ?? w.contentView else { continue }
+            func walk(_ v: NSView) {
+                if let g = v as? NSGlassEffectView {
+                    if g.tintColor !== glassTint { g.tintColor = glassTint }
+                    // Dark glass still lifts toward a bright page behind it: a solid backing inside the rim.
+                    if let c = g.contentView {
+                        let dark = g.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        c.wantsLayer = true
+                        c.layer?.backgroundColor = dark ? NSColor(white: 0.13, alpha: 1).cgColor : nil
+                        c.layer?.cornerRadius = g.cornerRadius
+                        c.layer?.cornerCurve = .continuous
+                    }
+                    return
+                }
+                v.subviews.forEach(walk)
+            }
+            walk(root)
+        }
     }
 
     // MARK: building
@@ -747,11 +800,17 @@ struct ProviderCard: View {
             ForEach(p.windows) { w in
                 let f = forecast(p, w)
                 // With a forecast, the weekly line shows its reset; the forecast says when it really runs out.
-                MeterRow(window: w, now: now, linear: f == nil)
+                MeterRow(window: w, now: now, linear: f == nil, runsOut: f.map { $0.runsOutAt != nil })
                 if let f, let r = w.resetsAt {
-                    Text(f.short(reset: r, now: now)).font(.subheadline)
-                        .foregroundStyle(f.runsOutAt != nil ? Color(nsColor: .systemOrange) : Ink.secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        if f.runsOutAt != nil {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.caption)
+                                .foregroundStyle(Color(nsColor: .systemOrange))
+                        }
+                        Text(f.short(reset: r, now: now)).font(.subheadline)
+                            .foregroundStyle(f.runsOutAt != nil ? Ink.primary : Ink.secondary)
+                            .lineLimit(1).minimumScaleFactor(0.9)
+                    }
                 }
             }
             if let plans = p.conflictingPlans {
@@ -850,12 +909,7 @@ struct PipHeader: View {
     static func now(_ m: CompanionModel, now: Date) -> String {
         guard let s = m.snapshot else { return "Reading your sessions" }
         // A waiting session is Pip's title already; this line says the next thing worth knowing.
-        if let week = ProviderSummary.build(s.limits).first(where: { $0.provider == "claude-code" })?.window("weekly"),
-           let used = week.used.value?.usedPercent, let days = s.usage?.claudeDaily,
-           let f = Forecast.of(used: used, windowMinutes: week.windowMinutes, resetsAt: week.resetsAt, days: days, now: now),
-           let out = f.runsOutAt {
-            return "Week runs out \(Format.weekdayTime(out)) at this pace"
-        }
+        // The week's forecast is on the plan card right below; Pip doesn't say it twice.
         if let n = s.insights?.fixes.count, n > 0 { return n == 1 ? "1 fix ready in Improve" : "\(n) fixes ready in Improve" }
         let busy = (s.live ?? []).filter { $0.status == .busy }.count
         return busy > 0 ? "Click me if you're bored" : "Nothing needs you"
@@ -1439,6 +1493,8 @@ struct MeterRow: View {
     var now: Date
     /// Show the straight-line "out in …" on this line (off when a forecast line follows).
     var linear: Bool = true
+    /// The forecast's answer, when there is one: it decides the bar's colour, not the straight line.
+    var runsOut: Bool? = nil
 
     static func isStale(_ w: ProviderLimitWindow, now: Date) -> Bool {
         w.used.freshness == .stale || (w.resetsAt.map { $0 <= now } ?? false) || w.used.isStale(now: now, maxAge: 6 * 3600)
@@ -1452,8 +1508,9 @@ struct MeterRow: View {
         let stale = Self.isStale(window, now: now)
         let used = window.used.value?.usedPercent ?? 0
         let pace = Self.pace(window, now: now)
-        let tint: PaceTint = stale ? .stale
-            : pace.map { $0.level == .over ? .over : $0.level == .ahead ? .ahead : .normal } ?? .normal
+        // One warning colour: orange when it's on course to run out before it resets, red only near the end.
+        let ahead = runsOut ?? pace.map { $0.level != .normal } ?? false
+        let tint: PaceTint = stale ? .stale : used >= 90 ? .over : ahead ? .ahead : .normal
         // One line: the name, the bar, the number. Two of these are a plan card; they must not stack up.
         HStack(alignment: .center, spacing: 10) {
             Text(title).font(.subheadline).foregroundStyle(Ink.primary).frame(width: 54, alignment: .leading)
@@ -1464,7 +1521,7 @@ struct MeterRow: View {
             }
             .frame(width: Self.barWidth, height: 6)
             Text(detail(stale, used: used)).font(.subheadline.monospacedDigit())
-                .foregroundStyle(tint == .normal || tint == .stale ? Ink.secondary : tint.color)
+                .foregroundStyle(tint == .over ? tint.color : Ink.primary)
                 .lineLimit(1)
             Spacer(minLength: 0)
         }

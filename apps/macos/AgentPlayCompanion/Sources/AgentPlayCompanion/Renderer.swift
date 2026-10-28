@@ -145,9 +145,21 @@ enum Renderer {
         }
         let timer = Timer(timeInterval: 0.6, repeats: false) { _ in
             MainActor.assumeIsolated {
+                StatusItemController.tintMenuGlass()
                 if let w = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("Menu") && !$0.className.contains("StatusBar") }),
                    let v = w.contentView?.superview ?? w.contentView,
                    let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    if ProcessInfo.processInfo.environment["APC_DUMP_MENU"] != nil {
+                        print("window", w.className, w.isOpaque, w.backgroundColor ?? .clear, w.alphaValue)
+                        func dump(_ v: NSView, _ d: Int) {
+                            guard d < 6 else { return }
+                            var extra = ""
+                            if let fx = v as? NSVisualEffectView { extra = " material=\(fx.material.rawValue) blend=\(fx.blendingMode.rawValue) state=\(fx.state.rawValue)" }
+                            print(String(repeating: "  ", count: d) + v.className + " \(Int(v.frame.width))x\(Int(v.frame.height))" + extra + " layer=\(v.layer.map { "\($0.backgroundColor != nil)" } ?? "-")")
+                            for c in v.subviews.prefix(4) { dump(c, d + 1) }
+                        }
+                        dump(v, 0)
+                    }
                     v.cacheDisplay(in: v.bounds, to: rep)
                     try? rep.representation(using: .png, properties: [:])?.write(to: url)
                 }

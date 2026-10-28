@@ -180,3 +180,114 @@ extension CompanionModel {
         markLive()
     }
 }
+
+extension Renderer {
+    /// `--contrast-check <dir>`: the real menu, over this Mac's real data, popped over a bright busy page and
+    /// then a dark one, captured from the screen as composited (glass and all). Two captures that match mean the
+    /// backdrop doesn't show through. Prints the mean pixel difference (0 to 255) for the glass as the system
+    /// draws it and as AgentPlay tints it, in Light and Dark. Takes the screen for a few seconds; no cursor moves.
+    static func contrastCheck(to path: String) async {
+        _ = NSApplication.shared
+        guard case .success(let rt) = Runtime.locate(allowDevOverride: true),
+              case .success(let fetched) = await SnapshotService(runtime: rt).fetch(.read) else { print("no snapshot"); return }
+        let dir = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let real = PrefsStore().load()
+        var s = fetched
+        if real.usesClaudeAccount, case .success(let rows) = await ClaudeAccount.fetch(claudeVersion: CompanionModel.claudeVersion()) {
+            s.limits = ClaudeAccount.merge(s.limits, account: rows)
+        }
+        let snap = s
+        await MainActor.run {
+            NSApp.setActivationPolicy(.accessory)
+            let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "render.\(UUID().uuidString)")!), isDevBuild: true)
+            m.prefs = real
+            m.installLiveForRender(snap)
+            m.refreshIdentity()
+            let screen = NSScreen.main!
+            let frame = NSRect(x: screen.frame.midX - 420, y: screen.frame.midY - 420, width: 840, height: 840)
+            var shots: [String: NSBitmapImageRep] = [:]
+            for tinted in [false, true] {
+                StatusItemController.glassTintOn = tinted
+                for dark in [true, false] {
+                    for bright in [true, false] {
+                        let back = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+                        back.level = .floating
+                        back.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+                        back.contentView = NSHostingView(rootView: BusyPage(bright: bright))
+                        back.orderFrontRegardless()
+                        let c = StatusItemController(model: m)
+                        c.nowOverride = snap.generatedAt
+                        NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                        c.menu.appearance = NSApp.appearance
+                        c.prepare(now: snap.generatedAt)
+                        let name = "\(tinted ? "tinted" : "system")-\(dark ? "dark" : "light")-over-\(bright ? "white" : "black")"
+                        let url = dir.appendingPathComponent(name + ".png")
+                        let timer = Timer(timeInterval: 0.9, repeats: false) { _ in
+                            MainActor.assumeIsolated {
+                                if let w = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("PopupMenuWindow") }) {
+                                    let f = w.frame, top = NSScreen.screens[0].frame.maxY
+                                    let p = Process()
+                                    p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                                    p.arguments = ["-x", "-R", "\(Int(f.minX)),\(Int(top - f.maxY)),\(Int(f.width)),\(Int(f.height))", url.path]
+                                    try? p.run(); p.waitUntilExit()
+                                    if let img = NSImage(contentsOf: url), let t = img.tiffRepresentation, let rep = NSBitmapImageRep(data: t) { shots[name] = rep }
+                                }
+                                c.menu.cancelTracking()
+                            }
+                        }
+                        RunLoop.main.add(timer, forMode: .eventTracking)
+                        c.menu.popUp(positioning: nil, at: NSPoint(x: frame.minX + 60, y: frame.maxY - 30), in: nil)
+                        NSStatusBar.system.removeStatusItem(c.statusItem)
+                        back.orderOut(nil)
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+                    }
+                    let a = shots["\(tinted ? "tinted" : "system")-\(dark ? "dark" : "light")-over-white"]
+                    let b = shots["\(tinted ? "tinted" : "system")-\(dark ? "dark" : "light")-over-black"]
+                    if let a, let b {
+                        print("contrast: \(tinted ? "tinted" : "system") \(dark ? "dark " : "light") backdrop bleed \(String(format: "%.1f", Self.meanDiff(a, b))) / 255, "
+                              + "inside the rim \(String(format: "%.1f", Self.meanDiff(a, b, inset: 16))) / 255")
+                    }
+                }
+            }
+            StatusItemController.glassTintOn = true
+        }
+        print("contrast captures in \(dir.path)")
+    }
+
+    /// Mean absolute difference per channel between two captures of the same size.
+    static func meanDiff(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, inset: Int = 0) -> Double {
+        let w = min(a.pixelsWide, b.pixelsWide), h = min(a.pixelsHigh, b.pixelsHigh)
+        let k = inset * a.pixelsWide / max(1, Int(a.size.width))
+        var sum = 0.0, n = 0.0
+        for y in stride(from: k, to: h - k, by: 2) {
+            for x in stride(from: k, to: w - k, by: 2) {
+                guard let p = a.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), let q = b.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                sum += (abs(p.redComponent - q.redComponent) + abs(p.greenComponent - q.greenComponent) + abs(p.blueComponent - q.blueComponent)) / 3
+                n += 1
+            }
+        }
+        return n > 0 ? 255 * sum / n : 0
+    }
+}
+
+/// A worst case to put a menu over: a busy page of text, colour and photos-like blocks, bright or dark.
+struct BusyPage: View {
+    var bright: Bool
+    var body: some View {
+        let fg: Color = bright ? .black : .white
+        ZStack(alignment: .topLeading) {
+            (bright ? Color.white : Color.black)
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(0..<26, id: \.self) { i in
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 6).fill([Color.red, .blue, .green, .orange, .purple, .pink][i % 6]).frame(width: 90, height: 22)
+                        Text("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do \(i)").font(.system(size: 17, weight: i % 3 == 0 ? .bold : .regular)).foregroundStyle(fg)
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .frame(width: 840, height: 840)
+    }
+}
