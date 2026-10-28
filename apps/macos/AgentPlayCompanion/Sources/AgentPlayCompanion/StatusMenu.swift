@@ -1335,7 +1335,7 @@ struct SplitCard: View {
         }
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 6)
-        .frame(width: Menu.width, alignment: .leading)
+        .frame(minWidth: Menu.width, maxWidth: .infinity, alignment: .leading)
     }
 
     func row(_ label: String, _ n: Int, _ cost: Double) -> some View {
@@ -1364,7 +1364,7 @@ struct HooksCard: View {
         }
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 6)
-        .frame(width: Menu.width, alignment: .leading)
+        .frame(minWidth: Menu.width, maxWidth: .infinity, alignment: .leading)
     }
 }
 
