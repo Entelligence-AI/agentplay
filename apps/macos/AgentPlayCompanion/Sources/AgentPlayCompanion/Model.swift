@@ -937,13 +937,15 @@ final class CompanionModel: ObservableObject {
     private func switchSetupNow(_ it: SetupReport.Item, on: Bool) async {
         if !on {
             let a = NSAlert()
-            a.messageText = "Turn off \(it.name)?"
+            a.messageText = it.kind == "hook" ? "Turn off \(it.detail ?? "this hook"), \(HooksCard.moment(it.name).lowercased())?" : "Turn off \(it.name)?"
             a.informativeText = Self.switchExplainer(it)
             a.addButton(withTitle: "Turn Off")
             a.addButton(withTitle: "Cancel")
             if ["collab-guard", "validator"].contains(where: { (it.detail ?? it.name).contains($0) }) {
                 a.alertStyle = .critical
-                a.informativeText += "\n\nThis script is part of how you work with several sessions at once and the validator loop. Turning it off stops that until you turn it back on."
+                a.informativeText += "\n\n" + ((it.detail ?? it.name).contains("collab-guard")
+                    ? "This keeps parallel Claude sessions from editing the same file at once. Turning it off stops that until you turn it back on."
+                    : "This is part of your validator loop. Turning it off stops that loop until you turn it back on.")
             }
             NSApp.activate(ignoringOtherApps: true)
             a.window.level = .modalPanel
@@ -967,7 +969,7 @@ final class CompanionModel: ObservableObject {
         case "skill": return "Claude stops seeing it and it leaves the / menu: AgentPlay sets skillOverrides to \"off\" for it in ~/.claude/settings.json, the same switch /skills uses. Turn it back on any time from Tools."
         case "mcp": return "Claude Code stops connecting to it in new sessions: AgentPlay adds it to deniedMcpServers in ~/.claude/settings.json. Its setup and login stay as they are. Turn it back on any time from Tools."
         case "agent": return "Claude stops being able to start it: AgentPlay moves its file from ~/.claude/agents to ~/.agentplay/set-aside/agents. Claude Code has no switch for subagents, so this is the only way. Turn it back on any time from Tools."
-        default: return "It stops running \(HooksCard.moment(it.name).lowercased()): AgentPlay takes its entry out of hooks in ~/.claude/settings.json and keeps it, to put back exactly when you turn it on again."
+        default: return "AgentPlay takes its entry out of hooks in ~/.claude/settings.json and keeps it, to put back exactly where it was when you turn it on again."
         }
     }
 

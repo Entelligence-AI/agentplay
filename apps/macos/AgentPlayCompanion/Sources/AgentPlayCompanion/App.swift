@@ -203,6 +203,14 @@ enum CompanionMain {
             while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
             exit(0)
         }
+        if LaunchOptions.isDev, LaunchOptions.args.contains("--menu-check") {
+            setvbuf(stdout, nil, _IOLBF, 0)   // each line as it comes, even into a pipe
+            let fire = LaunchOptions.args.contains("fire")
+            let sem = DispatchSemaphore(value: 0)
+            Task.detached { if #available(macOS 14.4, *) { await Renderer.menuCheck(fire: fire) }; sem.signal() }
+            while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            exit(0)
+        }
         if let dir = LaunchOptions.isDev ? LaunchOptions.value("--banner-check") : nil {
             MainActor.assumeIsolated { Renderer.bannerCheck(to: dir) }
             exit(0)

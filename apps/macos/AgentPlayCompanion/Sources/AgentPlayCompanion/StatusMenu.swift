@@ -248,7 +248,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var widthCache: (key: String, width: CGFloat)?
 
     /// How tall the open menu may be: from its top to the bottom of the usable screen.
-    private var room: CGFloat = .greatestFiniteMagnitude
+    var room: CGFloat = .greatestFiniteMagnitude
 
     /// Build the menu for the current tab, trimming the least important rows until it fits. `fromTabs`: keep
     /// Pip and the tab strip in place (the strip is mid-click, and its pill slides), replace what's below.
@@ -538,10 +538,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             m.addItem(hosted(SuggestionCard(suggestion: sg, coach: model.snapshot?.coach)))
             if let name = sg.name, sg.kind == "use-skill" {
                 m.addItem(.separator())
-                let copy = item("Copy /\(name)") { [model] in
+                // A skill is called with /name; a subagent with an @-mention.
+                let isAgent = model.snapshot?.usage?.setup?.items.contains { $0.name == name && $0.kind == "agent" } == true
+                let call = isAgent ? "@agent-\(name)" : "/\(name)"
+                let copy = item("Copy \(call)") { [model] in
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString("/\(name)", forType: .string)
-                    model.toast = "Copied /\(name). Paste it into Claude Code."
+                    NSPasteboard.general.setString(call, forType: .string)
+                    model.toast = "Copied \(call). Paste it into Claude Code."
                 }
                 setSubtitle("Paste it at the start of your next task", on: copy)
                 copy.image = symbol("doc.on.doc")
@@ -549,7 +552,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
             if sg.kind == "remove" {
                 m.addItem(.separator())
-                m.addItem(item("Show Skills Folder") { NSWorkspace.shared.open(Self.claudeFolder("skills")) })
+                if let it = model.snapshot?.usage?.setup?.items.first(where: { $0.name == sg.name && !$0.isOff }) {
+                    addSwitch(it, to: m)
+                } else {
+                    let f = item("Show Skills and Subagents") { NSWorkspace.shared.open(Self.claudeFolder("")) }
+                    f.image = symbol("folder")
+                    m.addItem(f)
+                }
             }
             m.addItem(.separator())
             m.addItem(item("Ask Claude Again") { [model] in model.askClaude(force: true) })
@@ -594,7 +603,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
 
         case .setupItem(let it):
-            let i = item(it.name) { [model] in model.showInsights(.setup) }
+            let i = item(it.kind == "hook" ? "\(it.detail ?? it.name), \(HooksCard.moment(it.name).lowercased())" : it.name) { [model] in model.showInsights(.setup) }
             setSubtitle(ImpactCard.subtitle(it), on: i)
             i.image = ImpactCard.flagImage(it) ?? symbol(SetupCard.symbol(it.kind))
             let m = NSMenu()
@@ -636,7 +645,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let m = NSMenu()
             m.autoenablesItems = false
             m.addItem(hosted(UnusedCard(kind: kind, items: items), width: UnusedCard.width))
-            let switchable = items.filter { !($0.kind == "skill" && $0.source != "you") && $0.kind != "command" }
+            let switchable = items.filter { !(($0.kind == "skill" || $0.kind == "agent") && $0.source != "you") && $0.kind != "command" }
             if !switchable.isEmpty {
                 m.addItem(.separator())
                 m.addItem(.sectionHeader(title: "Turn Off"))
@@ -795,7 +804,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             m.addItem(x)
             return
         }
-        if it.kind == "skill", it.source != "you" {
+        if it.kind == "skill" || it.kind == "agent", it.source != "you" {
             let x = NSMenuItem(title: "Comes with \(it.source)", action: nil, keyEquivalent: "")
             x.isEnabled = false
             setSubtitle("Claude Code switches plugins as a whole, in /plugin", on: x)
@@ -1541,8 +1550,9 @@ struct HooksCard: View {
                      "SubagentStop": "When a subagent finishes", "SessionEnd": "When a session ends",
                      "Notification": "On a notification", "PreCompact": "Before compacting"]
         let parts = event.split(separator: ":", maxSplits: 1).map(String.init)
-        let base = words[parts[0]] ?? parts[0]
-        return parts.count > 1 && parts[0].hasSuffix("ToolUse") ? "\(base) (\(parts[1]))" : base
+        guard let first = parts.first else { return "A hook" }
+        let base = words[first] ?? first
+        return parts.count > 1 && first.hasSuffix("ToolUse") ? "\(base) (\(parts[1]))" : base
     }
 
     var body: some View {

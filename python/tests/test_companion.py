@@ -1361,3 +1361,38 @@ def test_setup_switches_use_claude_codes_own_keys_and_undo_exactly(tmp_path):
     assert (home / "agents" / "judge.md").exists()
     with pytest.raises(FixError):
         setup_control.switch(base, home, "skill", "plug-skill", False, source="plugin tools")
+    with pytest.raises(FixError):
+        setup_control.switch(base, home, "agent", "plug-agent", False, source="plugin tools")
+
+
+def test_a_hook_alone_on_its_event_goes_back_where_it_was(tmp_path):
+    from agentplay import setup_control, setup_inventory
+
+    home, base = tmp_path / ".claude", tmp_path / "ap"
+    home.mkdir()
+    settings = {"hooks": {
+        "PreToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/x/guard.sh pre"}]}],
+        "SessionEnd": [{"hooks": [{"type": "command", "command": "/x/end.sh", "async": True}]}],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "/x/a.sh"}]},
+                             {"hooks": [{"type": "command", "command": "/x/b.sh"}]}]}, "model": "opus"}
+    original = json.dumps(settings, indent=2) + "\n"
+    (home / "settings.json").write_text(original)
+    # A matcher with "|" still lists, by event and matcher.
+    names = {i["name"] for i in setup_inventory.installed(home) if i["kind"] == "hook"}
+    assert "PreToolUse:Edit|Write" in names
+    setup_control.switch(base, home, "hook", "SessionEnd", False, script="end.sh")
+    setup_control.switch(base, home, "hook", "UserPromptSubmit", False, script="a.sh")
+    assert "SessionEnd" not in json.loads((home / "settings.json").read_text())["hooks"]
+    setup_control.switch(base, home, "hook", "SessionEnd", True, script="end.sh")
+    setup_control.switch(base, home, "hook", "UserPromptSubmit", True, script="a.sh")
+    assert (home / "settings.json").read_text() == original  # same keys, same order, byte for byte
+
+
+def test_a_skill_goes_by_its_folder_as_claude_code_calls_it(tmp_path):
+    from agentplay import setup_inventory
+
+    home = tmp_path / ".claude"
+    (home / "skills" / "17-review-the-work").mkdir(parents=True)
+    (home / "skills" / "17-review-the-work" / "SKILL.md").write_text("---\nname: review-the-work\ndescription: Check it.\n---\n")
+    names = [i["name"] for i in setup_inventory.installed(home) if i["kind"] == "skill"]
+    assert names == ["17-review-the-work"]

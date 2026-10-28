@@ -281,10 +281,18 @@ enum MenuBuilder {
                 if !these.isEmpty { out.append(.unused(kind: kind, items: these)) }
             }
         }
-        let hooks = live.filter { $0.kind == "hook" }
-        if !hooks.isEmpty, trim < 3 {
+        // Failing hooks first, so a short screen keeps the ones that need you; the list shrinks a row at a time.
+        // Failures are counted per event; when the fix knows which script fails, only that one carries them.
+        let failing = (s.insights?.fixes ?? []).filter { $0.rule == "broken_hook" }
+        let hooks = live.filter { $0.kind == "hook" }.map { h -> SetupReport.Item in
+            var h = h
+            let event = h.name.components(separatedBy: ":")[0]
+            if let script = failing.first(where: { ($0.subject ?? "").hasPrefix(event) })?.hook?.script, script != h.detail { h.failed = 0 }
+            return h
+        }.sorted { ($0.failed ?? 0) > ($1.failed ?? 0) }
+        if !hooks.isEmpty, trim < 8 {
             out.append(.header("Hooks"))
-            out.append(.hooks(Array(hooks.prefix(max(1, 5 - trim)))))
+            out.append(.hooks(Array(hooks.prefix(max(1, 8 - trim)))))
         }
         let off = st.items.filter(\.isOff)
         if !off.isEmpty {

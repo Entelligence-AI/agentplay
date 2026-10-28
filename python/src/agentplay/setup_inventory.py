@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 _NAME = re.compile(r"^[A-Za-z0-9_.:@-]{1,80}$")
+_MATCHER = re.compile(r"^[A-Za-z0-9_.|*()-]{1,80}$")
+_HOOK = re.compile(r"^[A-Za-z]{1,40}(:[A-Za-z0-9_.|*()-]{1,80})?$")
 RARE = 3  # fewer uses than this in 30 days is "rarely used"
 
 
@@ -81,7 +83,7 @@ def installed(claude_home: Path, claude_json: Path | None = None) -> list[dict[s
 
     def add(kind: str, name: str | None, source: str, since: float | None = None, detail: str | None = None,
             what: str | None = None) -> None:
-        if not name or not _NAME.match(name) or (kind, name, detail) in seen:
+        if not name or not (_HOOK if kind == "hook" else _NAME).match(name) or (kind, name, detail) in seen:
             return
         seen.add((kind, name, detail))
         items.append({"kind": kind, "name": name, "source": source,
@@ -90,7 +92,9 @@ def installed(claude_home: Path, claude_json: Path | None = None) -> list[dict[s
 
     def scan(root: Path, source: str) -> None:
         for md in sorted((root / "skills").glob("*/SKILL.md")):
-            add("skill", _frontmatter_name(md) or md.parent.name, source, _mtime(md), what=_description(md))
+            # Claude Code calls a skill by its folder ("17-review-the-work"), whatever the frontmatter says.
+            add("skill", md.parent.name if _NAME.match(md.parent.name) else _frontmatter_name(md), source, _mtime(md),
+                what=_description(md))
         for md in sorted((root / "agents").glob("*.md")):
             add("agent", _frontmatter_name(md) or md.stem, source, _mtime(md), what=_description(md))
         for md in sorted((root / "commands").glob("*.md")):
@@ -126,6 +130,9 @@ def installed(claude_home: Path, claude_json: Path | None = None) -> list[dict[s
                 from .companion import _hook_executable  # the program's file name only: no arguments, env or paths
                 script = _hook_executable(h.get("command")) or ""
                 matcher = g.get("matcher")
+                # A matcher names tools ("Read|Edit|Write", "mcp__.*"); one that doesn't still shows, by its event.
+                if not (isinstance(matcher, str) and _MATCHER.match(matcher)):
+                    matcher = None
                 add("hook", f"{event}{':' + matcher if matcher else ''}", "you", None, script or None)
     return items
 

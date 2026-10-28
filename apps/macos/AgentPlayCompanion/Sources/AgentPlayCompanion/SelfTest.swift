@@ -481,59 +481,98 @@ extension Renderer {
 }
 
 extension Renderer {
-    /// `--switch-check <name> <confirm|cancel>`: the real Tools menu over this Mac's data, the named item's
-    /// "Turn Off…" triggered through the menu, the confirmation found on screen and answered, then the result
-    /// read back from ~/.claude/settings.json. With confirm, it turns the item back on afterwards and checks that too.
-    static func switchCheck(name: String, confirm: Bool) async {
+    /// `--switch-check <name> <confirm|cancel>`: the real Tools menu over this Mac's data. The named item's switch
+    /// (its own row, the hooks list, or the Not Used group) is triggered through the menu, the confirmation found on
+    /// screen and answered. With confirm, the menu is rebuilt from a fresh snapshot, the item must sit under Turned
+    /// Off, its Turn On is clicked there, and ~/.claude/settings.json and the agents folders must match the start byte for byte.
+    static func switchCheck(name spec: String, confirm: Bool) async {
         _ = NSApplication.shared
+        // A hook is "Event#script.sh": several hooks share an event.
+        let name = spec.components(separatedBy: "#")[0], script = spec.contains("#") ? spec.components(separatedBy: "#")[1] : nil
         guard case .success(let rt) = Runtime.locate(allowDevOverride: true),
-              case .success(let snap) = await SnapshotService(runtime: rt).fetch(.read) else { print("switch-check: no snapshot"); return }
-        let settings = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
-        func denied() -> String {
-            let d = (try? JSONSerialization.jsonObject(with: Data(contentsOf: settings))) as? [String: Any]
-            return String(describing: d?["deniedMcpServers"] ?? "none")
+              case .success(let snap) = await SnapshotService(runtime: rt).fetch(.read) else { print("switch-check: FAIL no snapshot"); return }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        func state() -> String {
+            let s = (try? Data(contentsOf: home.appendingPathComponent(".claude/settings.json"))).map { "\($0.count)b:\($0.hashValue)" } ?? "none"
+            let a = (try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent(".claude/agents").path).sorted()) ?? []
+            let x = (try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent(".agentplay/set-aside/agents").path).sorted()) ?? []
+            return "settings \(s) agents \(a) set-aside \(x)"
         }
-        let item: SetupReport.Item? = await MainActor.run {
-            NSApp.setActivationPolicy(.accessory)
+        let before = state()
+        print("switch-check: before  \(before)")
+        guard let item = snap.usage?.setup?.items.first(where: { $0.name == name && (script == nil || $0.detail == script) }) else { print("switch-check: FAIL no \(name) in the inventory"); return }
+        let titles = [name, HooksCard.moment(name)] + (script.map { ["\($0), \(HooksCard.moment(name).lowercased())"] } ?? [])
+        // Where a click turns it off: "Turn Off…" in its own submenu, or its name under the Not Used group's "Turn Off".
+        @MainActor func find(_ m: NSMenu, _ wanted: String) -> (NSMenu, Int)? {
+            for it in m.items {
+                guard let sub = it.submenu else { continue }
+                if let script, wanted == "Turn Off…", #available(macOS 14.4, *), !(it.subtitle ?? "").hasPrefix(script) { continue }
+                if titles.contains(it.title), let i = sub.items.firstIndex(where: { $0.title == wanted }) { return (sub, i) }
+                if wanted == "Turn Off…", sub.items.contains(where: { $0.title == "Turn Off" && $0.isSectionHeader }),
+                   let i = sub.items.firstIndex(where: { $0.title == name && $0.action != nil }) { return (sub, i) }
+            }
+            return nil
+        }
+        @MainActor func click(_ s: Snapshot, _ wanted: String) -> Bool {
             let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "check.\(UUID().uuidString)")!), isDevBuild: true)
             m.prefs = PrefsStore().load()
-            m.installLiveForRender(snap)
+            m.installLiveForRender(s)
             m.useRuntimeForCheck(rt)
             m.menuTab = .setup
             Self.checkModel = m
             let c = StatusItemController(model: m)
             c.prepare(now: Date())
-            guard let row = c.menu.items.first(where: { $0.title == name }), let sub = row.submenu,
-                  let idx = sub.items.firstIndex(where: { $0.title == "Turn Off…" }) else {
-                print("switch-check: no Turn Off… under \(name); rows: \(c.menu.items.map(\.title).filter { !$0.isEmpty })")
-                return nil
+            guard let (sub, idx) = find(c.menu, wanted) else {
+                print("switch-check: FAIL no \(wanted) for \(name); rows: \(c.menu.items.map(\.title).filter { !$0.isEmpty })")
+                NSStatusBar.system.removeStatusItem(c.statusItem)
+                return false
             }
-            print("switch-check: before, deniedMcpServers = \(denied())")
-            let t = Timer(timeInterval: 0.6, repeats: false) { _ in
-                MainActor.assumeIsolated {
-                    sub.performActionForItem(at: idx)   // what a click on the row does
-                    c.menu.cancelTracking()
+            print("switch-check: clicking \(sub.items[idx].title) in \(sub.items.first?.title ?? "") (\(sub.items.count) rows)")
+            // A menu asked to open while the last alert is still handing focus back closes at once; try again.
+            var fired = false
+            for _ in 0..<5 where !fired {
+                let t = Timer(timeInterval: 0.6, repeats: false) { _ in
+                    MainActor.assumeIsolated {
+                        fired = true
+                        sub.performActionForItem(at: idx)   // what a click on the row does
+                        c.menu.cancelTracking()
+                    }
                 }
+                RunLoop.main.add(t, forMode: .eventTracking)
+                let v = NSScreen.main!.visibleFrame
+                c.menu.popUp(positioning: nil, at: NSPoint(x: v.maxX - 420, y: v.maxY - 10), in: nil)
+                t.invalidate()
+                if !fired { RunLoop.main.run(until: Date().addingTimeInterval(1)) }
             }
-            RunLoop.main.add(t, forMode: .eventTracking)
-            let v = NSScreen.main!.visibleFrame
-            c.menu.popUp(positioning: nil, at: NSPoint(x: v.maxX - 420, y: v.maxY - 10), in: nil)
+            print("switch-check: \(fired ? "clicked" : "FAIL menu never opened")")
             NSStatusBar.system.removeStatusItem(c.statusItem)
-            return snap.usage?.setup?.items.first { $0.name == name }
+            return true
         }
-        guard let item else { return }
+        func waitResult() async -> String? {
+            for _ in 0..<120 {
+                try? await Task.sleep(for: .milliseconds(250))
+                if let r = await MainActor.run(body: { Self.checkModel?.lastSwitchResult }) { return r }
+            }
+            return nil
+        }
+        guard await MainActor.run(body: { NSApp.setActivationPolicy(.accessory); return click(snap, "Turn Off…") }) else { return }
         // The confirmation runs modally; answer it from a timer that runs in the modal loop.
         await MainActor.run {
-            let t = Timer(timeInterval: 1.0, repeats: false) { _ in
+            var tries = 0, settled = 0
+            let t = Timer(timeInterval: 0.25, repeats: true) { timer in
                 MainActor.assumeIsolated {
+                    tries += 1
                     guard let w = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("Alert") }) else {
-                        print("switch-check: FAIL, no confirmation on screen"); NSApp.abortModal(); return
+                        if tries > 40 { timer.invalidate(); print("switch-check: FAIL no confirmation on screen") }
+                        return
                     }
+                    settled += 1
+                    guard settled > 3 else { return }   // past the fade-in
+                    timer.invalidate()
                     let texts = w.contentView.map { Self.allText($0) } ?? []
-                    print("switch-check: confirmation shown: \(texts.prefix(2).joined(separator: " | "))")
-                    let f = w.frame, top = NSScreen.screens[0].frame.maxY
+                    print("switch-check: confirmation: \(texts.prefix(2).joined(separator: " | "))")
                     let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-                    p.arguments = ["-x", "-R", "\(Int(f.minX)),\(Int(top - f.maxY)),\(Int(f.width)),\(Int(f.height))", "/tmp/apc-switch-alert.png"]
+                    p.arguments = ["-x", "-o", "-l", "\(w.windowNumber)", "/tmp/apc-switch-alert-\(name.replacingOccurrences(of: "/", with: "_")).png"]
                     try? p.run(); p.waitUntilExit()
                     if let b = Self.button(confirm ? "Turn Off" : "Cancel", in: w.contentView) { b.performClick(nil) } else { NSApp.abortModal() }
                 }
@@ -541,21 +580,29 @@ extension Renderer {
             RunLoop.main.add(t, forMode: .modalPanel)
             RunLoop.main.add(t, forMode: .default)
         }
-        for _ in 0..<120 {
-            try? await Task.sleep(for: .milliseconds(250))
-            if await MainActor.run(body: { Self.checkModel?.lastSwitchResult }) != nil { break }
+        let off = confirm ? await waitResult() : nil
+        if !confirm {
+            try? await Task.sleep(for: .seconds(3))
+            let same = state() == before
+            print("switch-check: cancel \(same ? "PASS nothing changed" : "FAIL files changed: \(state())")")
+            return
         }
-        let result = await MainActor.run { Self.checkModel?.lastSwitchResult }
-        print("switch-check: result = \(result ?? "nothing ran")")
-        print("switch-check: after, deniedMcpServers = \(denied())")
-        if confirm, result != nil {
-            await MainActor.run { Self.checkModel?.switchSetup(item, on: true) }
-            for _ in 0..<120 {
-                try? await Task.sleep(for: .milliseconds(250))
-                if denied() == "none" || !denied().contains(item.name) { break }
-            }
-            print("switch-check: turned back on, deniedMcpServers = \(denied())")
+        guard let off, !off.hasPrefix("failed") else { print("switch-check: FAIL off: \(off ?? "nothing ran")"); return }
+        print("switch-check: off     \(off)")
+        print("switch-check: after   \(state())")
+        // What the app sees after its own refresh: the item must be under Turned Off, with Turn On.
+        try? FileManager.default.removeItem(at: home.appendingPathComponent(".agentplay/cache/companion-insights.json"))
+        guard case .success(let snap2) = await SnapshotService(runtime: rt).fetch(.read) else { print("switch-check: FAIL no snapshot after"); return }
+        let marked = snap2.usage?.setup?.items.first { $0.name == name && $0.isOff && (script == nil || $0.detail == script) } != nil
+        print("switch-check: listed as off \(marked ? "PASS" : "FAIL")")
+        guard await MainActor.run(body: { click(snap2, "Turn On") }) else {
+            print("switch-check: restoring by hand"); await MainActor.run { Self.checkModel?.switchSetup(item, on: true) }
+            _ = await waitResult(); return
         }
+        let on = await waitResult()
+        print("switch-check: on      \(on ?? "nothing ran")")
+        let after = state()
+        print("switch-check: restored \(after == before ? "PASS byte-identical" : "FAIL \(after)")")
     }
 
     @MainActor static var checkModel: CompanionModel?
@@ -569,5 +616,171 @@ extension Renderer {
         if let b = v as? NSButton, b.title == title { return b }
         for s in v.subviews { if let b = button(title, in: s) { return b } }
         return nil
+    }
+}
+
+extension Renderer {
+    /// `--menu-check [fire]`: every tab of the real menu over this Mac's data. Each row and submenu is walked:
+    /// an enabled row must do something, a submenu must hold something, a card must fit its row. With fire, the
+    /// harmless actions are run for real and their effect read back (the clipboard, Insights, Pip's banner).
+    @available(macOS 14.4, *) static func menuCheck(fire: Bool) async {
+        _ = NSApplication.shared
+        guard case .success(let rt) = Runtime.locate(allowDevOverride: true),
+              case .success(let snap) = await SnapshotService(runtime: rt).fetch(.read) else { print("menu-check: FAIL no snapshot"); return }
+        let (c, m, all) = await MainActor.run { () -> (StatusItemController, CompanionModel, [(String, NSMenuItem)]) in
+            NSApp.setActivationPolicy(.accessory)
+            let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "check.\(UUID().uuidString)")!), isDevBuild: true)
+            m.prefs = PrefsStore().load()
+            m.installLiveForRender(snap)
+            m.useRuntimeForCheck(rt)
+            Self.checkModel = m
+            Windows.model = m
+            let c = StatusItemController(model: m)
+            var fails = 0
+            func walk(_ menu: NSMenu, _ path: String, _ out: inout [(String, NSMenuItem)]) {
+                for it in menu.items where !it.isSeparatorItem && !it.isSectionHeader && !it.isHidden {
+                    let here = path + " > " + (it.title.isEmpty ? "[card]" : it.title)
+                    if let v = it.view {
+                        let fit = v.fittingSize
+                        if v.frame.height < fit.height - 1 { print("menu-check: FAIL card cut short at \(here): \(Int(v.frame.height)) < \(Int(fit.height))"); fails += 1 }
+                        continue
+                    }
+                    if let sub = it.submenu {
+                        if sub.items.isEmpty { print("menu-check: FAIL empty submenu \(here)"); fails += 1 }
+                        walk(sub, here, &out)
+                        continue
+                    }
+                    if it.isEnabled {
+                        if it.action == nil { print("menu-check: FAIL enabled row does nothing: \(here)"); fails += 1 }
+                        else { out.append((here, it)) }
+                    }
+                }
+            }
+            var all: [(String, NSMenuItem)] = []
+            for t in MenuTab.allCases {
+                m.menuTab = t
+                c.prepare(now: Date())
+                var rows: [(String, NSMenuItem)] = []
+                walk(c.menu, t.title, &rows)
+                print("menu-check: \(t.title): \(c.menu.items.count) rows, \(rows.count) actions, height \(Int(c.menu.size.height)), width \(Int(c.menu.size.width))")
+                for (p, _) in rows { print("menu-check:   \(p)") }
+                all += rows
+            }
+            print("menu-check: walk \(fails == 0 ? "PASS" : "FAIL \(fails)")")
+            // As opened from the menu bar: never taller than the screen, so nothing scrolls.
+            let v = NSScreen.main!.visibleFrame
+            for room in [v.height - 4 - 8, 700] {
+            c.room = room
+            for t in MenuTab.allCases {
+                m.menuTab = t
+                c.prepare(now: Date())
+                let h = c.menu.size.height
+                let hooks = c.menu.items.filter { $0.title.hasPrefix("When ") || $0.title.contains("tool call") }.count
+                print("menu-check: \(t.title) fits \(Int(h)) of \(Int(c.room)) pt \(h <= c.room ? "PASS" : "FAIL scrolls")\(t == .setup ? ", \(hooks) hooks shown" : "")")
+            }
+            }
+            c.room = .greatestFiniteMagnitude
+            if fire {
+                let pb = NSPasteboard.general, saved = pb.string(forType: .string)
+                if let (p, r) = all.first(where: { ($0.1.subtitle ?? "").contains("copy resume") }) {
+                    pb.clearContents(); r.menu?.performActionForItem(at: r.menu!.index(of: r))
+                    let got = pb.string(forType: .string) ?? ""
+                    print("menu-check: copy resume \(got.hasPrefix("claude --resume ") ? "PASS" : "FAIL got \(got)") (\(p))")
+                }
+                if let (p, r) = all.first(where: { $0.1.title.hasPrefix("Copy ") }) {
+                    pb.clearContents(); r.menu?.performActionForItem(at: r.menu!.index(of: r))
+                    print("menu-check: \(r.title) \((pb.string(forType: .string) ?? "").isEmpty ? "FAIL nothing copied" : "PASS \(pb.string(forType: .string)!.prefix(40))") (\(p))")
+                }
+                if let saved { pb.clearContents(); pb.setString(saved, forType: .string) }
+                if let (p, r) = all.first(where: { $0.1.title == "Open in Insights…" }) {
+                    r.menu?.performActionForItem(at: r.menu!.index(of: r))
+                    RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+                    let w = NSApp.windows.first { $0.isVisible && $0.title.contains("Insights") }
+                    print("menu-check: Open in Insights \(w != nil ? "PASS window \(Int(w!.frame.width))x\(Int(w!.frame.height))" : "FAIL no window") (\(p))")
+                    w?.close()
+                }
+                m.sendSample(title: "Claude Code needs you", body: "docs-site is waiting for your answer.", pose: .wave)
+                RunLoop.main.run(until: Date().addingTimeInterval(1))
+                let banner = NSApp.windows.first { $0.isVisible && $0 is NSPanel && $0.frame.size == PipBanner.size }
+                print("menu-check: Send Sample (\(m.prefs.alertsAs)) \(banner != nil || m.prefs.alertsAs == "system" ? "PASS banner on screen" : "FAIL no banner")")
+                PipBanner.dismiss()
+                let ctx = MenuBuilder.contextMenu(hasStore: snap.store.available)
+                print("menu-check: right-click menu: \(ctx.count) entries")
+            }
+            return (c, m, all)
+        }
+        if fire {
+            try? await Task.sleep(for: .seconds(1))
+            await Self.tabCheck(c, m)
+            await Self.fixCheck(m, all)
+        }
+        if LaunchOptions.args.contains("coach") {
+            // Ask Claude Again, as clicked: one real Haiku call through this Mac's Claude Code.
+            let before = snap.coach?.generatedAt
+            guard let r = all.first(where: { $0.1.title == "Ask Claude Again" || $0.1.title == "Ask Claude for Suggestions" })?.1 else { print("menu-check: FAIL no Ask Claude row"); return }
+            await MainActor.run { m.prefs.claudeSuggestions = true; m.toast = nil; if let a = r.action { NSApp.sendAction(a, to: r.target, from: r) } }
+            let started = Date()
+            try? await Task.sleep(for: .seconds(1))
+            while await MainActor.run(body: { m.askingClaude }), Date().timeIntervalSince(started) < 200 { try? await Task.sleep(for: .seconds(1)) }
+            guard case .success(let after) = await SnapshotService(runtime: rt).fetch(.read) else { return }
+            let fresh = after.coach?.generatedAt != before
+            print("menu-check: Ask Claude \(fresh ? "PASS" : "FAIL") in \(Int(Date().timeIntervalSince(started)))s, \(after.coach?.tokens ?? 0) tokens, toast=\(await MainActor.run { m.toast } ?? "-")")
+            for sg in after.coach?.suggestions ?? [] { print("menu-check:   \(sg.kind): \(sg.title) [\(sg.name ?? "-")]") }
+        }
+        await MainActor.run { NSStatusBar.system.removeStatusItem(c.statusItem) }
+    }
+
+    /// Tabs: switch inside the open menu, as a click on the strip does.
+    @MainActor static func tabCheck(_ c: StatusItemController, _ m: CompanionModel) async {
+        m.menuTab = .now
+        c.prepare(now: Date())
+        var seen: [[String]] = []
+        for _ in 0..<5 where seen.count < 2 {
+            seen = []
+            let t1 = Timer(timeInterval: 0.5, repeats: false) { _ in MainActor.assumeIsolated { c.switchTab(.setup) } }
+            let t2 = Timer(timeInterval: 1.2, repeats: false) { _ in MainActor.assumeIsolated {
+                seen.append(c.menu.items.map(\.title).filter { !$0.isEmpty })
+                c.switchTab(.improve)
+            } }
+            let t3 = Timer(timeInterval: 1.9, repeats: false) { _ in MainActor.assumeIsolated {
+                seen.append(c.menu.items.map(\.title).filter { !$0.isEmpty })
+                c.menu.cancelTracking()
+            } }
+            for t in [t1, t2, t3] { RunLoop.main.add(t, forMode: .eventTracking) }
+            let v = NSScreen.main!.visibleFrame
+            c.menu.popUp(positioning: nil, at: NSPoint(x: v.maxX - 420, y: v.maxY - 10), in: nil)
+            for t in [t1, t2, t3] { t.invalidate() }
+            if seen.count < 2 { try? await Task.sleep(for: .seconds(1)); m.menuTab = .now; c.prepare(now: Date()) }
+        }
+        let ok = seen.count == 2 && seen[0].contains("Open in Insights…") && seen[0] != seen[1] && m.menuTab == .improve
+        print("menu-check: tab switch in open menu \(ok ? "PASS" : "FAIL") (Tools \(seen.first?.count ?? 0) rows, then Fixes \(seen.last?.count ?? 0) rows)")
+    }
+
+    /// Apply This Fix…: the preview must show; Cancel must leave every file as it was.
+    @MainActor static func fixCheck(_ m: CompanionModel, _ all: [(String, NSMenuItem)]) async {
+        guard let (p, r) = all.first(where: { $0.1.title == "Apply This Fix…" }) else { print("menu-check: no fix to apply"); return }
+        let settings = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
+        let before = try? Data(contentsOf: settings)
+        var shown = false, settled = 0
+        let poll = Timer(timeInterval: 0.25, repeats: true) { timer in MainActor.assumeIsolated {
+            guard let w = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("Alert") }) else { return }
+            settled += 1
+            guard settled > 3 else { return }   // past the fade-in
+            timer.invalidate(); shown = true
+            print("menu-check: fix preview: \((w.contentView.map { Self.allText($0) } ?? []).prefix(2).joined(separator: " | ").prefix(240))")
+            let cap = Process(); cap.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            cap.arguments = ["-x", "-o", "-l", "\(w.windowNumber)", "/tmp/apc-fix-preview.png"]
+            try? cap.run(); cap.waitUntilExit()
+            if let b = Self.button("Cancel", in: w.contentView) { b.performClick(nil) } else { NSApp.abortModal() }
+        } }
+        RunLoop.main.add(poll, forMode: .modalPanel)
+        RunLoop.main.add(poll, forMode: .default)
+        m.toast = nil
+        if let a = r.action { NSApp.sendAction(a, to: r.target, from: r) }   // the row's own action, as a click sends it
+        for _ in 0..<80 where !shown && m.toast == nil { try? await Task.sleep(for: .milliseconds(250)) }
+        poll.invalidate()
+        try? await Task.sleep(for: .seconds(1))
+        let same = (try? Data(contentsOf: settings)) == before
+        print("menu-check: Apply This Fix… \(shown && same ? "PASS preview shown, Cancel wrote nothing" : "FAIL shown=\(shown) unchanged=\(same) toast=\(m.toast ?? "-")") (\(p))")
     }
 }

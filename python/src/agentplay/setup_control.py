@@ -124,6 +124,8 @@ def switch(base: Path, claude_home: Path, kind: str, name: str, on: bool, *, sou
             return {"done": f"{target} is {'allowed again' if on else 'blocked'}: deniedMcpServers in ~/.claude/settings.json. "
                             "Sessions already open keep it until they restart."}
         if kind == "agent":
+            if source and source != "you":
+                raise FixError("plugin_agent", f"{name} comes with {source.removeprefix('plugin ')}; Claude Code switches plugins as a whole, in /plugin.")
             live, aside = claude_home / "agents", _set_aside(base) / "agents"
             src, dst_dir = (aside, live) if on else (live, aside)
             f = _agent_file(src, name)
@@ -146,24 +148,43 @@ def switch(base: Path, claude_home: Path, kind: str, name: str, on: bool, *, sou
             mine = [k for k in kept if k.get("event") == event and k.get("script") == script]
             if not mine:
                 raise FixError("not_found", f"AgentPlay hasn't set aside {script} on {event}.")
-            for k in mine:
-                groups = hooks.setdefault(event, [])
-                group = next((g for g in groups if isinstance(g, dict) and g.get("matcher") == k.get("matcher")), None)
+            made: dict[int, dict[str, Any]] = {}
+            for k in reversed(mine):  # last taken out, first put back: each lands where it was
+                if event not in hooks:
+                    items = list(hooks.items())
+                    items.insert(min(int(k.get("eventAt", len(items))), len(items)), (event, []))
+                    hooks = dict(items)
+                groups = hooks[event]
+                at = int(k.get("groupAt", len(groups)))
+                if k.get("groupGone") and at not in made:
+                    made[at] = {"hooks": []} if k.get("matcher") is None else {"matcher": k["matcher"], "hooks": []}
+                    groups.insert(min(at, len(groups)), made[at])
+                group = made.get(at)
+                if group is None and at < len(groups) and isinstance(groups[at], dict) and groups[at].get("matcher") == k.get("matcher"):
+                    group = groups[at]
+                if group is None:
+                    group = next((g for g in groups if isinstance(g, dict) and g.get("matcher") == k.get("matcher")), None)
                 if group is None:
                     group = {"hooks": []} if k.get("matcher") is None else {"matcher": k["matcher"], "hooks": []}
-                    groups.append(group)
-                group.setdefault("hooks", []).append(k["hook"])
+                    groups.insert(min(at, len(groups)), group)
+                inner = group.setdefault("hooks", [])
+                inner.insert(min(int(k.get("hookAt", len(inner))), len(inner)), k["hook"])
             kept = [k for k in kept if k not in mine]
         else:
             groups = hooks.get(event) or []
             found = _hook_entries(groups, script)
             if not found:
                 raise FixError("not_found", f"No {script} hook on {event} in ~/.claude/settings.json.")
+            # Where each one was (the event's place, its group's, its own), so turning it on puts it back there.
+            event_at = list(hooks).index(event)
             for gi, hi in sorted(found, reverse=True):
                 g = groups[gi]
                 kept.append({"event": event, "matcher": g.get("matcher"), "script": script, "hook": g["hooks"][hi],
+                             "eventAt": event_at, "groupAt": gi, "hookAt": hi,
                              "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")})
                 del g["hooks"][hi]
+            for k in kept[len(kept) - len(found):]:
+                k["groupGone"] = not groups[k["groupAt"]]["hooks"]
             hooks[event] = [g for g in groups if not isinstance(g, dict) or g.get("hooks")]
             if not hooks[event]:
                 del hooks[event]

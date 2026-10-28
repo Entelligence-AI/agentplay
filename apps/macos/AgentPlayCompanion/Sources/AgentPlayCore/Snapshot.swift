@@ -622,6 +622,8 @@ public struct Insights: Codable, Sendable, Equatable {
         public var cause: String?
         /// What Apply would write, in one sentence, when the core can fix the hook itself.
         public var remedy: String?
+        /// The script that failed last (its file name), when Claude Code's record says.
+        public var script: String?
     }
     /// A change AgentPlay wrote (a fix applied by button, approval or Autotune), which can be undone.
     public struct Applied: Codable, Sendable, Equatable, Identifiable {
