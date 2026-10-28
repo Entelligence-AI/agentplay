@@ -801,7 +801,7 @@ struct ProviderCard: View {
 
     var body: some View {
         let p = model.snapshot.flatMap { s in ProviderSummary.build(s.limits).first { $0.provider == provider } } ?? fallback
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 11) {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(p.label).font(.headline).foregroundStyle(Ink.primary)
@@ -1636,23 +1636,38 @@ struct MeterRow: View {
         // One warning colour: orange when it's on course to run out before it resets, red only near the end.
         let ahead = runsOut ?? pace.map { $0.level != .normal } ?? false
         let tint: PaceTint = stale ? .stale : used >= 90 ? .over : ahead ? .ahead : .normal
-        // One line: the name, the bar, the number. Two of these are a plan card; they must not stack up.
-        HStack(alignment: .center, spacing: 10) {
-            Text(title).font(.subheadline).foregroundStyle(Ink.primary).frame(width: 54, alignment: .leading)
-            // A fixed-width bar, so session and week compare at a glance whatever the text says.
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color(nsColor: .quaternaryLabelColor))
-                Capsule().fill(tint.color).frame(width: max(5, Self.barWidth * min(1, used / 100)))
+        // As Claude's own usage page and CodexBar draw it: the name, a full-width bar, then how much is used on
+        // the left and when it resets on the right. Every bar spans the card, so they always compare.
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Ink.primary)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color(nsColor: .quaternaryLabelColor))
+                    Capsule().fill(tint.color).frame(width: max(6, g.size.width * min(1, used / 100)))
+                }
             }
-            .frame(width: Self.barWidth, height: 6)
-            Text(detail(stale, used: used)).font(.subheadline.monospacedDigit())
-                .foregroundStyle(tint == .over ? tint.color : Ink.primary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
+            .frame(height: 7)
+            HStack(alignment: .firstTextBaseline) {
+                Text(stale ? "\(Format.percent(used)) used · stale" : "\(Format.percent(used)) used")
+                    .font(.subheadline.monospacedDigit().weight(.medium))
+                    .foregroundStyle(tint == .over ? tint.color : Ink.primary)
+                Spacer(minLength: 8)
+                Text(resetLine(stale)).font(.subheadline.monospacedDigit()).foregroundStyle(Ink.secondary).lineLimit(1)
+            }
         }
-        .frame(height: 18)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail(stale, used: used))")
+    }
+
+    /// "Resets in 1h 9m", or "Resets Tuesday" past a day; ahead of pace without a forecast, when it runs out.
+    func resetLine(_ stale: Bool) -> String {
+        if stale { return "Updates when \(window.providerLabel) runs" }
+        if linear, let pace = Self.pace(window, now: now), pace.level != .normal, let out = pace.runsOutAt {
+            return "Out in \(Format.duration(out.timeIntervalSince(now)))"
+        }
+        guard let r = window.resetsAt else { return "" }
+        let left = r.timeIntervalSince(now)
+        return left < 86400 ? "Resets in \(Format.duration(left))" : "Resets \(Self.weekday(r))"
     }
 
     static let barWidth: CGFloat = 72
