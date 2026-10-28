@@ -270,9 +270,17 @@ _CACHE_WRITE_5M_MULTIPLIER = 1.25
 _CACHE_WRITE_1H_MULTIPLIER = 2.0
 
 
-def _component_rates(model_id: str | None) -> tuple[float, float, float, float, float] | None:
+def _component_rates(
+    model_id: str | None, request: tuple[int, int, int, int, int] | None = None
+) -> tuple[float, float, float, float, float] | None:
     """Per-Mtok USD rates ``(fresh_input, cache_read, cache_write_5m,
     cache_write_1h, output)`` for a model, or None when unpriceable.
+
+    ``request`` is ONE request's token components. When its cache-inclusive
+    input crosses the card's ``long_context_threshold``, the whole request is
+    billed at the long-context tier, the same per-request rule as
+    ``builder.estimate_cost_usd``. Turn aggregates pass no ``request``: they
+    can sum several requests, so they stay at base rates.
 
     Resolves through the ONE rate card (``agentplay._core.pricing.MODEL_RATES``
     via ``normalize_model_key``) — no local price table. Missing cache keys
@@ -286,12 +294,21 @@ def _component_rates(model_id: str | None) -> tuple[float, float, float, float, 
     if not entry:
         return None
     input_rate = float(entry["input"])
-    return (
+    rates = (
         input_rate,
         float(entry.get("cache_read", input_rate * _CACHE_READ_MULTIPLIER)),
         float(entry.get("cache_write", input_rate * _CACHE_WRITE_5M_MULTIPLIER)),
         input_rate * _CACHE_WRITE_1H_MULTIPLIER,
         float(entry["output"]),
+    )
+    threshold = entry.get("long_context_threshold")
+    if request is None or threshold is None or sum(request[:4]) <= threshold:
+        return rates
+    in_mult = float(entry["long_context_input_multiplier"])
+    *input_rates, output_rate = rates
+    return (
+        *(rate * in_mult for rate in input_rates),
+        output_rate * float(entry["long_context_output_multiplier"]),
     )
 
 
@@ -492,7 +509,7 @@ def _marginal_waste_usd(
                     # would make every waste figure unknown for nothing
                     # Positive usage still must price.
                     continue
-                rates = _component_rates(event.get("model"))
+                rates = _component_rates(event.get("model"), component)
                 if rates is None:
                     return _none
                 full += _turn_cost_usd(component, rates)

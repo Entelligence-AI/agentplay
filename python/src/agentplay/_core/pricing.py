@@ -98,6 +98,15 @@ MODEL_RATES: dict[str, dict[str, float] | None] = {
     # Verified 2026-09-11: the planned September increase was cancelled.
     # https://platform.claude.com/docs/en/about-claude/pricing
     "claude-sonnet-5": {"input": 2.0, "output": 10.0},
+    # Verified 2026-10-26: https://platform.claude.com/docs/en/about-claude/pricing
+    # $2/$10, 5m write $2.50 (default 1.25x). Cache reads are 0.05x input
+    # ($0.10), NOT the default 0.1x - same rule as Opus 5.5.
+    "claude-sonnet-5-5": {
+        "input": 2.0,
+        "output": 10.0,
+        "cache_read": 0.10,
+        "cache_write": 2.50,
+    },
     "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
     "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
     "claude-sonnet-4-5-20250929": {"input": 3.0, "output": 15.0},
@@ -108,6 +117,17 @@ MODEL_RATES: dict[str, dict[str, float] | None] = {
     "claude-sonnet-4": {"input": 3.0, "output": 15.0},
     "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
     "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0},
+    # Verified 2026-10-26: https://platform.claude.com/docs/en/about-claude/pricing
+    # $0.10/$0.50 for prompts up to 100K tokens (cache read $0.01 and 5m write
+    # $0.125 are the default multipliers). Prompts over 100K are $0.50/$2.50
+    # with cache rates scaled the same way: 5x input, cache and output.
+    "claude-haiku-5-5": {
+        "input": 0.10,
+        "output": 0.50,
+        "long_context_threshold": 100_000,
+        "long_context_input_multiplier": 5.0,
+        "long_context_output_multiplier": 5.0,
+    },
     "claude-3-7-sonnet-latest": {"input": 3.0, "output": 15.0},
     "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},
     # Haiku 3.5 (not 4.5) really is $0.80/$4.00 — do not "fix" to match 4.5.
@@ -181,6 +201,23 @@ MODEL_RATES: dict[str, dict[str, float] | None] = {
         "long_context_input_multiplier": 2.0,
         "long_context_output_multiplier": 1.5,
     },
+    # Verified 2026-10-26: https://developers.openai.com/api/docs/models/gpt-6-sol
+    # $2/$10, cached input $0.20, cache writes $2.50 (1.25x). Above 272K input
+    # tokens: 2x input and cache, 1.5x output for the full request.
+    "gpt-6-sol": {
+        "input": 2.0,
+        "output": 10.0,
+        "cache_read": 0.20,
+        "cache_write": 2.50,
+        "long_context_threshold": 272_000,
+        "long_context_input_multiplier": 2.0,
+        "long_context_output_multiplier": 1.5,
+    },
+    # Verified 2026-10-26: https://developers.openai.com/api/docs/models/o3 and
+    # https://developers.openai.com/api/docs/models/o4-mini (Standard tier).
+    # No cache-write rate is published, so writes bill as ordinary input.
+    "o3": {"input": 2.0, "output": 8.0, "cache_read": 0.50, "cache_write": 2.0},
+    "o4-mini": {"input": 1.10, "output": 4.40, "cache_read": 0.275, "cache_write": 1.10},
     # GPT-5.3-Codex-Spark is a RESEARCH PREVIEW with no OpenAI-published rate
     # card as of 2026-07. ESTIMATE: priced at the base gpt-5.3-codex API card
     # ($1.75/$14) — the assumption third-party estimators also make — because a
@@ -220,6 +257,17 @@ MODEL_RATES: dict[str, dict[str, float] | None] = {
     "gemini-3-flash": {"input": 0.5, "output": 3.0},
     "gemini-2.0-flash": {"input": 0.1, "output": 0.4},
     "gemini-1.5-pro": {"input": 1.25, "output": 5.0},
+    # Verified 2026-10-26: https://ai.google.dev/gemini-api/docs/pricing
+    # $1.25/$10 and cache read $0.125 for prompts up to 200K tokens; above
+    # that $2.50/$15 and $0.25: 2x input and cache, 1.5x output.
+    "gemini-2.5-pro": {
+        "input": 1.25,
+        "output": 10.0,
+        "cache_read": 0.125,
+        "long_context_threshold": 200_000,
+        "long_context_input_multiplier": 2.0,
+        "long_context_output_multiplier": 1.5,
+    },
     "gemini-1.5-flash": {"input": 0.075, "output": 0.3},
     # ── Zhipu (Z.ai) ────────────────────────────────────────────────────────
     # GLM-5.2 — $1.40/$4.40 on the official Z.ai API, per
