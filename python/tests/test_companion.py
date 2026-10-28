@@ -1352,6 +1352,12 @@ def test_setup_switches_use_claude_codes_own_keys_and_undo_exactly(tmp_path):
     setup_control.switch(base, home, "mcp", "Slack", True, source="claude.ai connector")
     setup_control.switch(base, home, "skill", "tdd", True, source="you")
     assert json.loads((home / "settings.json").read_text()) == settings  # back exactly as it was
+    assert (home / "settings.json").read_text() == original  # byte for byte
+    # A file without a final newline keeps it that way.
+    (home / "settings.json").write_text('{\n  "model": "opus"\n}')
+    setup_control.switch(base, home, "skill", "tdd", False, source="you")
+    setup_control.switch(base, home, "skill", "tdd", True, source="you")
+    assert (home / "settings.json").read_text() == '{\n  "model": "opus"\n}'
     assert (home / "agents" / "judge.md").exists()
     with pytest.raises(FixError):
         setup_control.switch(base, home, "skill", "plug-skill", False, source="plugin tools")

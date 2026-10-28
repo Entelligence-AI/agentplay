@@ -196,6 +196,13 @@ enum CompanionMain {
             sem.wait()
             exit(code)
         }
+        if LaunchOptions.isDev, let name = LaunchOptions.value("--switch-check") {
+            let confirm = LaunchOptions.args.contains("confirm")
+            let sem = DispatchSemaphore(value: 0)
+            Task.detached { await Renderer.switchCheck(name: name, confirm: confirm); sem.signal() }
+            while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            exit(0)
+        }
         if let dir = LaunchOptions.isDev ? LaunchOptions.value("--banner-check") : nil {
             MainActor.assumeIsolated { Renderer.bannerCheck(to: dir) }
             exit(0)

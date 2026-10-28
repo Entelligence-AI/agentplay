@@ -926,6 +926,15 @@ final class CompanionModel: ObservableObject {
 
     /// Turn a skill, MCP server, subagent or hook off or back on, after saying exactly what changes and where.
     func switchSetup(_ it: SetupReport.Item, on: Bool) {
+        // After the menu has closed: an alert run from inside a menu item's action, while the menu is still
+        // finishing, never shows in a menu-bar app.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            await self.switchSetupNow(it, on: on)
+        }
+    }
+
+    private func switchSetupNow(_ it: SetupReport.Item, on: Bool) async {
         if !on {
             let a = NSAlert()
             a.messageText = "Turn off \(it.name)?"
@@ -937,17 +946,21 @@ final class CompanionModel: ObservableObject {
                 a.informativeText += "\n\nThis script is part of how you work with several sessions at once and the validator loop. Turning it off stops that until you turn it back on."
             }
             NSApp.activate(ignoringOtherApps: true)
+            a.window.level = .modalPanel
             guard a.runModal() == .alertFirstButtonReturn else { return }
         }
-        Task {
-            var args = ["setup", on ? "on" : "off", it.kind, it.name]
-            if it.source != "you" { args += ["--source", it.source] }
-            if let s = it.detail { args += ["--script", s] }
-            let r = await command(args)
-            toast = r.ok ? (r.fields["done"] ?? "Done.") : (r.message ?? "Couldn't change it.")
-            if r.ok { afterWrite() }
-        }
+        var args = ["setup", on ? "on" : "off", it.kind, it.name]
+        if it.source != "you" { args += ["--source", it.source] }
+        if let s = it.detail { args += ["--script", s] }
+        let r = await command(args)
+        toast = r.ok ? (r.fields["done"] ?? "Done.") : (r.message ?? "Couldn't change it.")
+        lastSwitchResult = r.ok ? (r.fields["done"] ?? "ok") : "failed: \(r.message ?? "")"
+        if r.ok { afterWrite() }
     }
+    /// The dev check talks to the real core.
+    func useRuntimeForCheck(_ r: Runtime) { runtime = r }
+    /// The last switch's outcome, for the dev check.
+    private(set) var lastSwitchResult: String?
 
     static func switchExplainer(_ it: SetupReport.Item) -> String {
         switch it.kind {

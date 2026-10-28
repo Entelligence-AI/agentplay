@@ -56,7 +56,10 @@ def _save(base: Path, claude_home: Path, data: dict[str, Any], like: str | None)
         backups = base / "backups"
         backups.mkdir(parents=True, exist_ok=True)
         shutil.copy2(p, backups / f"settings.json.{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%f')}")
-    _atomic_write(p, _dump(data, like).encode("utf-8"))
+    text = _dump(data, like)
+    if like is not None and not like.endswith(("\n", "\r")):
+        text = text.rstrip("\r\n")  # the file's own ending: no newline added where it had none
+    _atomic_write(p, text.encode("utf-8"))
 
 
 def server_name(name: str, source: str | None) -> str:

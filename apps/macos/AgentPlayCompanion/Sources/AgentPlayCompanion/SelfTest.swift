@@ -479,3 +479,95 @@ extension Renderer {
         print("banner captures in \(dir.path)")
     }
 }
+
+extension Renderer {
+    /// `--switch-check <name> <confirm|cancel>`: the real Tools menu over this Mac's data, the named item's
+    /// "Turn Off…" triggered through the menu, the confirmation found on screen and answered, then the result
+    /// read back from ~/.claude/settings.json. With confirm, it turns the item back on afterwards and checks that too.
+    static func switchCheck(name: String, confirm: Bool) async {
+        _ = NSApplication.shared
+        guard case .success(let rt) = Runtime.locate(allowDevOverride: true),
+              case .success(let snap) = await SnapshotService(runtime: rt).fetch(.read) else { print("switch-check: no snapshot"); return }
+        let settings = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
+        func denied() -> String {
+            let d = (try? JSONSerialization.jsonObject(with: Data(contentsOf: settings))) as? [String: Any]
+            return String(describing: d?["deniedMcpServers"] ?? "none")
+        }
+        let item: SetupReport.Item? = await MainActor.run {
+            NSApp.setActivationPolicy(.accessory)
+            let m = CompanionModel(prefsStore: PrefsStore(defaults: UserDefaults(suiteName: "check.\(UUID().uuidString)")!), isDevBuild: true)
+            m.prefs = PrefsStore().load()
+            m.installLiveForRender(snap)
+            m.useRuntimeForCheck(rt)
+            m.menuTab = .setup
+            Self.checkModel = m
+            let c = StatusItemController(model: m)
+            c.prepare(now: Date())
+            guard let row = c.menu.items.first(where: { $0.title == name }), let sub = row.submenu,
+                  let idx = sub.items.firstIndex(where: { $0.title == "Turn Off…" }) else {
+                print("switch-check: no Turn Off… under \(name); rows: \(c.menu.items.map(\.title).filter { !$0.isEmpty })")
+                return nil
+            }
+            print("switch-check: before, deniedMcpServers = \(denied())")
+            let t = Timer(timeInterval: 0.6, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    sub.performActionForItem(at: idx)   // what a click on the row does
+                    c.menu.cancelTracking()
+                }
+            }
+            RunLoop.main.add(t, forMode: .eventTracking)
+            let v = NSScreen.main!.visibleFrame
+            c.menu.popUp(positioning: nil, at: NSPoint(x: v.maxX - 420, y: v.maxY - 10), in: nil)
+            NSStatusBar.system.removeStatusItem(c.statusItem)
+            return snap.usage?.setup?.items.first { $0.name == name }
+        }
+        guard let item else { return }
+        // The confirmation runs modally; answer it from a timer that runs in the modal loop.
+        await MainActor.run {
+            let t = Timer(timeInterval: 1.0, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    guard let w = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("Alert") }) else {
+                        print("switch-check: FAIL, no confirmation on screen"); NSApp.abortModal(); return
+                    }
+                    let texts = w.contentView.map { Self.allText($0) } ?? []
+                    print("switch-check: confirmation shown: \(texts.prefix(2).joined(separator: " | "))")
+                    let f = w.frame, top = NSScreen.screens[0].frame.maxY
+                    let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                    p.arguments = ["-x", "-R", "\(Int(f.minX)),\(Int(top - f.maxY)),\(Int(f.width)),\(Int(f.height))", "/tmp/apc-switch-alert.png"]
+                    try? p.run(); p.waitUntilExit()
+                    if let b = Self.button(confirm ? "Turn Off" : "Cancel", in: w.contentView) { b.performClick(nil) } else { NSApp.abortModal() }
+                }
+            }
+            RunLoop.main.add(t, forMode: .modalPanel)
+            RunLoop.main.add(t, forMode: .default)
+        }
+        for _ in 0..<120 {
+            try? await Task.sleep(for: .milliseconds(250))
+            if await MainActor.run(body: { Self.checkModel?.lastSwitchResult }) != nil { break }
+        }
+        let result = await MainActor.run { Self.checkModel?.lastSwitchResult }
+        print("switch-check: result = \(result ?? "nothing ran")")
+        print("switch-check: after, deniedMcpServers = \(denied())")
+        if confirm, result != nil {
+            await MainActor.run { Self.checkModel?.switchSetup(item, on: true) }
+            for _ in 0..<120 {
+                try? await Task.sleep(for: .milliseconds(250))
+                if denied() == "none" || !denied().contains(item.name) { break }
+            }
+            print("switch-check: turned back on, deniedMcpServers = \(denied())")
+        }
+    }
+
+    @MainActor static var checkModel: CompanionModel?
+
+    @MainActor static func allText(_ v: NSView) -> [String] {
+        ((v as? NSTextField).map { [$0.stringValue] } ?? []) + v.subviews.flatMap { allText($0) }
+    }
+
+    @MainActor static func button(_ title: String, in v: NSView?) -> NSButton? {
+        guard let v else { return nil }
+        if let b = v as? NSButton, b.title == title { return b }
+        for s in v.subviews { if let b = button(title, in: s) { return b } }
+        return nil
+    }
+}

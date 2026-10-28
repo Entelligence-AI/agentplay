@@ -788,6 +788,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     /// Turn Off… or Turn On for one thing, with what it does underneath.
     private func addSwitch(_ it: SetupReport.Item, to m: NSMenu) {
+        if it.kind == "agent", it.source == "built in" {
+            let x = NSMenuItem(title: "Part of Claude Code", action: nil, keyEquivalent: "")
+            x.isEnabled = false
+            setSubtitle("Claude's own helper; it can't be turned off", on: x)
+            m.addItem(x)
+            return
+        }
         if it.kind == "skill", it.source != "you" {
             let x = NSMenuItem(title: "Comes with \(it.source)", action: nil, keyEquivalent: "")
             x.isEnabled = false
