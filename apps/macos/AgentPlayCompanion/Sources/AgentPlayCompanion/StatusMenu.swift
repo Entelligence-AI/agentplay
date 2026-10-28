@@ -602,13 +602,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                     m.addItem(ri)
                 }
             }
+            m.addItem(.separator())
+            addSwitch(it, to: m)
             if it.source == "claude.ai connector" {
-                m.addItem(.separator())
                 let c = item("Manage Connectors on claude.ai") { NSWorkspace.shared.open(URL(string: "https://claude.ai/settings/connectors")!) }
+                setSubtitle("To disconnect the account itself", on: c)
                 c.image = symbol("safari")
                 m.addItem(c)
             }
-            m.addItem(.separator())
             m.addItem(item("Open in Insights…") { [model] in model.showInsights(.setup) })
             i.submenu = m
             menu.addItem(i)
@@ -621,6 +622,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let m = NSMenu()
             m.autoenablesItems = false
             m.addItem(hosted(UnusedCard(kind: kind, items: items), width: UnusedCard.width))
+            let switchable = items.filter { !($0.kind == "skill" && $0.source != "you") && $0.kind != "command" }
+            if !switchable.isEmpty {
+                m.addItem(.separator())
+                m.addItem(.sectionHeader(title: "Turn Off"))
+                for it in switchable.prefix(30) {
+                    let x = item(it.name) { [model] in model.switchSetup(it, on: false) }
+                    x.image = symbol("power")
+                    m.addItem(x)
+                }
+            }
             if let folder = ["skill": "skills", "agent": "agents", "command": "commands"][kind] {
                 m.addItem(.separator())
                 let show = item("Show \(folder.capitalized) Folder") { NSWorkspace.shared.open(Self.claudeFolder(folder)) }
@@ -644,6 +655,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 let m = NSMenu()
                 m.autoenablesItems = false
                 m.addItem(hosted(HookCard(hook: h, fixReady: (model.snapshot?.insights?.fixes ?? []).contains { $0.rule == "broken_hook" && ($0.subject ?? "").hasPrefix(h.name.components(separatedBy: ":")[0]) })))
+                m.addItem(.separator())
+                addSwitch(h, to: m)
                 i.submenu = m
                 menu.addItem(i)
             }
@@ -757,6 +770,29 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private func setSubtitle(_ text: String, on item: NSMenuItem) {
         if #available(macOS 14.4, *) { item.subtitle = text } else { item.toolTip = text }
+    }
+
+    /// Turn Off… or Turn On for one thing, with what it does underneath.
+    private func addSwitch(_ it: SetupReport.Item, to m: NSMenu) {
+        if it.kind == "skill", it.source != "you" {
+            let x = NSMenuItem(title: "Comes with \(it.source)", action: nil, keyEquivalent: "")
+            x.isEnabled = false
+            setSubtitle("Claude Code switches plugins as a whole, in /plugin", on: x)
+            m.addItem(x)
+            return
+        }
+        if it.isOff {
+            let x = item("Turn On") { [model] in model.switchSetup(it, on: true) }
+            setSubtitle("Back as it was", on: x)
+            x.image = symbol("power")
+            m.addItem(x)
+        } else {
+            let x = item("Turn Off…") { [model] in model.switchSetup(it, on: false) }
+            setSubtitle(["skill": "Hidden from Claude and the / menu", "mcp": "Claude Code stops connecting to it",
+                         "agent": "Claude can't start it", "hook": "Stops running"][it.kind] ?? "", on: x)
+            x.image = symbol("power")
+            m.addItem(x)
+        }
     }
 
     static func claudeFolder(_ sub: String) -> URL {

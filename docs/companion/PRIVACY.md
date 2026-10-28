@@ -54,6 +54,8 @@ Off by default, except "Session needs you", which onboarding offers switched on 
 
 ## What it writes
 
+Turning things off from Tools (only after you confirm, with the exact change shown): a skill gets `skillOverrides: {"name": "off"}` and an MCP server or claude.ai connector a `deniedMcpServers` entry, both in `~/.claude/settings.json` and both Claude Code's own switches. A subagent's file moves to `~/.agentplay/set-aside/agents`, and a hook's entry moves from `settings.json` to `~/.agentplay/set-aside/hooks.json`, because Claude Code has no switch for either. Every write takes AgentPlay's write lock and copies `settings.json` to `~/.agentplay/backups` first; Turn On puts back exactly what was there. Plugin skills are not switched (Claude Code switches plugins as a whole). Tests: `test_setup_switches_use_claude_codes_own_keys_and_undo_exactly`.
+
 - Its preferences, in the `ai.entelligence.agentplay.companion` domain: settings, mutes, pins, dismissed Learn cards, alert ids and times, custom folders.
 - `~/Library/Caches/ai.entelligence.agentplay.companion/viewer.pid` while its viewer runs.
 - The same maps and index in `~/.agentplay` that `agentplay build` writes. The index records each session's transcript path (`sourcePath`), and the usage cache in `~/.agentplay/cache` is keyed by transcript path. Both stay on this Mac; neither is shown or sent.

@@ -179,7 +179,7 @@ def _link(items: list[dict[str, Any]], claude_home: Path) -> None:
 
 
 def report(claude_home: Path, uses: list[list[Any]], now: datetime, claude_json: Path | None = None,
-           days: int = 30, measured: dict[str, Any] | None = None) -> dict[str, Any]:
+           days: int = 30, measured: dict[str, Any] | None = None, store_base: Path | None = None) -> dict[str, Any]:
     """The inventory with 30-day use counts and a verdict per item, most used first, unused last.
 
     ``measured`` (impact.measure over the session maps): each item it covers gets ``measured``, its calls,
@@ -209,6 +209,23 @@ def report(claude_home: Path, uses: list[list[Any]], now: datetime, claude_json:
                 else "Tools your sessions called, set up in a project's settings rather than for you as a whole.")
             items.append({"kind": key[0], "name": label, "source": source, "installedAt": None, "detail": None, "what": what,
                           "measured": {k: v for k, v in m.items() if k not in ("kind", "name")}})
+    # What's switched off: still listed, so it can be turned back on (setup_control).
+    if store_base is not None:
+        from . import setup_control
+
+        off = setup_control.off_now(store_base, claude_home)
+        for it in items:
+            if it["kind"] == "skill" and it["source"] == "you" and it["name"] in off["skills"]:
+                it["off"] = True
+            if it["kind"] == "mcp" and setup_control.server_name(it["name"], it["source"]) in off["servers"]:
+                it["off"] = True
+        for md in off["agents"]:
+            items.append({"kind": "agent", "name": _frontmatter_name(md) or md.stem, "source": "you", "installedAt": None,
+                          "detail": None, "what": _description(md), "off": True})
+        for h in off["hooks"]:
+            name = h["event"] + (f":{h['matcher']}" if h.get("matcher") else "")
+            items.append({"kind": "hook", "name": name, "source": "you", "installedAt": None, "detail": h.get("script"),
+                          "what": None, "off": True})
     fails = (measured or {}).get("hookFails") or {}
     for it in items:
         if it["kind"] == "hook":

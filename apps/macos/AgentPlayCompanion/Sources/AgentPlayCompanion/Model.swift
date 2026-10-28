@@ -917,6 +917,40 @@ final class CompanionModel: ObservableObject {
         }
     }
 
+    /// Turn a skill, MCP server, subagent or hook off or back on, after saying exactly what changes and where.
+    func switchSetup(_ it: SetupReport.Item, on: Bool) {
+        if !on {
+            let a = NSAlert()
+            a.messageText = "Turn off \(it.name)?"
+            a.informativeText = Self.switchExplainer(it)
+            a.addButton(withTitle: "Turn Off")
+            a.addButton(withTitle: "Cancel")
+            if ["collab-guard", "validator"].contains(where: { (it.detail ?? it.name).contains($0) }) {
+                a.alertStyle = .critical
+                a.informativeText += "\n\nThis script is part of how you work with several sessions at once and the validator loop. Turning it off stops that until you turn it back on."
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            guard a.runModal() == .alertFirstButtonReturn else { return }
+        }
+        Task {
+            var args = ["setup", on ? "on" : "off", it.kind, it.name]
+            if it.source != "you" { args += ["--source", it.source] }
+            if let s = it.detail { args += ["--script", s] }
+            let r = await command(args)
+            toast = r.ok ? (r.fields["done"] ?? "Done.") : (r.message ?? "Couldn't change it.")
+            if r.ok { afterWrite() }
+        }
+    }
+
+    static func switchExplainer(_ it: SetupReport.Item) -> String {
+        switch it.kind {
+        case "skill": return "Claude stops seeing it and it leaves the / menu: AgentPlay sets skillOverrides to \"off\" for it in ~/.claude/settings.json, the same switch /skills uses. Turn it back on any time from Tools."
+        case "mcp": return "Claude Code stops connecting to it in new sessions: AgentPlay adds it to deniedMcpServers in ~/.claude/settings.json. Its setup and login stay as they are. Turn it back on any time from Tools."
+        case "agent": return "Claude stops being able to start it: AgentPlay moves its file from ~/.claude/agents to ~/.agentplay/set-aside/agents. Claude Code has no switch for subagents, so this is the only way. Turn it back on any time from Tools."
+        default: return "It stops running \(HooksCard.moment(it.name).lowercased()): AgentPlay takes its entry out of hooks in ~/.claude/settings.json and keeps it, to put back exactly when you turn it on again."
+        }
+    }
+
     func undoApplied(_ e: Insights.Applied) {
         Task {
             let r = await command(["fix", "undo", e.id])

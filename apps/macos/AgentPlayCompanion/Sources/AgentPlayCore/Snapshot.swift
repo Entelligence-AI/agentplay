@@ -468,6 +468,9 @@ public struct SetupReport: Codable, Sendable, Equatable {
         public var what: String?
         /// Hooks: failures at the moment it runs, from the session index.
         public var failed: Int?
+        /// Switched off from AgentPlay or Claude Code (skillOverrides, deniedMcpServers, set aside).
+        public var off: Bool?
+        public var isOff: Bool { off == true }
         /// Hooks that run it, and the subagents it drives: how a skill is in use beyond direct calls.
         public var runBy: [String]?
         public var worksWith: [String]?

@@ -1422,6 +1422,19 @@ def autotune_action(store: Store, action: str, fix_id: str) -> dict[str, Any]:
 
 def main(args: Any) -> int:
     cmd = getattr(args, "companion_cmd", "snapshot")
+    if cmd == "setup":
+        from . import fixes, setup_control
+
+        try:
+            home = (discover.Homes.default().claude_code or [Path.home() / ".claude"])[0]
+            out = setup_control.switch(Store().base, Path(home), args.kind, args.name, args.state == "on",
+                                       source=getattr(args, "source", None), script=getattr(args, "script", None))
+            _drop_insights_cache(Store())
+            print(json.dumps({"ok": True, **out}))
+            return 0
+        except fixes.FixError as e:
+            print(json.dumps({"ok": False, "code": getattr(e, "code", "error"), "message": str(e)}))
+            return 1
     if cmd == "coach":
         # The app runs this once a day, only when the person has turned on suggestions from Claude.
         st = Store()

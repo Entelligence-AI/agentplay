@@ -257,7 +257,8 @@ enum MenuBuilder {
             out.append(.split(sp))
         }
         // Yours first (what you built or installed), then the MCP servers and connectors you call.
-        let used = st.items.filter { ($0.uses > 0 || $0.verdict == "used") && $0.kind != "hook" }
+        let live = st.items.filter { !$0.isOff }
+        let used = live.filter { ($0.uses > 0 || $0.verdict == "used") && $0.kind != "hook" }
         // Yours before built-ins, and what a hook runs before what's merely called most.
         let mine = used.filter { $0.kind != "mcp" }.sorted {
             ($0.source == "you" ? 0 : 1, $0.runBy == nil ? 1 : 0, -$0.uses) < ($1.source == "you" ? 0 : 1, $1.runBy == nil ? 1 : 0, -$1.uses)
@@ -272,7 +273,7 @@ enum MenuBuilder {
             out.append(.header("MCP Servers"))
             out += servers.prefix(max(2, 4 - trim)).map(MenuEntry.setupItem)
         }
-        let unused = st.items.filter { $0.verdict == "unused" && $0.kind != "hook" }
+        let unused = live.filter { $0.verdict == "unused" && $0.kind != "hook" }
         if !unused.isEmpty {
             out.append(.header("Not Used in \(st.days) Days"))
             for kind in ["skill", "agent", "mcp", "command"] {
@@ -280,10 +281,15 @@ enum MenuBuilder {
                 if !these.isEmpty { out.append(.unused(kind: kind, items: these)) }
             }
         }
-        let hooks = st.items.filter { $0.kind == "hook" }
+        let hooks = live.filter { $0.kind == "hook" }
         if !hooks.isEmpty, trim < 3 {
             out.append(.header("Hooks"))
             out.append(.hooks(Array(hooks.prefix(max(1, 5 - trim)))))
+        }
+        let off = st.items.filter(\.isOff)
+        if !off.isEmpty {
+            out.append(.header("Turned Off"))
+            out += off.prefix(8).map(MenuEntry.setupItem)
         }
         out.append(.separator)
         out.append(.openInsights(.setup, "Open in Insights…"))

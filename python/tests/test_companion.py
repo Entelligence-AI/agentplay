@@ -1311,3 +1311,47 @@ def test_tool_measure_flags_sessions_that_change_nothing(tmp_path):
     m = next(i for i in impact.measure(st, now)["items"] if i["name"] == "deep-dive")
     assert (m["noOutput"], m["yourSessionsChecked"], m["sessionTokens"], m["sessionCost"]) == (3, 4, 2_000_000, 4.0)
     assert m["advice"]["kind"] == "idle" and "3 of your 4 sessions" in m["advice"]["text"]
+
+
+def test_setup_switches_use_claude_codes_own_keys_and_undo_exactly(tmp_path):
+    from datetime import UTC, datetime
+
+    from agentplay import setup_control, setup_inventory
+    from agentplay.fixes import FixError
+
+    home, base = tmp_path / ".claude", tmp_path / "ap"
+    (home / "skills" / "tdd").mkdir(parents=True)
+    (home / "skills" / "tdd" / "SKILL.md").write_text("---\nname: tdd\ndescription: Test first.\n---\n")
+    (home / "agents").mkdir()
+    (home / "agents" / "judge.md").write_text("---\nname: judge\ndescription: Scores work.\n---\n")
+    settings = {"model": "opus", "hooks": {"SessionStart": [{"hooks": [
+        {"type": "command", "command": "/x/guard.sh"}, {"type": "command", "command": "/x/env.sh --quiet"}]}]}}
+    original = json.dumps(settings, indent=2) + "\n"
+    (home / "settings.json").write_text(original)
+
+    setup_control.switch(base, home, "skill", "tdd", False, source="you")
+    setup_control.switch(base, home, "mcp", "Slack", False, source="claude.ai connector")
+    setup_control.switch(base, home, "agent", "judge", False)
+    setup_control.switch(base, home, "hook", "SessionStart", False, script="env.sh")
+    s = json.loads((home / "settings.json").read_text())
+    assert s["skillOverrides"] == {"tdd": "off"}
+    assert s["deniedMcpServers"] == [{"serverName": "claude.ai Slack"}]
+    assert [h["command"] for h in s["hooks"]["SessionStart"][0]["hooks"]] == ["/x/guard.sh"]
+    assert s["model"] == "opus"
+    assert not (home / "agents" / "judge.md").exists() and (base / "set-aside" / "agents" / "judge.md").exists()
+    assert len(list((base / "backups").glob("settings.json.*"))) == 3
+
+    rep = setup_inventory.report(home, [], datetime(2026, 10, 27, tzinfo=UTC), store_base=base, measured={
+        "items": [{"kind": "mcp", "name": "claude_ai_Slack", "calls": 3, "failed": 0, "tokens": 0, "sessions": 1, "yours": 1,
+                   "recent": [], "advice": {"kind": "fine", "text": "x"}}]})
+    off = {(i["kind"], i["name"], i.get("detail")) for i in rep["items"] if i.get("off")}
+    assert off == {("skill", "tdd", None), ("mcp", "Slack", None), ("agent", "judge", None), ("hook", "SessionStart", "env.sh")}
+
+    setup_control.switch(base, home, "hook", "SessionStart", True, script="env.sh")
+    setup_control.switch(base, home, "agent", "judge", True)
+    setup_control.switch(base, home, "mcp", "Slack", True, source="claude.ai connector")
+    setup_control.switch(base, home, "skill", "tdd", True, source="you")
+    assert json.loads((home / "settings.json").read_text()) == settings  # back exactly as it was
+    assert (home / "agents" / "judge.md").exists()
+    with pytest.raises(FixError):
+        setup_control.switch(base, home, "skill", "plug-skill", False, source="plugin tools")
