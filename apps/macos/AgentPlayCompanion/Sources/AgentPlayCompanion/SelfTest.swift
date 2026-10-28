@@ -165,6 +165,19 @@ extension Renderer {
             if let u = snap.usage {
                 write(AnyView(UsageDetail(report: u)), to: dir.appendingPathComponent("live-usage-details.png"), dark: true, material: true)
             }
+            // Submenus as real menu windows, offscreen: what a hover opens, at the size the menu gives it.
+            for tab in [MenuTab.setup, .improve] {
+                m.menuTab = tab
+                let c = StatusItemController(model: m)
+                c.nowOverride = snap.generatedAt
+                NSApp.appearance = NSAppearance(named: .darkAqua)
+                c.prepare(now: snap.generatedAt)
+                for (n, item) in c.menu.items.filter({ $0.submenu != nil && $0.view == nil }).prefix(2).enumerated() {
+                    if let sub = item.submenu { Self.captureSubmenu(sub, to: dir.appendingPathComponent("live-sub-\(tab.rawValue)-\(n).png")) }
+                }
+                NSStatusBar.system.removeStatusItem(c.statusItem)
+            }
+            m.menuTab = .now
             // The Insights window, each section, as a real window.
             NSApp.appearance = NSAppearance(named: .darkAqua)
             for section in [InsightsSection.overview, .setup, .steering] {
@@ -174,6 +187,29 @@ extension Renderer {
             }
         }
         print("rendered live screens to \(dir.path)")
+    }
+}
+
+extension Renderer {
+    /// One submenu, popped offscreen and drawn with its window frame, so a row cut off by its own menu shows.
+    @MainActor static func captureSubmenu(_ menu: NSMenu, to url: URL) {
+        menu.appearance = NSAppearance(named: .darkAqua)
+        let timer = Timer(timeInterval: 0.5, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                if let w = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("PopupMenuWindow") }),
+                   let v = w.contentView?.superview ?? w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: url)
+                    for case let item in menu.items where item.view != nil {
+                        let h = item.view!
+                        print("submenu row: frame \(Int(h.frame.width))x\(Int(h.frame.height)) needs \(Int(h.fittingSize.width))x\(Int(h.fittingSize.height))")
+                    }
+                }
+                menu.cancelTracking()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .eventTracking)
+        menu.popUp(positioning: nil, at: NSPoint(x: -3000, y: -3000), in: nil)
     }
 }
 
@@ -239,6 +275,7 @@ extension Renderer {
                                     p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
                                     p.arguments = ["-x", "-R", "\(Int(f.minX)),\(Int(top - f.maxY)),\(Int(f.width)),\(Int(f.height))", url.path]
                                     try? p.run(); p.waitUntilExit()
+                                    if p.terminationStatus != 0 { print("capture failed: window \(f) screens \(NSScreen.screens.map(\.frame))") }
                                     if let img = NSImage(contentsOf: url), let t = img.tiffRepresentation, let rep = NSBitmapImageRep(data: t) { shots[name] = rep }
                                 }
                                 c.menu.cancelTracking()
@@ -261,7 +298,48 @@ extension Renderer {
                     }
                 }
             }
+            // Submenus, as they open: the first two of Tools and of Fixes, each popped on its own over the bright page.
             StatusItemController.glassTintOn = true
+            for tab in [MenuTab.setup, .improve] {
+                for dark in [true, false] {
+                    m.menuTab = tab
+                    let probe = StatusItemController(model: m)
+                    probe.nowOverride = snap.generatedAt
+                    NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                    probe.prepare(now: snap.generatedAt)
+                    let subs = probe.menu.items.filter { $0.submenu != nil && $0.view == nil }.prefix(2)
+                    for (n, item) in subs.enumerated() {
+                        guard let sub = item.submenu else { continue }
+                        sub.appearance = NSApp.appearance
+                        let back = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+                        back.level = .floating
+                        back.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+                        back.contentView = NSHostingView(rootView: BusyPage(bright: true))
+                        back.orderFrontRegardless()
+                        let url = dir.appendingPathComponent("real-sub-\(tab.rawValue)-\(n)-\(dark ? "dark" : "light").png")
+                        let timer = Timer(timeInterval: 0.9, repeats: false) { _ in
+                            MainActor.assumeIsolated {
+                                StatusItemController.tintMenuGlass()
+                                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+                                if let w = NSApp.windows.first(where: { $0.isVisible && $0.className.contains("PopupMenuWindow") }) {
+                                    let f = w.frame, top = NSScreen.screens[0].frame.maxY
+                                    let p = Process()
+                                    p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                                    p.arguments = ["-x", "-R", "\(Int(f.minX)),\(Int(top - f.maxY)),\(Int(f.width)),\(Int(f.height))", url.path]
+                                    try? p.run(); p.waitUntilExit()
+                                    if p.terminationStatus != 0 { print("capture failed: submenu \(f)") }
+                                }
+                                sub.cancelTracking()
+                            }
+                        }
+                        RunLoop.main.add(timer, forMode: .eventTracking)
+                        sub.popUp(positioning: nil, at: NSPoint(x: frame.minX + 60, y: frame.maxY - 30), in: nil)
+                        back.orderOut(nil)
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+                    }
+                    NSStatusBar.system.removeStatusItem(probe.statusItem)
+                }
+            }
         }
         print("contrast captures in \(dir.path)")
     }

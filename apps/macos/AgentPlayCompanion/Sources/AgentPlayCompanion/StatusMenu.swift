@@ -585,7 +585,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             i.image = ImpactCard.flagImage(it) ?? symbol(SetupCard.symbol(it.kind))
             let m = NSMenu()
             m.autoenablesItems = false
-            m.addItem(hosted(ImpactCard(item: it)))
+            m.addItem(hosted(ImpactCard(item: it), width: ImpactCard.width))
             if let recent = it.measured?.recent, !recent.isEmpty {
                 m.addItem(.separator())
                 m.addItem(.sectionHeader(title: "Your Latest Sessions with It"))
@@ -731,9 +731,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         ClosureMenuItem(title: title, keyEquivalent: key, action: action)
     }
 
-    private func hosted<V: View>(_ view: V) -> NSMenuItem {
+    /// A display-only custom row, measured at `width`: the width the view itself is drawn at. A view wider than
+    /// its row is cut off at both edges, so the two must match.
+    private func hosted<V: View>(_ view: V, width: CGFloat = Menu.width) -> NSMenuItem {
         let host = MenuHostingView(rootView: AnyView(view.environmentObject(model)))
-        host.sizeToContent(width: Menu.width)
+        host.sizeToContent(width: width)
         host.autoresizingMask = [.width]  // follow the menu when native rows make it wider
         let i = NSMenuItem()
         i.view = host
@@ -1209,6 +1211,7 @@ struct SuggestionCard: View {
             Text(suggestion.why).font(.subheadline).foregroundStyle(Ink.primary).fixedSize(horizontal: false, vertical: true)
             Text(source).font(.caption).foregroundStyle(Ink.secondary).padding(.top, 2)
         }
+        .fixedSize(horizontal: false, vertical: true)  // measured at its full height, never clipped
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 9)
         .frame(width: Menu.width, alignment: .leading)
@@ -1226,6 +1229,8 @@ struct SuggestionCard: View {
 /// they cost in context and time, the one thing to do about it, and how your sessions with it compare.
 struct ImpactCard: View {
     var item: SetupReport.Item
+    /// Wider than the menu's own rows: a label column and numbers side by side.
+    static let width: CGFloat = Menu.width + 40
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1241,8 +1246,10 @@ struct ImpactCard: View {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                     row("Failed", m.failed == 0 ? "none" : "\(m.failed) of \(m.calls) (\(Format.percent(100 * Double(m.failed) / Double(max(1, m.calls)))))",
                         warn: m.advice.kind == "failing")
-                    row("Into context", m.tokens == 0 ? "nothing" : "\(Format.tokens(m.tokens)) tokens · \(Format.tokens(m.tokens / max(1, m.sessions))) a session",
-                        warn: m.advice.kind == "heavy")
+                    if m.tokens >= 1000 {  // under a thousand tokens isn't worth a line
+                        row("Into context", "\(Format.tokens(m.tokens)) tokens · \(Format.tokens(m.tokens / max(1, m.sessions))) a session",
+                            warn: m.advice.kind == "heavy")
+                    }
                     if m.ms >= 60_000 { row("Waiting on it", Format.duration(Double(m.ms) / 1000), warn: false) }
                 }
                 HStack(alignment: .top, spacing: 6) {
@@ -1255,9 +1262,11 @@ struct ImpactCard: View {
                 if let c = m.compare { compare(c) }
             }
         }
+        .fixedSize(horizontal: false, vertical: true)  // measured at its full height, never clipped
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 10)
-        .frame(width: Menu.width + 40, alignment: .leading)
+        // A fixed width: text measured and drawn at the same width wraps the same way, so the height is right.
+        .frame(width: Self.width, alignment: .leading)
     }
 
     var usedLine: String {
@@ -1267,7 +1276,7 @@ struct ImpactCard: View {
         guard let m = item.measured else { return "Called \(item.uses)× directly in the last 30 days." + extra }
         var s = "\(m.calls) call\(m.calls == 1 ? "" : "s") in \(m.sessions) session\(m.sessions == 1 ? "" : "s")"
         if m.yours != m.sessions { s += " (\(m.yours) yours, \(m.sessions - m.yours) automated)" }
-        if let at = m.last.flatMap(SnapshotDecoder.parseISO) { s += " · last \(Format.relative(at, now: Date()))" }
+        if let at = m.last.flatMap(SnapshotDecoder.parseISO) { s += " · last \(Format.relative(at, now: Date()))." } else { s += "." }
         return s + extra
     }
 
@@ -1371,6 +1380,7 @@ struct TipCard: View {
             part("What to do", tip.todo)
             Text(tip.technical).font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
         }
+        .fixedSize(horizontal: false, vertical: true)  // measured at its full height, never clipped
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 9)
         .frame(width: Menu.width, alignment: .leading)
@@ -1455,6 +1465,7 @@ struct UnusedCard: View {
                     .font(.caption).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)  // measured at its full height, never clipped
         .padding(.horizontal, Menu.inset)
         .padding(.vertical, 9)
         .frame(width: Menu.width, alignment: .leading)

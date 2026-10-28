@@ -102,7 +102,9 @@ def advice(s: dict[str, Any]) -> dict[str, str]:
         return {"kind": "watch", "text": f"Your sessions with it had {v}. Worth a look at how it's used."}
     if not calls:
         return {"kind": "fine", "text": "Nothing to fix."}
-    return {"kind": "fine", "text": f"All {calls:,} calls worked." if not failed else f"{calls - failed:,} of {calls:,} calls worked."}
+    if not failed:
+        return {"kind": "fine", "text": "Its one call worked." if calls == 1 else f"All {calls:,} calls worked."}
+    return {"kind": "fine", "text": f"{calls - failed:,} of {calls:,} calls worked."}
 
 
 def measure(store: Store, now: datetime | None = None, days: int = 30) -> dict[str, Any]:
