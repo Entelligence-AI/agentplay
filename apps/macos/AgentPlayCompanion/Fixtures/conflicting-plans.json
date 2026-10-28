@@ -1,0 +1,1046 @@
+{
+  "schema": "agentplay.companion/v1",
+  "schemaVersion": 1,
+  "agentplayVersion": "sample",
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "store": {
+    "available": true,
+    "sessionCount": 2,
+    "indexError": null
+  },
+  "sources": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "status": "found",
+      "paths": [
+        "~/.codex"
+      ],
+      "sessionCount": 2,
+      "latestAt": "2026-10-23T10:16:00Z",
+      "remedy": null
+    },
+    {
+      "agent": "cursor",
+      "label": "Cursor",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot",
+      "label": "Copilot CLI",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot-vscode",
+      "label": "Copilot (VS Code)",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "kiro",
+      "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "gemini-cli",
+      "label": "gemini-cli",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "antigravity-cli",
+      "label": "antigravity-cli",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    }
+  ],
+  "runs": [
+    {
+      "sessionId": "local:codex:sample-0c1d",
+      "agentTool": "codex",
+      "agentLabel": "Codex",
+      "repo": "frontend",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T10:16:00Z",
+      "lastEventAt": "2026-10-23T10:26:40Z",
+      "lastActivityAt": "2026-10-23T10:36:00Z",
+      "mapBehindSeconds": null,
+      "activity": {
+        "value": "recent",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:36:00Z",
+        "window": "none",
+        "confidence": "medium",
+        "explanation": "The transcript changed recently. No running process was seen, so this is recorded activity, not proof it is running.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "gpt-5.5-codex"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 7,
+        "calls": 6,
+        "errors": 0,
+        "retries": 0,
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 3,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
+      },
+      "categories": {
+        "read": 3,
+        "search": 0,
+        "edit": 2,
+        "exec": 1,
+        "verify": 0,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 6,
+        "at": "2026-10-23T10:26:40Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "src/api.ts",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": null,
+      "recentEvents": [
+        {
+          "seq": 2,
+          "at": "2026-10-23T10:17:00Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/cart.css",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-23T10:20:00Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/cart.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 4,
+          "at": "2026-10-23T10:22:40Z",
+          "kind": "exec",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm lint",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 5,
+          "at": "2026-10-23T10:26:00Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/cart.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 6,
+          "at": "2026-10-23T10:26:40Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/api.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 184000,
+          "limit": 258400,
+          "percent": 71.2
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:36:00Z",
+        "window": "context",
+        "confidence": "high",
+        "explanation": "Reported by Codex in its session file: input tokens of the latest request over the model context window. Codex's own indicator may differ slightly.",
+        "freshness": "unknown"
+      },
+      "liveStatus": null
+    },
+    {
+      "sessionId": "local:codex:sample-other",
+      "agentTool": "codex",
+      "agentLabel": "Codex",
+      "repo": "infra",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T09:56:00Z",
+      "lastEventAt": "2026-10-23T09:56:05Z",
+      "lastActivityAt": "2026-10-23T10:31:00Z",
+      "mapBehindSeconds": null,
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:31:00Z",
+        "window": "none",
+        "confidence": "medium",
+        "explanation": "No recent changes to the transcript.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "gpt-5.5-codex"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 2,
+        "calls": 1,
+        "errors": 0,
+        "retries": 0,
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 1,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
+      },
+      "categories": {
+        "read": 1,
+        "search": 0,
+        "edit": 0,
+        "exec": 0,
+        "verify": 0,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 1,
+        "at": "2026-10-23T09:56:05Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "main.tf",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": null,
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-23T09:56:00Z",
+          "kind": "user",
+          "cat": null,
+          "agent": "main",
+          "label": "prompt",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-23T09:56:05Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "main.tf",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 184000,
+          "limit": 258400,
+          "percent": 71.2
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:31:00Z",
+        "window": "context",
+        "confidence": "high",
+        "explanation": "Reported by Codex in its session file: input tokens of the latest request over the model context window. Codex's own indicator may differ slightly.",
+        "freshness": "unknown"
+      },
+      "liveStatus": null
+    }
+  ],
+  "unreadable": [],
+  "alerts": [],
+  "limits": [
+    {
+      "provider": "claude-code",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "Claude Code doesn't save plan usage locally. Turn on live Claude limits in Settings (it reads Claude Code's statusline), or check /usage in Claude Code.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "five_hour",
+      "windowMinutes": 300,
+      "plan": "plus",
+      "limitId": "codex",
+      "resetsAt": "2026-10-23T12:48:00Z",
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "conflictingPlans": [
+        "plus",
+        "pro"
+      ],
+      "used": {
+        "value": {
+          "usedPercent": 32.0,
+          "leftPercent": 68.0
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:36:00Z",
+        "window": "five_hour",
+        "confidence": "low",
+        "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment. Recent Codex sessions reported different plans (plus, pro); they may be different accounts.",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "weekly",
+      "windowMinutes": 10080,
+      "plan": "plus",
+      "limitId": "codex",
+      "resetsAt": "2026-10-27T10:36:00Z",
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "conflictingPlans": [
+        "plus",
+        "pro"
+      ],
+      "used": {
+        "value": {
+          "usedPercent": 41.0,
+          "leftPercent": 59.0
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:36:00Z",
+        "window": "weekly",
+        "confidence": "low",
+        "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment. Recent Codex sessions reported different plans (plus, pro); they may be different accounts.",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "live": [],
+  "learn": null,
+  "usage": {
+    "generatedAt": "2026-10-23T10:46:00Z",
+    "kind": "estimated",
+    "explanation": "Counted from your local AgentPlay maps, subagents included and each request once. Costs are estimates at list prices; requests on unpriced models are counted separately, not as $0. Usage on other devices, the web or the API isn't here.",
+    "today": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "last7Days": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "last30Days": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "daily": [
+      {
+        "date": "2026-10-10",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-11",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-12",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-13",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-14",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-15",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-16",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-17",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-18",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-19",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-20",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-21",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-22",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-23",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      }
+    ],
+    "claudeDaily": [
+      {
+        "date": "2026-09-26",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-27",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-28",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-29",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-30",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-01",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-02",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-03",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-04",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-05",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-06",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-07",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-08",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-09",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-10",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-11",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-12",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-13",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-14",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-15",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-16",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-17",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-18",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-19",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-20",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-21",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-22",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-23",
+        "costUsd": 0.0
+      }
+    ],
+    "claudeBlock": null,
+    "signals": {
+      "days": 30,
+      "current": {
+        "messages": 0,
+        "calls": 0,
+        "corrections": 0,
+        "interrupts": 0,
+        "refusals": 0,
+        "frustrated": 0,
+        "notWorking": 0,
+        "swearing": 0,
+        "correctionRate": null,
+        "frustrationRate": null,
+        "interruptRate": null,
+        "refusalRate": null
+      },
+      "previous": {
+        "messages": 0,
+        "calls": 0,
+        "corrections": 0,
+        "interrupts": 0,
+        "refusals": 0,
+        "frustrated": 0,
+        "notWorking": 0,
+        "swearing": 0,
+        "correctionRate": null,
+        "frustrationRate": null,
+        "interruptRate": null,
+        "refusalRate": null
+      },
+      "daily": [
+        {
+          "date": "2026-09-24",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-25",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-26",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-27",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-28",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-29",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-30",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-01",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-02",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-03",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-04",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-05",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-06",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-07",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-08",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-09",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-10",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-11",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-12",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-13",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-14",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-15",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-16",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-17",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-18",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-19",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-20",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-21",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-22",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-23",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        }
+      ]
+    },
+    "setup": {
+      "days": 30,
+      "counts": {},
+      "sessions": {
+        "yours": 0,
+        "automated": 2,
+        "yoursCostUsd": 0,
+        "automatedCostUsd": 0.0,
+        "yoursCompacted": 0
+      },
+      "unused": 0,
+      "items": [],
+      "tips": []
+    },
+    "prompting": {
+      "days": 30,
+      "sessions": 0,
+      "findings": []
+    },
+    "timingMs": 0
+  },
+  "insights": {
+    "days": 30,
+    "sessions": 2,
+    "minSessions": 10,
+    "score": null,
+    "prevScore": null,
+    "components": [
+      {
+        "key": "shipping",
+        "name": "Shipping",
+        "points": 0.0,
+        "prevPoints": null
+      },
+      {
+        "key": "verification",
+        "name": "Verification",
+        "points": 0.0,
+        "prevPoints": null
+      },
+      {
+        "key": "efficiency",
+        "name": "Efficiency",
+        "points": 20.0,
+        "prevPoints": null
+      },
+      {
+        "key": "context",
+        "name": "Context hygiene",
+        "points": 20.0,
+        "prevPoints": null
+      },
+      {
+        "key": "environment",
+        "name": "Environment health",
+        "points": 20.0,
+        "prevPoints": null
+      }
+    ],
+    "applied": [],
+    "autotune": {
+      "enabled": false,
+      "lastRun": null,
+      "pending": [],
+      "active": []
+    },
+    "fixes": []
+  },
+  "coach": null,
+  "timing": {
+    "snapshotMs": 0
+  },
+  "sample": true
+}

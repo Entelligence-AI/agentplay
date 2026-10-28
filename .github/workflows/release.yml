@@ -58,3 +58,73 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: python/dist/
+
+  # The macOS companion: build, sign with the Developer ID, notarize, staple, write the Sparkle appcast, and
+  # attach the DMG and appcast.xml to the GitHub release for this tag. Installed copies find the update through
+  # SUFeedURL (releases/latest/download/appcast.xml). Skips cleanly until the Apple and Sparkle secrets exist.
+  companion:
+    needs: [version, ci]
+    runs-on: macos-latest
+    permissions:
+      contents: write # attach the DMG and appcast to the release
+    env:
+      HAS_SECRETS: ${{ secrets.DEVELOPER_ID_P12 != '' && secrets.SPARKLE_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the build number is the commit count
+      - name: Secrets present
+        if: env.HAS_SECRETS != 'true'
+        run: echo "::notice::Companion release skipped. Add DEVELOPER_ID_P12, DEVELOPER_ID_P12_PASSWORD, NOTARY_APPLE_ID, NOTARY_TEAM_ID, NOTARY_PASSWORD and SPARKLE_PRIVATE_KEY (see docs/companion/RELEASE_CHECKLIST.md)."
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: env.HAS_SECRETS == 'true'
+        with:
+          python-version: "3.12"
+      - name: Toolchain
+        if: env.HAS_SECRETS == 'true'
+        run: |
+          brew install uv pnpm
+          python -m pip install -e "python[dev]"
+      - name: Signing identity and notary profile
+        if: env.HAS_SECRETS == 'true'
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          KC="$RUNNER_TEMP/release.keychain-db"
+          security create-keychain -p "" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "" "$KC"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security import "$RUNNER_TEMP/id.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          IDENTITY="$(security find-identity -v -p codesigning "$KC" | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)"
+          echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          xcrun notarytool store-credentials agentplay-notary --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARY_PASSWORD" --keychain "$KC"
+          echo "NOTARY_PROFILE=agentplay-notary" >> "$GITHUB_ENV"
+      - name: Build, sign, notarize
+        if: env.HAS_SECRETS == 'true'
+        run: sh scripts/companion-dmg.sh
+      - name: Appcast
+        if: env.HAS_SECRETS == 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key"
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG="AgentPlay-Companion-$VERSION-arm64.dmg"
+          SPARKLE_PRIVATE_KEY_FILE="$RUNNER_TEMP/sparkle.key" \
+            sh scripts/companion-appcast.sh "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/$DMG"
+          rm -f "$RUNNER_TEMP/sparkle.key"
+      - name: Attach to the release
+        if: env.HAS_SECRETS == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/companion/*.dmg dist/companion/*.dmg.sha256 dist/companion/appcast.xml --clobber

@@ -48,8 +48,16 @@ AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "openco
           "antigravity-cli")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
-# applies anyway; this keeps one pathological file from stalling a run).
+# applies anyway; this keeps one pathological file from stalling a run). Every agent
+# but Claude Code goes through the shared parser, which reads a file whole and only
+# then checks its own 1 GB cap, so their cap stays at 512 MB and `build_map` applies
+# the parser's cap too before the read.
 MAX_SOURCE_BYTES = 512 * 1024 * 1024
+# Claude Code's JSONL is read by a streaming builder that caps its events as it goes.
+# Its size counts the session's subagent transcripts too, and long agent-heavy
+# sessions pass 512 MB; one just past that builds in about 10 s with a small memory
+# peak. Past the cap a map stops updating, so it is set well above real sessions.
+CLAUDE_CODE_MAX_SOURCE_BYTES = 4 * 1024 * 1024 * 1024
 
 
 def _homes_from_env(var: str, defaults: Iterable[str | Path]) -> list[Path]:
@@ -266,12 +274,21 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
     Raises:
         SkipSession: the transcript is too large or has no parseable spans.
     """
-    if source_bytes(c) > MAX_SOURCE_BYTES:
+    streamed = c.agent == "claude-code" and c.path.endswith(".jsonl")
+    size = source_bytes(c)
+    if size > (CLAUDE_CODE_MAX_SOURCE_BYTES if streamed else MAX_SOURCE_BYTES):
         raise SkipSession("too_large")
-    if c.agent == "claude-code" and c.path.endswith(".jsonl"):
+    if streamed:
         return builder.build_claude_code_map(
             Path(c.path), path_mode=path_mode, hmac_key=hmac_key, cli_version=version, resolver=resolver
         )
+    # The shared parser reads a transcript whole and only then checks its own cap, so a file past that
+    # cap is refused here, before the read, rather than loaded into memory to be rejected. Today
+    # MAX_SOURCE_BYTES is the lower of the two; this keeps it so if either cap moves.
+    from ._core.ingestion.coding_agent._sources._base import MAX_SESSION_BYTES
+
+    if size > MAX_SESSION_BYTES:
+        raise SkipSession("too_large")
     spans = source.get_spans_by_session(c.session_id)
     if not spans:
         raise SkipSession("no_spans")

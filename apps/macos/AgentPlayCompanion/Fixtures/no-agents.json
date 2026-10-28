@@ -1,0 +1,738 @@
+{
+  "schema": "agentplay.companion/v1",
+  "schemaVersion": 1,
+  "agentplayVersion": "sample",
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "store": {
+    "available": false,
+    "sessionCount": 0,
+    "indexError": null
+  },
+  "sources": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "cursor",
+      "label": "Cursor",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot",
+      "label": "Copilot CLI",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot-vscode",
+      "label": "Copilot (VS Code)",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "kiro",
+      "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "gemini-cli",
+      "label": "gemini-cli",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "antigravity-cli",
+      "label": "antigravity-cli",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    }
+  ],
+  "runs": [],
+  "unreadable": [],
+  "alerts": [],
+  "limits": [
+    {
+      "provider": "claude-code",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "Claude Code doesn't save plan usage locally. Turn on live Claude limits in Settings (it reads Claude Code's statusline), or check /usage in Claude Code.",
+        "freshness": "unknown"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "none",
+      "windowMinutes": null,
+      "plan": null,
+      "limitId": null,
+      "resetsAt": null,
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "used": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "No indexed Codex session has reported plan usage. Check usage in Codex.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "live": [],
+  "learn": null,
+  "usage": {
+    "generatedAt": "2026-10-23T10:46:00Z",
+    "kind": "estimated",
+    "explanation": "Counted from your local AgentPlay maps, subagents included and each request once. Costs are estimates at list prices; requests on unpriced models are counted separately, not as $0. Usage on other devices, the web or the API isn't here.",
+    "today": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "last7Days": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "last30Days": {
+      "tokens": {
+        "input": 0,
+        "cacheWrite": 0,
+        "cacheRead": 0,
+        "output": 0,
+        "total": 0
+      },
+      "costUsd": 0.0,
+      "requests": 0,
+      "unpricedRequests": 0,
+      "sessions": 0,
+      "byModel": [],
+      "byAgent": [],
+      "byRepo": []
+    },
+    "daily": [
+      {
+        "date": "2026-10-10",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-11",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-12",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-13",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-14",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-15",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-16",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-17",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-18",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-19",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-20",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-21",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-22",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-23",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      }
+    ],
+    "claudeDaily": [
+      {
+        "date": "2026-09-26",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-27",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-28",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-29",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-30",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-01",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-02",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-03",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-04",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-05",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-06",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-07",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-08",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-09",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-10",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-11",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-12",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-13",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-14",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-15",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-16",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-17",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-18",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-19",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-20",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-21",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-22",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-23",
+        "costUsd": 0.0
+      }
+    ],
+    "claudeBlock": null,
+    "signals": {
+      "days": 30,
+      "current": {
+        "messages": 0,
+        "calls": 0,
+        "corrections": 0,
+        "interrupts": 0,
+        "refusals": 0,
+        "frustrated": 0,
+        "notWorking": 0,
+        "swearing": 0,
+        "correctionRate": null,
+        "frustrationRate": null,
+        "interruptRate": null,
+        "refusalRate": null
+      },
+      "previous": {
+        "messages": 0,
+        "calls": 0,
+        "corrections": 0,
+        "interrupts": 0,
+        "refusals": 0,
+        "frustrated": 0,
+        "notWorking": 0,
+        "swearing": 0,
+        "correctionRate": null,
+        "frustrationRate": null,
+        "interruptRate": null,
+        "refusalRate": null
+      },
+      "daily": [
+        {
+          "date": "2026-09-24",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-25",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-26",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-27",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-28",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-29",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-30",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-01",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-02",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-03",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-04",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-05",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-06",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-07",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-08",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-09",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-10",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-11",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-12",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-13",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-14",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-15",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-16",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-17",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-18",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-19",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-20",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-21",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-22",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-23",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        }
+      ]
+    },
+    "setup": {
+      "days": 30,
+      "counts": {},
+      "sessions": {
+        "yours": 0,
+        "automated": 0,
+        "yoursCostUsd": 0,
+        "automatedCostUsd": 0,
+        "yoursCompacted": 0
+      },
+      "unused": 0,
+      "items": [],
+      "tips": []
+    },
+    "prompting": {
+      "days": 30,
+      "sessions": 0,
+      "findings": []
+    },
+    "timingMs": 0
+  },
+  "insights": {
+    "days": 30,
+    "sessions": 0,
+    "minSessions": 10,
+    "score": null,
+    "prevScore": null,
+    "components": [
+      {
+        "key": "shipping",
+        "name": "Shipping",
+        "points": null,
+        "prevPoints": null
+      },
+      {
+        "key": "verification",
+        "name": "Verification",
+        "points": null,
+        "prevPoints": null
+      },
+      {
+        "key": "efficiency",
+        "name": "Efficiency",
+        "points": null,
+        "prevPoints": null
+      },
+      {
+        "key": "context",
+        "name": "Context hygiene",
+        "points": null,
+        "prevPoints": null
+      },
+      {
+        "key": "environment",
+        "name": "Environment health",
+        "points": null,
+        "prevPoints": null
+      }
+    ],
+    "applied": [],
+    "autotune": {
+      "enabled": false,
+      "lastRun": null,
+      "pending": [],
+      "active": []
+    },
+    "fixes": []
+  },
+  "coach": null,
+  "timing": {
+    "snapshotMs": 0
+  },
+  "sample": true
+}

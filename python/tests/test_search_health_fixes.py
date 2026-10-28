@@ -101,6 +101,18 @@ def test_verify_fix_names_the_commands_that_pass_and_its_points():
     assert fx["points"] == pytest.approx(10.0)  # 2/10 verified -> 7/10 target: +0.5 x 20
 
 
+def test_what_counts_as_a_check():
+    assert all(health.is_check(v) for v in ("pytest", "npm test", "pnpm lint", "npx tsc", "cargo build", "go test", "ruff check"))
+    assert not any(health.is_check(v) for v in ("echo", "mkdir", "npx", "python", "git status", "latest", "test", "git check-ignore"))
+
+
+def test_printing_or_a_bare_interpreter_is_not_a_check():
+    cmd = {v: {"calls": 40, "fails": 0, "retries": 0, "byClass": {}, "verify": True, "outBytes": 0}
+           for v in ("echo", "python", "mkdir", "npx")}
+    rows = [_row(f"s{i}", cmd=cmd, verifyAfterLastEdit=i < 2) for i in range(10)]
+    assert not [f for f in health.fixes(rows) if f["rule"] == "verify_before_stop"]
+
+
 def test_no_fix_without_a_named_cause():
     rows = [_row(f"s{i}") for i in range(10)]  # unverified, but no verify command ever passed
     assert [f["rule"] for f in health.fixes(rows)] == []

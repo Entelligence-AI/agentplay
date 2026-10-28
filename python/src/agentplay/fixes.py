@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -33,6 +34,10 @@ from typing import Any
 from .store import OutsideRoot, _atomic_write
 
 ALLOWED_FILES = ("CLAUDE.md", "CLAUDE.local.md", ".claude/settings.json", ".claude/settings.local.json")
+# Claude Code's own settings, outside any repo. A fix to a hook registered there is written under this name,
+# with the Claude home as its root; the same grant, journal and undo apply, minus the git checkout rule.
+HOME_REPO = "~/.claude"
+HOME_FILES = ("settings.json", "settings.local.json")
 START = "<!-- agentplay:start -->"
 END = "<!-- agentplay:end -->"
 HEADING = "## Notes from agentplay"
@@ -134,7 +139,10 @@ def grant(base: Path, repo: str, root: str | None = None) -> str:
     if not path:
         raise FixError("no_root", f"agentplay has not seen a checkout of {repo} on this machine.")
     resolved = Path(path).expanduser().resolve()
-    if not (resolved / ".git").exists():
+    if repo == HOME_REPO:
+        if not resolved.is_dir():
+            raise FixError("no_root", f"{resolved} is not a folder.")
+    elif not (resolved / ".git").exists():
         raise FixError("not_a_repo", f"{resolved} is not a git checkout.")
     with write_lock(base):
         g = grants(base)
@@ -167,14 +175,16 @@ def active(base: Path) -> list[dict[str, Any]]:
 
 
 def _target(base: Path, repo: str, rel: str, root_s: str | None = None) -> Path:
-    """``rel`` inside ``repo``'s granted checkout, or inside ``root_s`` (undo: the checkout it was written to)."""
-    if rel not in ALLOWED_FILES:
-        raise FixError("file_not_allowed", f"agentplay only writes {', '.join(ALLOWED_FILES)}.")
-    granted = grants(base).get(repo)
-    if not granted:
+    """``rel`` inside ``repo``'s granted checkout, or inside ``root_s`` (undo: the checkout it was written to;
+    a preview: the root the fix found before any grant)."""
+    allowed = HOME_FILES if repo == HOME_REPO else ALLOWED_FILES
+    if rel not in allowed:
+        raise FixError("file_not_allowed", f"agentplay only writes {', '.join(allowed)}.")
+    root_s = root_s or grants(base).get(repo)
+    if not root_s:
         raise FixError("not_granted", f"Allow writes to {repo} first.")
-    root = Path(root_s or granted).resolve()
-    if not (root / ".git").exists():
+    root = Path(root_s).resolve()
+    if repo != HOME_REPO and not (root / ".git").exists():
         raise FixError("not_a_repo", f"{root} is no longer a git checkout.")
     target = (root / rel).resolve()
     if not target.is_relative_to(root):
@@ -325,14 +335,40 @@ def _apply_text(action: dict[str, Any], text: str | None, fix_id: str, rel: str)
         _one_line([cmd])
         if not any(h.get("command") == cmd for g in stop for h in g.get("hooks", [])):
             stop.append({"hooks": [{"type": "command", "command": cmd}]})
+    elif kind == "hook_event":
+        # A hook answering the wrong event: its entry leaves the event it fails at and, unless it is already
+        # registered there, joins the one it answers as.
+        cmd, src, dst = str(action.get("command") or ""), str(action.get("from") or ""), action.get("to")
+        _one_line([cmd])
+        groups = hook_groups(data, rel, src, create=False)
+        if not _runs(groups, cmd):
+            raise FixError("already_present", f"{rel} no longer runs that command at {src}.")
+        data["hooks"][src] = drop_hook(groups, cmd)
+        if not data["hooks"][src]:
+            del data["hooks"][src]
+        if dst:
+            to = hook_groups(data, rel, str(dst))
+            if not _runs(to, cmd):
+                to.append({"hooks": [{"type": "command", "command": cmd}]})
     else:
         raise FixError("unknown_action", "This fix cannot be written to a file.")
     return _dump(data, text)
 
 
+def _runs(groups: list[Any], command: str) -> bool:
+    return any(isinstance(h, dict) and h.get("command") == command
+               for g in groups if isinstance(g, dict) for h in g.get("hooks", []))
+
+
 def _dump(data: dict[str, Any], like: str | None) -> str:
+    # In the file's own style, so the change is the entry and not every line: its indent, whether it writes
+    # `"key" : value` (as Claude Code's own writer does), and whether it keeps non-ASCII characters as they are.
+    like = like or ""
+    indent = len(m.group(1)) if (m := re.search(r"^( +)\S", like, re.MULTILINE)) else 2
+    separators = (",", " : ") if re.search(r'"\s+:\s', like) else (",", ": ")
+    text = json.dumps(data, indent=indent, separators=separators, ensure_ascii=like.isascii())
     # JSON escapes newlines inside strings, so swapping every "\n" only changes line ends.
-    return (json.dumps(data, indent=2) + "\n").replace("\n", _newline(like or ""))
+    return (text + "\n").replace("\n", _newline(like))
 
 
 _JSON_TYPES = ((bool, "true/false"), (dict, "an object"), (list, "an array"), (str, "a string"), (type(None), "null"))
@@ -419,6 +455,19 @@ def _undo_text(entry: dict[str, Any], text: str) -> str | None:
             data["hooks"]["Stop"] = drop_hook(stop, entry["action"].get("command"))
             if not data["hooks"]["Stop"]:
                 del data["hooks"]["Stop"]
+    elif kind == "hook_event":
+        act = entry["action"]
+        cmd, src, dst = str(act.get("command") or ""), str(act.get("from") or ""), act.get("to")
+        back = hook_groups(data, rel, src)
+        if not _runs(back, cmd):
+            back.append({"hooks": [{"type": "command", "command": cmd}]})
+        if dst:
+            # Only ever added when it wasn't there, so taking it out restores the file.
+            moved = hook_groups(data, rel, str(dst), create=False)
+            if moved:
+                data["hooks"][str(dst)] = drop_hook(moved, cmd)
+                if not data["hooks"][str(dst)]:
+                    del data["hooks"][str(dst)]
     for dotted in reversed(entry.get("added") or []):
         parent, _, key = dotted.rpartition(".")
         holder = data.get(parent) if parent else data
@@ -427,10 +476,12 @@ def _undo_text(entry: dict[str, Any], text: str) -> str | None:
     return None if entry.get("created") and not data else _dump(data, text)
 
 
-def preview(base: Path, repo: str, fix: dict[str, Any], action: dict[str, Any], rel: str | None = None) -> dict[str, Any]:
-    """The file as it is and as it would be, without writing."""
+def preview(base: Path, repo: str, fix: dict[str, Any], action: dict[str, Any], rel: str | None = None,
+            root: str | None = None) -> dict[str, Any]:
+    """The file as it is and as it would be, without writing. ``root`` lets a fix that knows its file show
+    the change before the first grant."""
     rel = rel or str(action.get("file"))
-    before = current(base, repo, rel)
+    before = _read(_target(base, repo, rel, root))
     after = _apply_text(action, before, fix["id"], rel)
     return {"file": rel, "hash": file_hash(before), "before": before or "", "after": after}
 
@@ -452,8 +503,11 @@ def apply(
     rel = rel or str(action.get("file"))
     if action.get("kind") == "claude_md" and rel not in ("CLAUDE.md", "CLAUDE.local.md"):
         raise FixError("file_not_allowed", "Instructions go in CLAUDE.md or CLAUDE.local.md.")
-    if action.get("kind") in ("settings_allow", "stop_hook") and not rel.startswith(".claude/"):
-        raise FixError("file_not_allowed", "Settings go in .claude/settings.json or .claude/settings.local.json.")
+    if action.get("kind") in ("settings_allow", "stop_hook", "hook_event"):
+        if repo == HOME_REPO and rel not in HOME_FILES:
+            raise FixError("file_not_allowed", "Claude Code's settings are settings.json or settings.local.json.")
+        if repo != HOME_REPO and not rel.startswith(".claude/"):
+            raise FixError("file_not_allowed", "Settings go in .claude/settings.json or .claude/settings.local.json.")
     with write_lock(base):
         return _apply_locked(base, fix, action, repo, rel, expect_hash, source, baseline)
 

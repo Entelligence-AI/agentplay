@@ -1,0 +1,1846 @@
+{
+  "schema": "agentplay.companion/v1",
+  "schemaVersion": 1,
+  "agentplayVersion": "sample",
+  "generatedAt": "2026-10-23T10:46:00Z",
+  "store": {
+    "available": true,
+    "sessionCount": 5,
+    "indexError": null
+  },
+  "sources": [
+    {
+      "agent": "claude-code",
+      "label": "Claude Code",
+      "status": "found",
+      "paths": [
+        "~/.claude"
+      ],
+      "sessionCount": 4,
+      "latestAt": "2026-10-23T10:42:00Z",
+      "remedy": null
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "status": "found",
+      "paths": [
+        "~/.codex"
+      ],
+      "sessionCount": 1,
+      "latestAt": "2026-10-23T10:35:00Z",
+      "remedy": null
+    },
+    {
+      "agent": "cursor",
+      "label": "Cursor",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot",
+      "label": "Copilot CLI",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "copilot-vscode",
+      "label": "Copilot (VS Code)",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "opencode",
+      "label": "OpenCode",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "kiro",
+      "label": "Kiro",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "gemini-cli",
+      "label": "gemini-cli",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    },
+    {
+      "agent": "antigravity-cli",
+      "label": "antigravity-cli",
+      "status": "not_found",
+      "paths": [],
+      "sessionCount": 0,
+      "latestAt": null,
+      "remedy": null
+    }
+  ],
+  "runs": [
+    {
+      "sessionId": "local:claude-code:sample-7f3a",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T10:42:00Z",
+      "lastEventAt": "2026-10-23T10:45:35Z",
+      "lastActivityAt": "2026-10-23T10:45:54Z",
+      "mapBehindSeconds": null,
+      "activity": {
+        "value": "active",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:46:00Z",
+        "window": "none",
+        "confidence": "high",
+        "explanation": "Claude code reports this session working.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 13,
+        "calls": 9,
+        "errors": 3,
+        "retries": 0,
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 2,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
+      },
+      "categories": {
+        "read": 3,
+        "search": 0,
+        "edit": 3,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 12,
+        "at": "2026-10-23T10:45:35Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "src/charge.test.ts",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 10,
+        "at": "2026-10-23T10:44:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 7,
+          "at": "2026-10-23T10:43:15Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 8,
+          "at": "2026-10-23T10:43:36Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 9,
+          "at": "2026-10-23T10:44:10Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.test.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 10,
+          "at": "2026-10-23T10:44:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 12,
+          "at": "2026-10-23T10:45:35Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/charge.test.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 142000,
+          "limit": 200000,
+          "percent": 71.0
+        },
+        "kind": "provider_reported",
+        "source": "approved_provider_cli",
+        "observedAt": "2026-10-23T10:45:30Z",
+        "window": "context",
+        "confidence": "high",
+        "explanation": "Reported by Claude Code's statusline: how full this session's context window is.",
+        "freshness": "fresh"
+      },
+      "liveStatus": "busy"
+    },
+    {
+      "sessionId": "local:codex:sample-0c1d",
+      "agentTool": "codex",
+      "agentLabel": "Codex",
+      "repo": "frontend",
+      "repoCount": 1,
+      "startedAt": "2026-10-23T10:35:00Z",
+      "lastEventAt": "2026-10-23T10:45:40Z",
+      "lastActivityAt": "2026-10-23T10:45:40Z",
+      "mapBehindSeconds": null,
+      "activity": {
+        "value": "active",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": "2026-10-23T10:46:00Z",
+        "window": "none",
+        "confidence": "high",
+        "explanation": "Transcript held open by a running process.",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "gpt-5.5-codex"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 7,
+        "calls": 6,
+        "errors": 0,
+        "retries": 0,
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 3,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
+      },
+      "categories": {
+        "read": 3,
+        "search": 0,
+        "edit": 2,
+        "exec": 1,
+        "verify": 0,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 6,
+        "at": "2026-10-23T10:45:40Z",
+        "kind": "read",
+        "cat": "file",
+        "agent": "main",
+        "label": "Read",
+        "target": "src/api.ts",
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": null,
+      "recentEvents": [
+        {
+          "seq": 2,
+          "at": "2026-10-23T10:36:00Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/cart.css",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-23T10:39:00Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/cart.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 4,
+          "at": "2026-10-23T10:41:40Z",
+          "kind": "exec",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm lint",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 5,
+          "at": "2026-10-23T10:45:00Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/cart.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 6,
+          "at": "2026-10-23T10:45:40Z",
+          "kind": "read",
+          "cat": "file",
+          "agent": "main",
+          "label": "Read",
+          "target": "src/api.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": {
+          "tokens": 184000,
+          "limit": 258400,
+          "percent": 71.2
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:45:40Z",
+        "window": "context",
+        "confidence": "high",
+        "explanation": "Reported by Codex in its session file: input tokens of the latest request over the model context window. Codex's own indicator may differ slightly.",
+        "freshness": "unknown"
+      },
+      "liveStatus": null
+    },
+    {
+      "sessionId": "local:claude-code:sample-old0",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-22T10:46:00Z",
+      "lastEventAt": "2026-10-22T10:47:30Z",
+      "lastActivityAt": null,
+      "mapBehindSeconds": null,
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 4,
+        "calls": 4,
+        "errors": 2,
+        "retries": 0,
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 1,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
+      },
+      "categories": {
+        "read": 0,
+        "search": 0,
+        "edit": 1,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 3,
+        "at": "2026-10-22T10:47:30Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 2,
+        "at": "2026-10-22T10:46:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-22T10:46:00Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-22T10:46:20Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-22T10:46:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-22T10:47:30Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "context",
+        "confidence": "low",
+        "explanation": "This session has no recorded model requests with token counts.",
+        "freshness": "unknown"
+      },
+      "liveStatus": null
+    },
+    {
+      "sessionId": "local:claude-code:sample-old1",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-21T10:46:00Z",
+      "lastEventAt": "2026-10-21T10:47:30Z",
+      "lastActivityAt": null,
+      "mapBehindSeconds": null,
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 4,
+        "calls": 4,
+        "errors": 2,
+        "retries": 0,
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 1,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
+      },
+      "categories": {
+        "read": 0,
+        "search": 0,
+        "edit": 1,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 3,
+        "at": "2026-10-21T10:47:30Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 2,
+        "at": "2026-10-21T10:46:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-21T10:46:00Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-21T10:46:20Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-21T10:46:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-21T10:47:30Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "context",
+        "confidence": "low",
+        "explanation": "This session has no recorded model requests with token counts.",
+        "freshness": "unknown"
+      },
+      "liveStatus": null
+    },
+    {
+      "sessionId": "local:claude-code:sample-old2",
+      "agentTool": "claude-code",
+      "agentLabel": "Claude Code",
+      "repo": "payments-api",
+      "repoCount": 1,
+      "startedAt": "2026-10-20T10:46:00Z",
+      "lastEventAt": "2026-10-20T10:47:30Z",
+      "lastActivityAt": null,
+      "mapBehindSeconds": null,
+      "activity": {
+        "value": "idle",
+        "kind": "derived",
+        "source": "local_index",
+        "observedAt": null,
+        "window": "none",
+        "confidence": "low",
+        "explanation": "The transcript is not on this machine (imported map, or the file moved).",
+        "freshness": "unknown"
+      },
+      "outcome": "completed",
+      "models": [
+        "claude-sonnet-5"
+      ],
+      "pathMode": "relative",
+      "truncated": false,
+      "imported": false,
+      "counts": {
+        "events": 4,
+        "calls": 4,
+        "errors": 2,
+        "retries": 0,
+        "compactions": 0,
+        "costUsd": 0,
+        "tokens": 0,
+        "filesTouched": 1,
+        "commits": 0,
+        "prsCreated": 0,
+        "userTurns": 1,
+        "subagents": 0
+      },
+      "categories": {
+        "read": 0,
+        "search": 0,
+        "edit": 1,
+        "exec": 0,
+        "verify": 3,
+        "mcp": 0,
+        "subagent": 0,
+        "web": 0,
+        "error": 0,
+        "compaction": 0
+      },
+      "lastEvent": {
+        "seq": 3,
+        "at": "2026-10-20T10:47:30Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": false,
+        "pending": false,
+        "errClass": null,
+        "retryOf": null,
+        "attempt": null
+      },
+      "lastError": {
+        "seq": 2,
+        "at": "2026-10-20T10:46:50Z",
+        "kind": "verify",
+        "cat": "test",
+        "agent": "main",
+        "label": "pnpm test",
+        "target": null,
+        "err": true,
+        "pending": false,
+        "errClass": "exit_code",
+        "retryOf": null,
+        "attempt": null
+      },
+      "recentEvents": [
+        {
+          "seq": 0,
+          "at": "2026-10-20T10:46:00Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 1,
+          "at": "2026-10-20T10:46:20Z",
+          "kind": "edit",
+          "cat": "file",
+          "agent": "main",
+          "label": "Edit",
+          "target": "src/charge.ts",
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-20T10:46:50Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": true,
+          "pending": false,
+          "errClass": "exit_code",
+          "retryOf": null,
+          "attempt": null
+        },
+        {
+          "seq": 3,
+          "at": "2026-10-20T10:47:30Z",
+          "kind": "verify",
+          "cat": "test",
+          "agent": "main",
+          "label": "pnpm test",
+          "target": null,
+          "err": false,
+          "pending": false,
+          "errClass": null,
+          "retryOf": null,
+          "attempt": null
+        }
+      ],
+      "pendingTool": null,
+      "context": {
+        "value": null,
+        "kind": "unavailable",
+        "source": "none",
+        "observedAt": null,
+        "window": "context",
+        "confidence": "low",
+        "explanation": "This session has no recorded model requests with token counts.",
+        "freshness": "unknown"
+      },
+      "liveStatus": null
+    }
+  ],
+  "unreadable": [],
+  "alerts": [
+    {
+      "rule": "repeated_failure",
+      "signature": "0f46eb43b1abb49c",
+      "patternKey": "9016650128ab6d9f",
+      "sessionId": "local:claude-code:sample-7f3a",
+      "agentTool": "claude-code",
+      "command": "pnpm test",
+      "errClass": "exit_code",
+      "agent": "main",
+      "count": 3,
+      "firstSeq": 5,
+      "firstAt": "2026-10-23T10:42:48Z",
+      "triggerSeq": 10,
+      "triggerAt": "2026-10-23T10:44:50Z",
+      "resolvedSeq": null,
+      "evidence": {
+        "value": 3,
+        "kind": "recorded",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:44:50Z",
+        "window": "session",
+        "confidence": "high",
+        "explanation": "pnpm test failed 3 times in a row (exit_code) in one run, with no success of it in between.",
+        "freshness": "unknown"
+      }
+    }
+  ],
+  "limits": [
+    {
+      "provider": "claude-code",
+      "window": "five_hour",
+      "windowMinutes": 300,
+      "plan": null,
+      "limitId": "five_hour",
+      "resetsAt": "2026-10-23T13:04:00Z",
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": {
+          "usedPercent": 34.0,
+          "leftPercent": 66.0
+        },
+        "kind": "provider_reported",
+        "source": "approved_provider_cli",
+        "observedAt": "2026-10-23T10:45:30Z",
+        "window": "five_hour",
+        "confidence": "high",
+        "explanation": "Reported by Claude Code's statusline. Plan windows are account-wide, so this includes your other devices.",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "provider": "claude-code",
+      "window": "weekly",
+      "windowMinutes": 10080,
+      "plan": null,
+      "limitId": "seven_day",
+      "resetsAt": "2026-10-26T14:46:00Z",
+      "usageUrl": "https://claude.ai/settings/usage",
+      "used": {
+        "value": {
+          "usedPercent": 58.0,
+          "leftPercent": 42.0
+        },
+        "kind": "provider_reported",
+        "source": "approved_provider_cli",
+        "observedAt": "2026-10-23T10:45:30Z",
+        "window": "weekly",
+        "confidence": "high",
+        "explanation": "Reported by Claude Code's statusline. Plan windows are account-wide, so this includes your other devices.",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "five_hour",
+      "windowMinutes": 300,
+      "plan": "plus",
+      "limitId": "codex",
+      "resetsAt": "2026-10-23T12:57:40Z",
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "conflictingPlans": null,
+      "used": {
+        "value": {
+          "usedPercent": 32.0,
+          "leftPercent": 68.0
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:45:40Z",
+        "window": "five_hour",
+        "confidence": "high",
+        "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment.",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "provider": "codex",
+      "window": "weekly",
+      "windowMinutes": 10080,
+      "plan": "plus",
+      "limitId": "codex",
+      "resetsAt": "2026-10-27T10:45:40Z",
+      "usageUrl": "https://chatgpt.com/codex/settings/usage",
+      "conflictingPlans": null,
+      "used": {
+        "value": {
+          "usedPercent": 41.0,
+          "leftPercent": 59.0
+        },
+        "kind": "provider_reported",
+        "source": "agentplay_map",
+        "observedAt": "2026-10-23T10:45:40Z",
+        "window": "weekly",
+        "confidence": "high",
+        "explanation": "Reported by Codex in its session file. Plan windows are shared across devices, so this is the account at that moment.",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "live": [
+    {
+      "agentTool": "claude-code",
+      "sessionId": "local:claude-code:sample-9e2b",
+      "status": "waiting",
+      "pid": null,
+      "entrypoint": null,
+      "project": "docs-site",
+      "startedAt": "2026-10-23T10:20:00Z",
+      "statusSince": "2026-10-23T10:45:20Z",
+      "inStore": false
+    },
+    {
+      "agentTool": "claude-code",
+      "sessionId": "local:claude-code:sample-7f3a",
+      "status": "busy",
+      "pid": null,
+      "entrypoint": null,
+      "project": "payments-api",
+      "startedAt": "2026-10-23T10:42:00Z",
+      "statusSince": "2026-10-23T10:45:20Z",
+      "inStore": true
+    }
+  ],
+  "learn": {
+    "signature": "5eec85a37319eae5",
+    "patternKey": "09eb1e93206132bc",
+    "kind": "observed",
+    "command": "pnpm test",
+    "title": "`pnpm test` failed 9 times in 4 runs.",
+    "denominator": "Across 5 recent sessions, last 14 days",
+    "detail": "It passed later in the same run in 3 of those 4 runs. A retry that ends in a pass is often normal work, not waste.",
+    "failures": {
+      "value": 9,
+      "kind": "derived",
+      "source": "local_index",
+      "observedAt": "2026-10-23T10:46:00Z",
+      "window": "project",
+      "confidence": "high",
+      "explanation": "Counted from recorded pnpm test events whose call failed, in the newest 5 sessions of the last 14 days (at most 40). Calls still running are not counted.",
+      "freshness": "unknown"
+    },
+    "runs": 4,
+    "sessions": 5,
+    "evidence": [
+      {
+        "sessionId": "local:claude-code:sample-7f3a",
+        "agentTool": "claude-code",
+        "repo": "payments-api",
+        "seq": 5,
+        "at": "2026-10-23T10:42:48Z"
+      },
+      {
+        "sessionId": "local:claude-code:sample-old0",
+        "agentTool": "claude-code",
+        "repo": "payments-api",
+        "seq": 0,
+        "at": "2026-10-22T10:46:00Z"
+      },
+      {
+        "sessionId": "local:claude-code:sample-old1",
+        "agentTool": "claude-code",
+        "repo": "payments-api",
+        "seq": 0,
+        "at": "2026-10-21T10:46:00Z"
+      },
+      {
+        "sessionId": "local:claude-code:sample-old2",
+        "agentTool": "claude-code",
+        "repo": "payments-api",
+        "seq": 0,
+        "at": "2026-10-20T10:46:00Z"
+      }
+    ]
+  },
+  "usage": {
+    "generatedAt": "2026-10-23T10:46:00Z",
+    "kind": "estimated",
+    "explanation": "Counted from your local AgentPlay maps, subagents included and each request once. Costs are estimates at list prices; requests on unpriced models are counted separately, not as $0. Usage on other devices, the web or the API isn't here.",
+    "today": {
+      "tokens": {
+        "input": 36,
+        "cacheWrite": 1200,
+        "cacheRead": 289764,
+        "output": 900,
+        "total": 291900
+      },
+      "costUsd": 0.1008,
+      "requests": 3,
+      "unpricedRequests": 0,
+      "sessions": 1,
+      "byModel": [
+        {
+          "key": "claude-sonnet-5",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byAgent": [
+        {
+          "key": "claude-code",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byRepo": [
+        {
+          "key": "payments-api",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ]
+    },
+    "last7Days": {
+      "tokens": {
+        "input": 36,
+        "cacheWrite": 1200,
+        "cacheRead": 289764,
+        "output": 900,
+        "total": 291900
+      },
+      "costUsd": 0.1008,
+      "requests": 3,
+      "unpricedRequests": 0,
+      "sessions": 1,
+      "byModel": [
+        {
+          "key": "claude-sonnet-5",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byAgent": [
+        {
+          "key": "claude-code",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byRepo": [
+        {
+          "key": "payments-api",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ]
+    },
+    "last30Days": {
+      "tokens": {
+        "input": 36,
+        "cacheWrite": 1200,
+        "cacheRead": 289764,
+        "output": 900,
+        "total": 291900
+      },
+      "costUsd": 0.1008,
+      "requests": 3,
+      "unpricedRequests": 0,
+      "sessions": 1,
+      "byModel": [
+        {
+          "key": "claude-sonnet-5",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byAgent": [
+        {
+          "key": "claude-code",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "byRepo": [
+        {
+          "key": "payments-api",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ]
+    },
+    "daily": [
+      {
+        "date": "2026-10-10",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-11",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-12",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-13",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-14",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-15",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-16",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-17",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-18",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-19",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-20",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-21",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-22",
+        "tokens": 0,
+        "costUsd": 0.0,
+        "requests": 0
+      },
+      {
+        "date": "2026-10-23",
+        "tokens": 291900,
+        "costUsd": 0.1008,
+        "requests": 3
+      }
+    ],
+    "claudeDaily": [
+      {
+        "date": "2026-09-26",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-27",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-28",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-29",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-09-30",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-01",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-02",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-03",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-04",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-05",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-06",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-07",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-08",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-09",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-10",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-11",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-12",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-13",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-14",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-15",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-16",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-17",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-18",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-19",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-20",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-21",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-22",
+        "costUsd": 0.0
+      },
+      {
+        "date": "2026-10-23",
+        "costUsd": 0.1008
+      }
+    ],
+    "claudeBlock": {
+      "start": "2026-10-23T10:00:00Z",
+      "end": "2026-10-23T15:00:00Z",
+      "tokens": {
+        "input": 36,
+        "cacheWrite": 1200,
+        "cacheRead": 289764,
+        "output": 900,
+        "total": 291900
+      },
+      "costUsd": 0.1008,
+      "requests": 3,
+      "unpricedRequests": 0,
+      "sessions": 1,
+      "byModel": [
+        {
+          "key": "claude-sonnet-5",
+          "tokens": {
+            "input": 36,
+            "cacheWrite": 1200,
+            "cacheRead": 289764,
+            "output": 900,
+            "total": 291900
+          },
+          "costUsd": 0.1008,
+          "requests": 3,
+          "unpricedRequests": 0,
+          "sessions": 1
+        }
+      ],
+      "burnTokensPerMinute": 6346,
+      "burnCostPerHour": 0.1315,
+      "projectedCostUsd": 0.6574
+    },
+    "signals": {
+      "days": 30,
+      "current": {
+        "messages": 0,
+        "calls": 0,
+        "corrections": 0,
+        "interrupts": 0,
+        "refusals": 0,
+        "frustrated": 0,
+        "notWorking": 0,
+        "swearing": 0,
+        "correctionRate": null,
+        "frustrationRate": null,
+        "interruptRate": null,
+        "refusalRate": null
+      },
+      "previous": {
+        "messages": 0,
+        "calls": 0,
+        "corrections": 0,
+        "interrupts": 0,
+        "refusals": 0,
+        "frustrated": 0,
+        "notWorking": 0,
+        "swearing": 0,
+        "correctionRate": null,
+        "frustrationRate": null,
+        "interruptRate": null,
+        "refusalRate": null
+      },
+      "daily": [
+        {
+          "date": "2026-09-24",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-25",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-26",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-27",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-28",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-29",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-09-30",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-01",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-02",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-03",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-04",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-05",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-06",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-07",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-08",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-09",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-10",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-11",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-12",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-13",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-14",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-15",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-16",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-17",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-18",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-19",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-20",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-21",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-22",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        },
+        {
+          "date": "2026-10-23",
+          "messages": 0,
+          "correctionRate": null,
+          "interruptRate": null,
+          "frustrationRate": null,
+          "refusalRate": null
+        }
+      ]
+    },
+    "setup": {
+      "days": 30,
+      "counts": {},
+      "sessions": {
+        "yours": 0,
+        "automated": 5,
+        "yoursCostUsd": 0,
+        "automatedCostUsd": 0.0,
+        "yoursCompacted": 0
+      },
+      "unused": 0,
+      "items": [],
+      "tips": []
+    },
+    "prompting": {
+      "days": 30,
+      "sessions": 0,
+      "findings": []
+    },
+    "timingMs": 0
+  },
+  "insights": {
+    "days": 30,
+    "sessions": 5,
+    "minSessions": 10,
+    "score": null,
+    "prevScore": null,
+    "components": [
+      {
+        "key": "shipping",
+        "name": "Shipping",
+        "points": 0.0,
+        "prevPoints": null
+      },
+      {
+        "key": "verification",
+        "name": "Verification",
+        "points": 12.0,
+        "prevPoints": null
+      },
+      {
+        "key": "efficiency",
+        "name": "Efficiency",
+        "points": 0.0,
+        "prevPoints": null
+      },
+      {
+        "key": "context",
+        "name": "Context hygiene",
+        "points": 20.0,
+        "prevPoints": null
+      },
+      {
+        "key": "environment",
+        "name": "Environment health",
+        "points": 20.0,
+        "prevPoints": null
+      }
+    ],
+    "applied": [],
+    "autotune": {
+      "enabled": false,
+      "lastRun": null,
+      "pending": [],
+      "active": []
+    },
+    "fixes": []
+  },
+  "coach": null,
+  "timing": {
+    "snapshotMs": 0
+  },
+  "sample": true
+}
