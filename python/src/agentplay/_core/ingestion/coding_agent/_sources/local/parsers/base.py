@@ -30,6 +30,7 @@ class AgentType(StrEnum):
     ANTIGRAVITY_CLI = "antigravity-cli"
     COMMAND_CODE = "command-code"
     GOOSE = "goose"
+    ROO_CODE = "roo-code"
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -38,6 +39,25 @@ def detect_agent(data: bytes) -> AgentType | None:
     Returns None when no marker matches — the caller treats that as
     "skip this file" rather than guessing.
     """
+    stripped = data.lstrip()
+    if stripped.startswith(b"["):
+        try:
+            arr = json.loads(data)
+            if isinstance(arr, list) and arr and isinstance(arr[0], dict):
+                first = arr[0]
+                if first.get("type") in ("say", "ask") and ("say" in first or "ask" in first):
+                    return AgentType.ROO_CODE
+                if first.get("role") in ("user", "assistant") and "content" in first:
+                    for msg in arr[:5]:
+                        content = msg.get("content")
+                        if isinstance(content, list):
+                            for b in content:
+                                if isinstance(b, dict) and b.get("type") == "tool_use":
+                                    tname = b.get("name", "")
+                                    if tname in ("execute_command", "read_file", "write_to_file", "replace_in_file", "list_files", "browser_action"):
+                                        return AgentType.ROO_CODE
+        except Exception:
+            pass
     # Every line the caller handed us, not a fixed count: see the note in
     # `_read_head`. It returns complete lines and already bounds the read.
     # Transcripts can open with many lines of `ai-title` / `agent-name` /
@@ -68,6 +88,9 @@ def detect_agent(data: bytes) -> AgentType | None:
         # agentplay.materialize.find_cursor_store_candidates).
         # Distinct enough (no other agent emits this `type`) that checking
         # it anywhere in the head, not just line 1, is safe.
+        if line_type in ("say", "ask") and ("say" in obj or "ask" in obj):
+            return AgentType.ROO_CODE
+
         if line_type == "cursor_store_session":
             return AgentType.CURSOR
 

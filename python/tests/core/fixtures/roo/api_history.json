@@ -1,0 +1,75 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Inspect the project directory"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "I will list the files in the directory."
+      },
+      {
+        "type": "tool_use",
+        "id": "call_roo_1",
+        "name": "list_files",
+        "input": {
+          "path": "src",
+          "recursive": false
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "call_roo_1",
+        "content": "src/main.py\nsrc/utils.py"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Now reading main.py"
+      },
+      {
+        "type": "tool_use",
+        "id": "call_roo_2",
+        "name": "read_file",
+        "input": {
+          "path": "src/main.py"
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "call_roo_2",
+        "content": "print('hello world')\n"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Finished inspection."
+      }
+    ]
+  }
+]

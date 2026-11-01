@@ -314,6 +314,37 @@ _GOOSE: dict[str, str] = {
     "todo__todo_write": "TodoWrite",
 }
 
+# Roo Code tool names (both snake_case API names and camelCase UI names).
+_ROO_ALIASES: dict[str, str] = {
+    # shell
+    "execute_command": "Bash",
+    "executeCommand": "Bash",
+    # reads
+    "read_file": "Read",
+    "readFile": "Read",
+    # writes / edits
+    "write_to_file": "Write",
+    "writeToFile": "Write",
+    "replace_in_file": "Edit",
+    "replaceInFile": "Edit",
+    "apply_diff": "Edit",
+    "applyDiff": "Edit",
+    # search / listing
+    "list_files": "LS",
+    "listFiles": "LS",
+    "list_code_definition_names": "Grep",
+    "listCodeDefinitionNames": "Grep",
+    "search_files": "Grep",
+    "searchFiles": "Grep",
+    # web
+    "browser_action": "WebFetch",
+    # tasks
+    "new_task": "Task",
+    "newTask": "Task",
+    "switch_mode": "Task",
+    "switchMode": "Task",
+}
+
 TOOL_ALIASES: dict[str, dict[str, str]] = {
     "antigravity-cli": _ANTIGRAVITY_ALIASES,
     "codex": _CODEX,
@@ -325,6 +356,7 @@ TOOL_ALIASES: dict[str, dict[str, str]] = {
     "copilot-vscode": _COPILOT_VSCODE,
     "kiro": _KIRO,
     "opencode": _OPENCODE,
+    "roo-code": _ROO_ALIASES,
 }
 
 

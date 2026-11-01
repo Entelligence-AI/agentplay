@@ -42,6 +42,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_antigravity,
     parse_gemini,
     parse_goose,
+    parse_roo,
     parse_kiro,
     parse_opencode,
 )
@@ -1530,6 +1531,7 @@ class LocalSource:
         antigravity_homes: list[Path] | None = None,
         command_code_homes: list[Path] | None = None,
         goose_homes: list[Path] | None = None,
+        roo_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1577,6 +1579,7 @@ class LocalSource:
         # per session, laid out flat as `<home>/<session_id>.jsonl`. The cwd
         # comes from the synthesized `goose_session` header.
         self.goose_homes = goose_homes or []
+        self.roo_homes = roo_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1604,6 +1607,7 @@ class LocalSource:
             *self.antigravity_homes,
             *self.command_code_homes,
             *self.goose_homes,
+            *self.roo_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1854,6 +1858,29 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Roo Code: <home>/tasks/*/ui_messages.json (or api_conversation_history.json, or *.json).
+        for home in self.roo_homes:
+            if not home.is_dir():
+                logger.debug("Skipping non-existent path: %s", home)
+                continue
+            tasks_dir = home / "tasks"
+            search_root = tasks_dir if tasks_dir.is_dir() else home
+            for ui_file in search_root.glob("*/ui_messages.json"):
+                ref = self._index_roo_file(ui_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+            for api_file in search_root.glob("*/api_conversation_history.json"):
+                ui_sibling = api_file.parent / "ui_messages.json"
+                if not ui_sibling.is_file():
+                    ref = self._index_roo_file(api_file, home=home)
+                    if ref:
+                        _index_put(index, ref[0], ref[1], newest)
+            for direct_file in search_root.glob("*.json"):
+                if direct_file.name not in ("index.json", "manifest.json"):
+                    ref = self._index_roo_file(direct_file, home=home)
+                    if ref:
+                        _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1869,9 +1896,48 @@ class LocalSource:
             + len(self.gemini_homes)
             + len(self.antigravity_homes)
             + len(self.command_code_homes)
-            + len(self.goose_homes),
+            + len(self.goose_homes)
+            + len(self.roo_homes),
         )
         return index
+
+    def _index_roo_file(
+        self,
+        json_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Roo Code task transcript."""
+        if not json_file.is_file():
+            return None
+        size = json_file.stat().st_size
+        if size == 0:
+            self._record_discovery("roo-code", "empty_or_unreadable")
+            return None
+        try:
+            head = _read_head(json_file, stop_when=lambda _buf: False)
+        except OSError:
+            self._record_discovery("roo-code", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            self._record_discovery("roo-code", "detection_failed")
+            return None
+        if agent != AgentType.ROO_CODE:
+            self._record_discovery("roo-code", "different_agent")
+            return None
+
+        task_id = json_file.parent.name if json_file.name in ("ui_messages.json", "api_conversation_history.json") else json_file.stem
+        session_id = f"local:{agent}:{task_id}"
+        mtime = datetime.fromtimestamp(json_file.stat().st_mtime, tz=UTC)
+        self._record_discovery("roo-code", "indexed")
+        return session_id, _FileRef(
+            path=json_file,
+            agent=agent,
+            mtime=mtime,
+            home=home,
+        )
 
     def _index_cc_file(
         self,
@@ -2814,6 +2880,7 @@ class LocalSource:
             AgentType.ANTIGRAVITY_CLI: parse_antigravity,
             AgentType.COMMAND_CODE: parse_command_code,
             AgentType.GOOSE: parse_goose,
+            AgentType.ROO_CODE: parse_roo,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label

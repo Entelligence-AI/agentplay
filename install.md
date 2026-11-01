@@ -43,7 +43,7 @@ Run `agentplay --version` and tell me the version.
 
 Run `agentplay agents`. A filled mark (`●`) means that agent's folder exists on this machine, not that it holds sessions; the build step below confirms that.
 
-If no agent is marked, or the build finds no sessions, ask me where my sessions live and set the matching variable for the remaining commands: `AGENTPLAY_CLAUDE_HOMES`, `AGENTPLAY_CODEX_HOMES`, `AGENTPLAY_CURSOR_HOMES`, `AGENTPLAY_COPILOT_HOMES`, `AGENTPLAY_COPILOT_VSCODE_HOMES`, `AGENTPLAY_OPENCODE_HOMES` or `AGENTPLAY_KIRO_HOMES` (comma-separated paths). On WSL, Windows-side sessions are under `/mnt/c/Users/<name>/`.
+If no agent is marked, or the build finds no sessions, ask me where my sessions live and set the matching variable for the remaining commands: `AGENTPLAY_CLAUDE_HOMES`, `AGENTPLAY_CODEX_HOMES`, `AGENTPLAY_CURSOR_HOMES`, `AGENTPLAY_COPILOT_HOMES`, `AGENTPLAY_COPILOT_VSCODE_HOMES`, `AGENTPLAY_OPENCODE_HOMES`, `AGENTPLAY_KIRO_HOMES` or `AGENTPLAY_ROO_HOMES` (comma-separated paths). On WSL, Windows-side sessions are under `/mnt/c/Users/<name>/`.
 
 ## Build the session maps
 
