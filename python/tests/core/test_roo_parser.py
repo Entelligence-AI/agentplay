@@ -226,6 +226,53 @@ def test_roo_parser_followup_question_and_user_feedback():
     assert "All tests pass" in turns[1].attributes["output.value"]
 
 
+def test_roo_parser_handles_null_and_malformed_token_metrics():
+    session = [
+        {"ts": 1730000000000, "type": "say", "say": "task", "text": "Run check"},
+        {
+            "ts": 1730000001000,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps(
+                {
+                    "tokensIn": None,
+                    "tokensOut": "invalid",
+                    "cacheReads": None,
+                    "cacheWrites": [1, 2, 3],
+                    "model": "claude-3-7-sonnet",
+                }
+            ),
+        },
+        {
+            "ts": 1730000002000,
+            "type": "say",
+            "say": "api_req_finished",
+            "text": json.dumps(
+                {
+                    "tokensIn": "not_an_int",
+                    "prompt_tokens": 50,
+                    "tokensOut": 20,
+                    "cacheReads": 10,
+                    "cacheWrites": None,
+                    "model": "claude-3-7-sonnet",
+                }
+            ),
+        },
+        {"ts": 1730000003000, "type": "say", "say": "text", "text": "Done."},
+    ]
+    raw_bytes = json.dumps(session).encode("utf-8")
+    trace, spans = parse_roo(raw_bytes, trace_id="local:roo-code:null-tokens")
+    turn = spans[1]
+    assert turn.name == "Turn 1"
+    assert turn.attributes["llm.token_count.prompt"] == 50
+    assert turn.attributes["llm.token_count.completion"] == 20
+    assert turn.attributes["llm.token_count.cache_read"] == 10
+    cost_events = turn.attributes["llm.cost_events"]
+    assert len(cost_events) == 2
+    assert cost_events[0]["cache_write_5m_tokens"] == 0
+    assert cost_events[1]["cache_write_5m_tokens"] == 0
+
+
 def test_roo_builder_never_leaks_free_text():
     secret_prompt = "SECRET-ROO-PROMPT-12345"
     secret_arg = "SECRET-FILE-SECRET.ts"

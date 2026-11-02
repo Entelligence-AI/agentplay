@@ -23,6 +23,7 @@ from typing import Any
 
 from agentplay._core.code_authorship import extract_edit_evidence
 from agentplay._core.ingestion.coding_agent._sources._jsonl_utils import (
+    as_count,
     source_attrs,
 )
 from agentplay._core.ingestion.coding_agent.spans import SpanData, TraceData, model_id_or_none
@@ -213,9 +214,9 @@ def _parse_ui_messages(
         if mtype == "say" and say in ("api_req_started", "api_req_finished"):
             parsed_usage = _safe_json(raw_text)
             if isinstance(parsed_usage, dict):
-                p_tokens = int(parsed_usage.get("tokensIn") or parsed_usage.get("prompt_tokens") or 0)
-                c_tokens = int(parsed_usage.get("tokensOut") or parsed_usage.get("completion_tokens") or 0)
-                cr_tokens = int(parsed_usage.get("cacheReads") or 0)
+                p_tokens = as_count(parsed_usage.get("tokensIn")) or as_count(parsed_usage.get("prompt_tokens"))
+                c_tokens = as_count(parsed_usage.get("tokensOut")) or as_count(parsed_usage.get("completion_tokens"))
+                cr_tokens = as_count(parsed_usage.get("cacheReads"))
                 model_cand = model_id_or_none(parsed_usage.get("model") or parsed_usage.get("selectedModel"))
                 if model_cand:
                     last_model = model_cand
@@ -230,7 +231,7 @@ def _parse_ui_messages(
                         "model": turn["model"] or "",
                         "input_tokens": max(0, p_tokens - cr_tokens),
                         "cache_read_tokens": cr_tokens,
-                        "cache_write_5m_tokens": int(parsed_usage.get("cacheWrites") or 0),
+                        "cache_write_5m_tokens": as_count(parsed_usage.get("cacheWrites")),
                         "cache_write_1h_tokens": 0,
                         "output_tokens": c_tokens,
                         "reasoning_tokens": 0,
