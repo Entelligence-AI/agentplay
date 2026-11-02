@@ -191,12 +191,16 @@ def _parse_ui_messages(
         # 1. Turn opener: user prompt, task initiation, or feedback
         is_turn_start = (
             (mtype == "say" and say in ("task", "user_feedback"))
-            or (mtype == "ask" and ask == "followup")
             or (turn is None and raw_text and mtype == "say" and say == "text")
         )
         if is_turn_start:
             _close_turn()
-            turn = _open_turn(raw_text if isinstance(raw_text, str) else "", ts)
+            prompt_text = raw_text if isinstance(raw_text, str) else ""
+            if prompt_text.strip().startswith("{"):
+                parsed_prompt = _safe_json(prompt_text)
+                if isinstance(parsed_prompt, dict) and "text" in parsed_prompt:
+                    prompt_text = str(parsed_prompt["text"])
+            turn = _open_turn(prompt_text, ts)
             continue
 
         if turn is None:
@@ -380,10 +384,24 @@ def _parse_ui_messages(
                 turn["output"].append(f"Error: {raw_text}")
             continue
 
-        # 7. Regular text response from assistant
-        if mtype == "say" and say == "text":
+        # 7. Assistant output (regular text response or followup question)
+        if (mtype == "say" and say == "text") or (mtype == "ask" and ask == "followup"):
+            if pending_tool is not None:
+                turn["tools"].append(pending_tool)
+                pending_tool = None
             if isinstance(raw_text, str) and raw_text:
-                turn["output"].append(raw_text)
+                parsed_q = _safe_json(raw_text)
+                q_text = (
+                    parsed_q.get("question") or parsed_q.get("text") or raw_text
+                    if isinstance(parsed_q, dict)
+                    else raw_text
+                )
+                turn["output"].append(q_text)
+            elif isinstance(raw_text, dict):
+                q_text = str(raw_text.get("question") or raw_text.get("text") or "")
+                if q_text:
+                    turn["output"].append(q_text)
+            continue
 
     _close_turn()
 

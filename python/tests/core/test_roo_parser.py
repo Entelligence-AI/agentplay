@@ -133,6 +133,41 @@ def test_roo_parser_api_history():
     assert counters.read_count == 1
 
 
+def test_roo_parser_followup_question_and_user_feedback():
+    session = [
+        {"ts": 1730000000000, "type": "say", "say": "task", "text": "Fix the bug"},
+        {
+            "ts": 1730000001000,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps({"tokensIn": 100, "tokensOut": 20, "model": "claude-3-7-sonnet"}),
+        },
+        {"ts": 1730000002000, "type": "ask", "ask": "followup", "text": "Should I run tests first?"},
+        {"ts": 1730000003000, "type": "say", "say": "user_feedback", "text": "Yes, please run tests"},
+        {
+            "ts": 1730000004000,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps({"tokensIn": 120, "tokensOut": 30, "model": "claude-3-7-sonnet"}),
+        },
+        {"ts": 1730000005000, "type": "say", "say": "text", "text": "All tests pass"},
+    ]
+    raw_bytes = json.dumps(session).encode("utf-8")
+    trace, spans = parse_roo(raw_bytes, trace_id="local:roo-code:followup-task")
+    turns = [s for s in spans if s.name.startswith("Turn ")]
+    assert len(turns) == 2
+
+    # Turn 1: prompt is "Fix the bug", output has the assistant followup question
+    assert turns[0].name == "Turn 1"
+    assert turns[0].attributes["input.value"] == "Fix the bug"
+    assert "Should I run tests first?" in turns[0].attributes["output.value"]
+
+    # Turn 2: prompt is user_feedback ("Yes, please run tests"), output is assistant response
+    assert turns[1].name == "Turn 2"
+    assert turns[1].attributes["input.value"] == "Yes, please run tests"
+    assert "All tests pass" in turns[1].attributes["output.value"]
+
+
 def test_roo_builder_never_leaks_free_text():
     secret_prompt = "SECRET-ROO-PROMPT-12345"
     secret_arg = "SECRET-FILE-SECRET.ts"
