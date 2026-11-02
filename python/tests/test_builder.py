@@ -842,6 +842,83 @@ def test_a_turn_aggregate_is_not_billed_at_the_long_context_tier():
     assert sm._cost_from_events("gpt-6-luna", events) == pytest.approx(0.04 + 0.06)
 
 
+def test_one_hour_cache_writes_are_priced_at_twice_input():
+    # claude-opus-5-5: $4 in / $20 out / $0.20 read / $5 5m write / $8 1h write per 1M.
+    assert sm.estimate_cost_usd(
+        "claude-opus-5-5", 0, 0, 0, 0, cache_write_1h=1_000_000
+    ) == pytest.approx(8.0)
+    # The span path keeps the 5m/1h split instead of summing it at the 5m rate.
+    events = [
+        {
+            "model": "claude-opus-5-5",
+            "input_tokens": 0,
+            "cache_write_5m_tokens": 1_000_000,
+            "cache_write_1h_tokens": 1_000_000,
+            "output_tokens": 0,
+        }
+    ]
+    assert sm._cost_from_events("claude-opus-5-5", events) == pytest.approx(5.0 + 8.0)
+
+
+def test_claude_code_cost_reads_the_nested_cache_ttl_split(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    t0 = datetime(2026, 9, 10, 1, 0, tzinfo=UTC)
+    base = {
+        "input_tokens": 1_000,
+        "cache_creation_input_tokens": 100_000,
+        "cache_read_input_tokens": 1_000_000,
+        "output_tokens": 10_000,
+    }
+    usages = [
+        # Only 1h writes, the shape current Claude Code transcripts carry.
+        {**base, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 100_000}},
+        # A 5m/1h mix.
+        {**base, "cache_creation": {"ephemeral_5m_input_tokens": 40_000, "ephemeral_1h_input_tokens": 60_000}},
+        # No split (older transcripts): every write stays at the 5m rate.
+        base,
+    ]
+    path = tmp_path / "ttl.jsonl"
+    path.write_text(
+        "".join(
+            _line(
+                type="assistant",
+                timestamp=(t0 + timedelta(seconds=m)).isoformat(),
+                message={"id": f"m{m}", "model": "claude-opus-5-5", "usage": u, "content": []},
+            )
+            for m, u in enumerate(usages)
+        )
+    )
+
+    doc = sm.build_claude_code_map(path)
+
+    # fresh 1K*$4 + read 1M*$0.20 + out 10K*$20, per 1M, in every request.
+    rest = 0.004 + 0.2 + 0.2
+    costs = [e["cost"] for e in doc["events"] if e["kind"] == "llm"]
+    assert costs == pytest.approx([rest + 0.8, rest + 0.2 + 0.48, rest + 0.5])
+    assert doc["totals"]["costUsd"] == pytest.approx(sum(costs), abs=1e-3)
+
+
+def test_spans_turn_aggregate_prices_its_one_hour_writes():
+    from datetime import UTC, datetime
+
+    spans = [
+        _span(
+            "t1",
+            "Turn 1",
+            datetime(2026, 9, 10, 1, 0, tzinfo=UTC),
+            **{
+                "llm.model_name": "claude-opus-5-5",
+                "llm.token_count.cache_write": 1_000_000,
+                "llm.token_count.cache_write_1h": 1_000_000,
+            },
+        ),
+    ]
+    doc = sm.build_map_from_spans(spans, session_id="local:claude_code:x", agent_tool="claude_code")
+    llm = next(e for e in doc["events"] if e["kind"] == "llm")
+    assert llm["cost"] == pytest.approx(8.0)
+
+
 
 
 
