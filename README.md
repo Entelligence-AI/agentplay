@@ -198,7 +198,8 @@ agentplay agents      show which agents were found on this machine
 | `--agents claude-code,codex` | build, view, list | limit to these agents |
 | `--rebuild` | build, view | rebuild even unchanged sessions |
 | `--path-mode dirs_only` | build, view | see [Privacy](#privacy) |
-| `--limit N` | build, view, list | newest N sessions |
+| `--limit N` | build, view, list | newest N sessions (for list: after `--sort`) |
+| `--sort cost` | list | order before `--limit`: `recent` (default), `cost`, `duration`, `calls`, `errors` |
 | `--no-titles` | build, view | don't keep local titles, and clear any already stored |
 | `--port 7317`, `--no-open`, `--no-build` | view | server options |
 | `--json` | build, list | machine-readable output |
