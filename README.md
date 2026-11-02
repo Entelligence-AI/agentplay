@@ -144,7 +144,7 @@ Every view is a URL, so a link to a moment in a session reopens it for anyone wh
 | **Antigravity CLI** (`agy`) | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl` | main lane only | per turn | Project folder and subagent links from `conversation_summaries.db`, copied and read locally, read-only. Subagents are listed as separate subagent sessions. Model not recorded yet |
 | **Command Code** | `~/.commandcode/projects/*/*.jsonl` | main lane only | per request | Tool failures are read from the result text, which carries no error flag |
 | **Goose** | `~/.local/share/goose/sessions/sessions.db` (Windows: `%APPDATA%\Block\goose\data\sessions\sessions.db`) | main lane only | per request | SQLite, copied and decoded locally, read-only. Subagent and hidden sessions are skipped |
-| **Cline** | `~/.cline/data/sessions/<id>/<id>.messages.json` | main lane only | per request | |
+| **Cline** | `~/.cline/data/sessions/<id>/<id>.messages.json` | main lane only | per request | Tool failures are read from `is_error` and each result's `success` flag. A shell call that runs several commands becomes one event per command. Spawned-subagent files are skipped |
 
 "Main lane only" means the session's own tool calls are all there, but subagent work is not split out into separate lanes on the map.
 
@@ -330,7 +330,7 @@ Test suites:
 
 Contributions are very welcome, and you don't need to know the whole codebase to make one. The most valuable are:
 
-1. **A parser for another agent**: Amp, Cline, Roo, Windsurf or Aider. Each is one file plus a few registration lines; [CONTRIBUTING.md](CONTRIBUTING.md#adding-an-agent) walks through it step by step, and [`codex.py`](python/src/agentplay/_core/ingestion/coding_agent/_sources/local/parsers/codex.py) is a good one to copy.
+1. **A parser for another agent**: Amp, Roo, Windsurf or Aider. Each is one file plus a few registration lines; [CONTRIBUTING.md](CONTRIBUTING.md#adding-an-agent) walks through it step by step, and [`codex.py`](python/src/agentplay/_core/ingestion/coding_agent/_sources/local/parsers/codex.py) is a good one to copy.
 2. **Fixture transcripts** for an agent version that broke parsing, with personal content removed. Open a [parser bug](https://github.com/Entelligence-AI/agentplay/issues/new?template=bug_report.yml) and attach one.
 3. **Viewer improvements** that make a session easier to read. The viewer runs on demo data with `pnpm dev` in `viewer/`, no sessions needed.
 4. **Docs and install fixes**, especially for Windows and WSL.
