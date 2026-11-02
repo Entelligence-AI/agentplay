@@ -44,6 +44,10 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
 @pytest.mark.parametrize(
     ("agent", "raw", "canonical"),
     [
+        ("cline", "run_commands", "Bash"),
+        ("cline", "read_files", "Read"),
+        ("cline", "editor", "Edit"),
+        ("cline", "search_codebase", "Grep"),
         ("codex", "exec_command", "Bash"),
         ("codex", "apply_patch", "Edit"),
         ("command-code", "shell_command", "Bash"),
@@ -85,6 +89,7 @@ def test_table_sizes_are_pinned() -> None:
     # 12 against real sessions plus the 0.65 bundle's tool-name constants;
     # command-code's 12 against real sessions; goose's 8 against Goose's source.
     assert {a: len(t) for a, t in tt.TOOL_ALIASES.items() if a != "antigravity-cli"} == {  # own test pins it
+        "cline": 9,
         "codex": 7,
         "command-code": 12,
         "cursor": 26,
