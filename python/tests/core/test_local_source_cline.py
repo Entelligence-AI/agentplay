@@ -97,7 +97,10 @@ def test_secret_text_never_reaches_the_map():
         _result(5, '{"error":"SECRET-JSON-ERR"}', is_error=True),
         {"id": "a9", "role": "assistant", "ts": 1100, "content": list(reply), "modelInfo": {"id": "m"}},
     ]
-    raw = json.dumps(_build(*messages))
+    doc = _build(*messages)
+    # The leak check is vacuous if the parser dropped the calls, so see them first.
+    assert {e["kind"] for e in doc["events"] if e.get("tool")} >= {"exec", "edit", "read", "search", "web"}
+    raw = json.dumps(doc)
     for secret in ("SECRET", "hunter2", "secret.example"):
         assert secret not in raw, secret
 

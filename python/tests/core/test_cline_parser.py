@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -158,6 +158,7 @@ def test_a_multi_command_call_becomes_one_span_per_command():
     assert tools[0].start_time == datetime.fromtimestamp(1.0, UTC)
     assert tools[-1].end_time == datetime.fromtimestamp(1.9, UTC)
     assert all(a.end_time == b.start_time for a, b in zip(tools, tools[1:], strict=False))
+    assert {t.end_time - t.start_time for t in tools} == {timedelta(milliseconds=300)}
 
 
 def test_a_refused_multi_command_call_fails_every_command():
