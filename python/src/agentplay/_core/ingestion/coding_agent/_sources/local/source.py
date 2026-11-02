@@ -2457,8 +2457,9 @@ class LocalSource:
             meta = None
         if isinstance(meta, dict) and isinstance(meta.get("cwd"), str) and meta["cwd"]:
             cwd = meta["cwd"]
-        git = (meta.get("metadata") or {}).get("git") if isinstance(meta, dict) else None
-        branch = git.get("branch") if isinstance(git, dict) and isinstance(git.get("branch"), str) else None
+        meta_extra = meta.get("metadata") if isinstance(meta, dict) else None
+        git = meta_extra.get("git") if isinstance(meta_extra, dict) else None
+        branch =git.get("branch") if isinstance(git, dict) and isinstance(git.get("branch"), str) else None
 
         self._record_discovery("cline", "indexed")
         return f"local:{AgentType.CLINE}:{native_id}", _FileRef(

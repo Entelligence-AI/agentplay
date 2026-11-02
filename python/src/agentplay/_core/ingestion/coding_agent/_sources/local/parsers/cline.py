@@ -47,6 +47,7 @@ from agentplay._core.code_authorship import extract_edit_evidence
 from agentplay._core.ingestion.coding_agent._sources._jsonl_utils import (
     SOURCE_KIND_JSON_DOC,
     as_count,
+    as_dict,
     source_attrs,
 )
 from agentplay._core.ingestion.coding_agent.spans import SpanData, TraceData, model_id_or_none
@@ -145,7 +146,7 @@ def parse_cline(
                 # Model activity before any prompt still needs a turn to live
                 # under (same fallback as command_code.py / gemini.py).
                 turn = _open_turn(msg, "")
-            model = model_id_or_none((msg.get("modelInfo") or {}).get("id")) or ""
+            model = model_id_or_none(as_dict(msg.get("modelInfo")).get("id")) or ""
             if model:
                 turn["model"] = model
                 session_model = model

@@ -107,6 +107,16 @@ def test_session_without_metadata_still_indexes(tmp_path):
     assert (ref.cwd, ref.project_name) == (None, None)
 
 
+@pytest.mark.parametrize("metadata", ["x", ["x"], {"git": "x"}, None])
+def test_malformed_metadata_block_does_not_abort_indexing(tmp_path, metadata):
+    home = _cline_home(tmp_path)
+    meta = {"cwd": CWD, "metadata": metadata}
+    (home / "data" / "sessions" / "100_failed_shell" / "100_failed_shell.json").write_text(json.dumps(meta))
+    index = LocalSource(claude_code_homes=[], codex_homes=[], cline_homes=[home])._build_index()
+    ref = index["local:cline:100_failed_shell"]
+    assert (ref.cwd, ref.branch) == (CWD, None)
+
+
 def test_discovery_lists_cline_with_env_override(tmp_path, monkeypatch):
     assert "cline" in discover.AGENTS
     monkeypatch.setenv("AGENTPLAY_CLINE_HOMES", str(tmp_path))

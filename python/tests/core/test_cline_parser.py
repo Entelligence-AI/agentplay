@@ -163,6 +163,14 @@ def test_write_and_edit_record_edit_evidence():
     )
 
 
+@pytest.mark.parametrize("model_info", ["x", ["x"], 3, {"id": 3}])
+def test_malformed_model_info_is_ignored(model_info):
+    msg = {**_call("run_commands", {"command": "ls"}), "modelInfo": model_info}
+    _, spans = parse_cline(_doc(msg), "local:cline:x")
+    assert spans[0].attributes["llm.model_name"] == ""
+    assert len(_tools(spans)) == 1
+
+
 @pytest.mark.parametrize("data", [b"", b"not json", b"[]", b'{"messages": 3}', b'{"messages": [1, "x", null]}'])
 def test_malformed_or_empty_input_yields_no_spans(data):
     trace, spans = parse_cline(data, "local:cline:x")
