@@ -2453,13 +2453,10 @@ class LocalSource:
         cwd = None
         try:
             meta = json.loads(messages_file.with_name(f"{native_id}.json").read_bytes())
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
             meta = None
         if isinstance(meta, dict) and isinstance(meta.get("cwd"), str) and meta["cwd"]:
             cwd = meta["cwd"]
-        meta_extra = meta.get("metadata") if isinstance(meta, dict) else None
-        git = meta_extra.get("git") if isinstance(meta_extra, dict) else None
-        branch =git.get("branch") if isinstance(git, dict) and isinstance(git.get("branch"), str) else None
 
         self._record_discovery("cline", "indexed")
         return f"local:{AgentType.CLINE}:{native_id}", _FileRef(
@@ -2468,7 +2465,6 @@ class LocalSource:
             mtime=datetime.fromtimestamp(messages_file.stat().st_mtime, tz=UTC),
             project_name=_project_from_cwd(cwd) if cwd else None,
             cwd=cwd,
-            branch=branch,
             home=home,
         )
 

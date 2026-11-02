@@ -71,8 +71,7 @@ def _cline_home(tmp_path: Path) -> Path:
         folder = sessions / f"100_{name}"
         folder.mkdir(parents=True)
         (folder / f"100_{name}.messages.json").write_bytes(_fixture(name))
-        meta = {"cwd": CWD, "metadata": {"git": {"url": "u", "branch": "main"}}}
-        (folder / f"100_{name}.json").write_text(json.dumps(meta), encoding="utf-8")
+        (folder / f"100_{name}.json").write_text(json.dumps({"cwd": CWD}), encoding="utf-8")
         # A spawned subagent's conversation is a component of its parent, not a session.
         (folder / "agent_1.messages.json").write_bytes(_fixture(name))
     empty = sessions / "200_empty"
@@ -107,14 +106,13 @@ def test_session_without_metadata_still_indexes(tmp_path):
     assert (ref.cwd, ref.project_name) == (None, None)
 
 
-@pytest.mark.parametrize("metadata", ["x", ["x"], {"git": "x"}, None])
-def test_malformed_metadata_block_does_not_abort_indexing(tmp_path, metadata):
+@pytest.mark.parametrize("text", ["[]", '"x"', "null", '{"cwd": 3}', '{"cwd": ""}', "{bad json", "[" * 100_000])
+def test_malformed_metadata_file_does_not_abort_indexing(tmp_path, text):
     home = _cline_home(tmp_path)
-    meta = {"cwd": CWD, "metadata": metadata}
-    (home / "data" / "sessions" / "100_failed_shell" / "100_failed_shell.json").write_text(json.dumps(meta))
+    (home / "data" / "sessions" / "100_failed_shell" / "100_failed_shell.json").write_text(text)
     index = LocalSource(claude_code_homes=[], codex_homes=[], cline_homes=[home])._build_index()
-    ref = index["local:cline:100_failed_shell"]
-    assert (ref.cwd, ref.branch) == (CWD, None)
+    assert sorted(index) == [f"local:cline:100_{name}" for name in NAMES]
+    assert index["local:cline:100_failed_shell"].cwd is None
 
 
 def test_discovery_lists_cline_with_env_override(tmp_path, monkeypatch):
