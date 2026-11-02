@@ -10,6 +10,7 @@ import pytest
 
 from agentplay._core.ingestion.coding_agent import tool_taxonomy as tt
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
+    cline,
     codex,
     command_code,
     copilot,
@@ -25,6 +26,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
 @pytest.mark.parametrize(
     ("module", "agent"),
     [
+        (cline, "cline"),
         (codex, "codex"),
         (command_code, "command-code"),
         (cursor_store, "cursor"),
