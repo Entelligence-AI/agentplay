@@ -219,6 +219,37 @@ def test_list_filters_independently(list_store, capsys, flags, expected):
     assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == expected
 
 
+def test_list_sort_applies_before_limit(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("AGENTPLAY_HOME", str(tmp_path))
+    monkeypatch.setattr(cli, "_TTY", False)
+    st = cli.Store()
+    for sid, started, cost, duration, calls, errors in [
+        ("cheap", "2026-10-01T00:00:00Z", 0.1, 60_000, 1, 0),
+        ("mid", "2026-10-02T00:00:00Z", 1.0, 120_000, 5, 1),
+        ("pricey", "2026-10-03T00:00:00Z", 9.0, 30_000, 2, 0),
+        ("long", "2026-09-01T00:00:00Z", 0.5, 600_000, 3, 0),
+        ("missing", "2026-10-04T00:00:00Z", None, None, None, None),
+    ]:
+        st.index[sid] = {
+            "sessionId": sid, "agentTool": "codex", "startedAt": started,
+            "costUsd": cost, "durationMs": duration, "calls": calls, "errors": errors,
+        }
+    st.save_index()
+    assert cli.main(["list", "--json", "--sort", "cost", "--limit", "3"]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == ["pricey", "mid", "long"]
+    assert cli.main(["list", "--json", "--sort", "duration", "--limit", "2"]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == ["long", "mid"]
+    assert cli.main(["list", "--json", "--sort", "calls", "--limit", "2"]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == ["mid", "long"]
+    assert cli.main(["list", "--json", "--sort", "errors", "--limit", "2"]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == ["mid", "pricey"]
+    # Missing numeric fields sort last; recent still newest-first.
+    assert cli.main(["list", "--json", "--sort", "cost"]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)][-1] == "missing"
+    assert cli.main(["list", "--json", "--sort", "recent", "--limit", "2"]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == ["missing", "pricey"]
+
+
 @pytest.mark.parametrize(("flags", "message"), [
     (["--agents", "unknown"], "unknown agent"),
     (["--since", "yesterday"], "can't read --since"),

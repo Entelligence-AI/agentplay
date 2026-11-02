@@ -239,6 +239,31 @@ def cmd_view(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- list
+_LIST_SORT_FIELDS = {
+    "recent": "startedAt",
+    "cost": "costUsd",
+    "duration": "durationMs",
+    "calls": "calls",
+    "errors": "errors",
+}
+
+
+def _sort_list_rows(rows: list[dict], sort: str) -> list[dict]:
+    """Sort before --limit. Highest / newest first; rows missing the field last."""
+    field = _LIST_SORT_FIELDS[sort]
+    if field == "startedAt":
+        present = [r for r in rows if r.get("startedAt")]
+        missing = [r for r in rows if not r.get("startedAt")]
+        present.sort(key=lambda r: r["startedAt"], reverse=True)
+        return present + missing
+
+    def key(row: dict):
+        value = row.get(field)
+        return (value is None, 0 if value is None else -value)
+
+    return sorted(rows, key=key)
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     st = Store()
     agents = _agents(args.agents)
@@ -261,7 +286,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             if changed < since.timestamp():
                 continue
         rows.append(row)
-    rows = rows[: args.limit or 30]
+    rows = _sort_list_rows(rows, args.sort)[: args.limit or 30]
     if args.json:
         print(json.dumps(rows, indent=2))
         return 0
@@ -544,6 +569,8 @@ def parser() -> argparse.ArgumentParser:
     ls = sub.add_parser("list", parents=[common], help="list built sessions")
     ls.add_argument("--agents", help=f"comma-separated subset of: {', '.join(discover.AGENTS)}")
     ls.add_argument("--since", help="only sessions changed since (30d, 12h, 2w, YYYY-MM-DD); missing modification times use start time")
+    ls.add_argument("--sort", default="recent", choices=list(_LIST_SORT_FIELDS),
+                    help="order before --limit (default: recent)")
     ls.add_argument("--limit", type=int)
     ls.add_argument("--json", action="store_true")
     ls.set_defaults(fn=cmd_list)
