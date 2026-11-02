@@ -46,6 +46,7 @@ from datetime import UTC, datetime
 from agentplay._core.code_authorship import extract_edit_evidence
 from agentplay._core.ingestion.coding_agent._sources._jsonl_utils import (
     SOURCE_KIND_JSON_DOC,
+    as_count,
     source_attrs,
 )
 from agentplay._core.ingestion.coding_agent.spans import SpanData, TraceData, model_id_or_none
@@ -154,6 +155,7 @@ def parse_cline(
                     turn["output"].append(block["text"])
                 elif kind == "tool_use":
                     turn["tools"].append(_tool_span(trace_id, turn, msg, block, len(turn["tools"]), results))
+            _add_usage(turn, msg, model)
 
         ts = _dt(msg.get("ts"))
         if turn is not None and ts is not None and ts > turn["end"]:
@@ -228,6 +230,41 @@ def _user_prompt(content: object) -> str | None:
     return "\n".join(texts) if texts else None
 
 
+def _add_usage(turn: dict, msg: dict, model: str) -> None:
+    """Fold one assistant message's `metrics` record into its turn."""
+    metrics = msg.get("metrics")
+    if not isinstance(metrics, dict):
+        return
+    prompt = as_count(metrics.get("inputTokens"))
+    cache_read = min(as_count(metrics.get("cacheReadTokens")), prompt)
+    cache_write = min(as_count(metrics.get("cacheWriteTokens")), prompt - cache_read)
+    completion = as_count(metrics.get("outputTokens"))
+    if not prompt and not completion:
+        return
+    turn["prompt_tokens"] += prompt
+    turn["completion_tokens"] += completion
+    turn["cache_read"] += cache_read
+    turn["cache_write"] += cache_write
+    ts = _dt(msg.get("ts"))
+    turn["cost_events"].append(
+        {
+            "timestamp": ts.isoformat() if ts else "",
+            "request_id": None,
+            "message_id": f"cline:{msg.get('id')}",
+            "model": model,
+            "input_tokens": prompt - cache_read - cache_write,
+            "cache_read_tokens": cache_read,
+            # Cline does not say which cache tier a write went to.
+            "cache_write_5m_tokens": cache_write,
+            "cache_write_1h_tokens": 0,
+            "output_tokens": completion,
+            "reasoning_tokens": 0,
+            "usage_basis": "message_tokens",
+            **_src(msg),
+        }
+    )
+
+
 def _src(msg: dict) -> dict:
     return source_attrs(msg, kind=SOURCE_KIND_JSON_DOC, row_cursor=str(msg.get("id") or ""))
 
@@ -285,6 +322,8 @@ def _tool_span(
 
     if result is None:
         status_code = "UNSET"
+    elif _failed(result):
+        status_code = "ERROR"
     else:
         status_code = "OK"
 
@@ -371,6 +410,14 @@ def _result_text(result: dict) -> str:
         elif isinstance(item, dict):
             texts.extend(item[k] for k in ("result", "error") if isinstance(item.get(k), str))
     return "\n".join(texts)
+
+
+def _failed(result: dict) -> bool:
+    """Cline's failure evidence: `is_error`, or an item with `success: false`."""
+    if result.get("is_error") is True:
+        return True
+    content = result.get("content")
+    return isinstance(content, list) and any(isinstance(i, dict) and i.get("success") is False for i in content)
 
 
 __all__ = ["parse_cline"]
