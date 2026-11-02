@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.antigravity import is_antigravity_step
+from agentplay._core.ingestion.coding_agent.tool_taxonomy import aliases_for
 
 
 class AgentType(StrEnum):
@@ -34,29 +35,7 @@ class AgentType(StrEnum):
     ROO_CODE = "roo-code"
 
 
-_ROO_API_TOOLS: frozenset[str] = frozenset(
-    {
-        "execute_command",
-        "read_file",
-        "write_to_file",
-        "writeToFile",
-        "replace_in_file",
-        "replaceInFile",
-        "apply_diff",
-        "applyDiff",
-        "list_files",
-        "listFiles",
-        "list_code_definition_names",
-        "listCodeDefinitionNames",
-        "search_files",
-        "searchFiles",
-        "browser_action",
-        "new_task",
-        "newTask",
-        "switch_mode",
-        "switchMode",
-    }
-)
+_ROO_API_TOOLS: frozenset[str] = frozenset(aliases_for("roo-code"))
 
 
 def _is_roo_record(msg: Any) -> bool:

@@ -87,6 +87,35 @@ def test_api_history_tool_use_beyond_first_five_messages_is_detected():
     assert detect_agent(truncated) == AgentType.ROO_CODE
 
 
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "apply_diff",
+        "applyDiff",
+        "search_files",
+        "searchFiles",
+        "listFiles",
+        "listCodeDefinitionNames",
+    ],
+)
+def test_api_history_with_supported_roo_tools_is_detected(tool_name: str):
+    msg = [
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_01",
+                    "name": tool_name,
+                    "input": {},
+                }
+            ],
+        }
+    ]
+    raw = json.dumps(msg).encode("utf-8")
+    assert detect_agent(raw) == AgentType.ROO_CODE
+
+
 def test_other_agent_fixtures_not_claimed_as_roo():
     gemini_fix = Path(__file__).parent / "fixtures" / "gemini" / "read_explain.jsonl"
     if gemini_fix.is_file():
