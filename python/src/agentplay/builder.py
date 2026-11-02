@@ -2661,12 +2661,22 @@ def build_map_from_spans(
     role: str | None = None,
     parent_session_id: str | None = None,
     started_at_hint: float | None = None,
+    subagents: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a map from the shared ``LocalSource`` span tree (Codex, Cursor, Kiro, …).
 
-    Turn spans become one ``llm`` event (turn-level tokens) plus a ``user`` event;
-    tool spans (children of turns) become tool events. Subagent traffic is not in
-    the span tree, so these maps have only the main agent.
+    Turn spans become ``llm`` events plus a ``user`` event; tool spans
+    (children of turns) become tool events. A Codex turn becomes one ``llm``
+    event per request in its ``llm.cost_events``, so each carries the context
+    that request was sent; every other agent keeps one ``llm`` event per turn
+    (turn-level tokens).
+
+    ``subagents`` are subagent span trees stored as their own sessions (Codex
+    Desktop writes one rollout per subagent): ``{"id", "parent", "spans",
+    "path"}`` dicts, each read into its own lane under ``parent`` (``"main"``
+    or another subagent's ``id``). A lane never emits ``user`` events, as for
+    Claude Code subagents. The parent's ``spawn_agent`` call whose output
+    names the subagent's ``path`` becomes that lane's launch event.
 
     ``started_at_hint`` (epoch seconds, typically the source file's own mtime) is
     the session's ``startedAt`` when no span carries a timestamp — a real gap seen
@@ -2679,29 +2689,123 @@ def build_map_from_spans(
     b = MapBuilder(path_mode=path_mode, hmac_key=hmac_key, resolver=resolver)
     b.task_specs = tasks
     spans = list(spans)
-    turn_ids = {s.span_id for s in spans if str(getattr(s, "name", "")).startswith("Turn ")}
     root = next((s for s in spans if getattr(s, "parent_id", None) is None), None)
     if root is not None:
         # Cursor stamps its model ("default", unresolved) on the session root only.
         b.default_model = str((getattr(root, "attributes", {}) or {}).get("llm.model_name") or "")[
             :60
         ]
+    per_request = agent_tool == "codex"
+    launches = _read_spans(b, spans, "main", per_request=per_request)
+    for sub in subagents or []:
+        # The same task name can be spawned twice: launches pair with
+        # subagents (oldest first) in order.
+        queue = launches.get(sub.get("path") or "")
+        launch = queue.pop(0) if queue else None
+        b.agents.append(
+            {
+                "id": sub["id"],
+                "parent": sub.get("parent") or "main",
+                "kind": "subagent",
+                "subagentType": (launch or {}).get("subagentType") or "general",
+            }
+        )
+        if launch is not None:
+            launch["child"] = sub["id"]
+        for path, evs in _read_spans(b, sub["spans"], sub["id"], per_request=per_request).items():
+            launches.setdefault(path, []).extend(evs)
+    doc = b.finish(
+        session={
+            "id": session_id,
+            "agentTool": agent_tool,
+            "cliVersion": cli_version,
+            "role": role,
+            "parentSessionId": parent_session_id,
+            "startedAt": _iso(started_at_hint) if started_at_hint else None,
+        }
+    )
+    for a in doc["agents"]:
+        launch = next((e for e in doc["events"] if e.get("child") == a["id"]), None)
+        if launch is not None:
+            a["launchSeq"] = launch["seq"]
+    return doc
+
+
+_TASK_NAME_RE = re.compile(r'"task_name"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def _spawned_path(out: Any) -> str:
+    """The task path a Codex ``spawn_agent`` call returned (``{"task_name": ...}``).
+
+    Read by pattern, not ``json.loads``: the parser cuts ``output.value`` at
+    2,000 characters, which would leave a longer output unparseable."""
+    m = _TASK_NAME_RE.search(out) if isinstance(out, str) else None
+    if m is None:
+        return ""
+    try:
+        return str(json.loads(f'"{m.group(1)}"'))
+    except ValueError:
+        return m.group(1)
+
+
+def _read_spans(
+    b: MapBuilder, spans: list[Any], agent: str, *, per_request: bool
+) -> dict[str, list[dict[str, Any]]]:
+    """One span tree's events into ``agent``'s lane. Returns its subagent launch
+    events keyed by the task path each one spawned."""
+    launches: dict[str, list[dict[str, Any]]] = {}
+    turn_ids = {s.span_id for s in spans if str(getattr(s, "name", "")).startswith("Turn ")}
     for s in spans:
         attrs = getattr(s, "attributes", {}) or {}
         ts = _span_ts(getattr(s, "start_time", None))
+        if getattr(s, "parent_id", None) is None and s.span_id not in turn_ids:
+            for c in attrs.get("harness.compactions") or []:
+                if isinstance(c, dict):
+                    ev: dict[str, Any] = {"kind": "compaction", "agent": agent}
+                    if isinstance(c.get("pre_tokens"), int) and c["pre_tokens"] > 0:
+                        ev["preTokens"] = c["pre_tokens"]
+                    b.add(ev, _span_ts(c.get("timestamp")))
+            # One Esc aborts the main turn and every running subagent's turn, and
+            # a parent can stop a subagent itself (`interrupt_agent`, already a
+            # call on the main lane): only the main lane's aborts are the user's.
+            interruptions = attrs.get("harness.interruptions") if agent == "main" else None
+            for t in interruptions or []:
+                b.signal(
+                    agent=agent, source="orchestration", err_class="interrupted", ts=_span_ts(t)
+                )
+            continue
         if s.span_id in turn_ids:
             prompt = attrs.get("input.value")
-            if prompt:
+            if prompt and agent == "main":
                 b.add(
                     {
                         "kind": "user",
-                        "agent": "main",
+                        "agent": agent,
                         "chars": len(str(prompt)),
                         "images": 0,
                         "urls": len(_URL_RE.findall(str(prompt))),
                     },
                     ts,
                 )
+            events = attrs.get("llm.cost_events")
+            events = events if isinstance(events, list) else None
+            model = attrs.get("llm.model_name")
+            if per_request and events and all(isinstance(e, dict) for e in events):
+                for e in events:
+                    b.llm_event(
+                        agent=agent,
+                        model=e.get("model") or model,
+                        usage={
+                            "input_tokens": e.get("input_tokens") or 0,
+                            "cache_creation_input_tokens": (e.get("cache_write_5m_tokens") or 0)
+                            + (e.get("cache_write_1h_tokens") or 0),
+                            "cache_read_input_tokens": e.get("cache_read_tokens") or 0,
+                            "output_tokens": e.get("output_tokens") or 0,
+                        },
+                        ts=_span_ts(e.get("timestamp")) or ts,
+                        cost_events=[e],
+                    )
+                continue
             usage = {
                 "input_tokens": attrs.get("llm.token_count.input_fresh") or 0,
                 "cache_creation_input_tokens": attrs.get("llm.token_count.cache_write") or 0,
@@ -2709,14 +2813,13 @@ def build_map_from_spans(
                 "output_tokens": attrs.get("llm.token_count.completion") or 0,
             }
             # One request per turn even when the parser has no usage (Cursor stamps zeros).
-            events = attrs.get("llm.cost_events")
             b.llm_event(
-                agent="main",
-                model=attrs.get("llm.model_name"),
+                agent=agent,
+                model=model,
                 usage=usage,
                 ts=ts,
                 aggregate=True,
-                cost_events=events if isinstance(events, list) else None,
+                cost_events=events,
             )
             continue
         if getattr(s, "parent_id", None) not in turn_ids:
@@ -2736,7 +2839,7 @@ def build_map_from_spans(
             tool=tool_name,
             inp=inp if isinstance(inp, dict) else {},
             cwd=attrs.get("cwd"),
-            agent="main",
+            agent=agent,
             ts=ts,
         )
         ev["err"] = getattr(s, "status_code", "") == "ERROR"
@@ -2746,19 +2849,12 @@ def build_map_from_spans(
         out = attrs.get("output.value")
         if out is not None:
             ev["outBytes"] = len(str(out))
+        if ev["kind"] == "subagent" and (path := _spawned_path(out)):
+            launches.setdefault(path, []).append(ev)
         b.resolve_outputs(
             ev, str(out or "")[:20_000], ev["err"], end_ts if end_ts is not None else ts
         )
-    return b.finish(
-        session={
-            "id": session_id,
-            "agentTool": agent_tool,
-            "cliVersion": cli_version,
-            "role": role,
-            "parentSessionId": parent_session_id,
-            "startedAt": _iso(started_at_hint) if started_at_hint else None,
-        }
-    )
+    return launches
 
 
 # ---------------------------------------------------------------- serialization
