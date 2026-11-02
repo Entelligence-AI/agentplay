@@ -58,6 +58,35 @@ def test_large_array_head_without_closing_bracket_is_detected():
     assert detect_agent(cut_head) == AgentType.ROO_CODE
 
 
+def test_api_history_tool_use_beyond_first_five_messages_is_detected():
+    # Several conversational messages before the first tool_use
+    messages = [
+        {"role": "user", "content": f"Turn {i} question"}
+        if i % 2 == 0
+        else {"role": "assistant", "content": f"Turn {i} reply"}
+        for i in range(8)
+    ]
+    messages.append({
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "I will inspect the file."},
+            {
+                "type": "tool_use",
+                "id": "toolu_01",
+                "name": "read_file",
+                "input": {"path": "src/app.py"},
+            },
+        ],
+    })
+    # Complete JSON array
+    raw = json.dumps(messages).encode("utf-8")
+    assert detect_agent(raw) == AgentType.ROO_CODE
+
+    # Incomplete/truncated array (no closing bracket)
+    truncated = raw[:-5]
+    assert detect_agent(truncated) == AgentType.ROO_CODE
+
+
 def test_other_agent_fixtures_not_claimed_as_roo():
     gemini_fix = Path(__file__).parent / "fixtures" / "gemini" / "read_explain.jsonl"
     if gemini_fix.is_file():

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 import json
+from typing import Any
 
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.antigravity import is_antigravity_step
 
@@ -33,6 +34,48 @@ class AgentType(StrEnum):
     ROO_CODE = "roo-code"
 
 
+_ROO_API_TOOLS: frozenset[str] = frozenset(
+    {
+        "execute_command",
+        "read_file",
+        "write_to_file",
+        "writeToFile",
+        "replace_in_file",
+        "replaceInFile",
+        "apply_diff",
+        "applyDiff",
+        "list_files",
+        "listFiles",
+        "list_code_definition_names",
+        "listCodeDefinitionNames",
+        "search_files",
+        "searchFiles",
+        "browser_action",
+        "new_task",
+        "newTask",
+        "switch_mode",
+        "switchMode",
+    }
+)
+
+
+def _is_roo_record(msg: Any) -> bool:
+    if not isinstance(msg, dict):
+        return False
+    mtype = msg.get("type")
+    if mtype in ("say", "ask") and ("say" in msg or "ask" in msg):
+        return True
+    if msg.get("role") in ("user", "assistant") and "content" in msg:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    tname = b.get("name", "")
+                    if tname in _ROO_API_TOOLS:
+                        return True
+    return False
+
+
 def detect_agent(data: bytes) -> AgentType | None:
     """Detect the agent that produced this transcript.
 
@@ -41,11 +84,12 @@ def detect_agent(data: bytes) -> AgentType | None:
     """
     stripped = data.lstrip()
     if stripped.startswith(b"["):
-        arr: list[Any] = []
         try:
             parsed = json.loads(data)
             if isinstance(parsed, list):
-                arr = parsed[:5]
+                for msg in parsed:
+                    if _is_roo_record(msg):
+                        return AgentType.ROO_CODE
         except Exception:
             # When the file exceeds max_bytes (e.g. 5 MB cap in source.py),
             # the supplied head is truncated before the closing bracket.
@@ -57,34 +101,35 @@ def detect_agent(data: bytes) -> AgentType | None:
                     idx += 1
                     decoder = json.JSONDecoder()
                     n = len(text)
-                    while idx < n and len(arr) < 5:
+                    while idx < n:
                         while idx < n and text[idx] in " \t\r\n,":
                             idx += 1
                         if idx >= n or text[idx] == "]":
                             break
                         try:
                             obj, end = decoder.raw_decode(text, idx)
-                            if isinstance(obj, dict):
-                                arr.append(obj)
+                            if _is_roo_record(obj):
+                                return AgentType.ROO_CODE
                             idx = end
                         except json.JSONDecodeError:
                             break
             except Exception:
                 pass
 
-        for msg in arr[:5]:
-            if isinstance(msg, dict):
-                mtype = msg.get("type")
-                if mtype in ("say", "ask") and ("say" in msg or "ask" in msg):
-                    return AgentType.ROO_CODE
-                if msg.get("role") in ("user", "assistant") and "content" in msg:
-                    content = msg.get("content")
-                    if isinstance(content, list):
-                        for b in content:
-                            if isinstance(b, dict) and b.get("type") == "tool_use":
-                                tname = b.get("name", "")
-                                if tname in ("execute_command", "read_file", "write_to_file", "replace_in_file", "list_files", "browser_action"):
-                                    return AgentType.ROO_CODE
+        # If incremental decoding stopped on an incomplete final message,
+        # sniff the raw bytes for Roo signatures (e.g. tool_use with a Roo tool).
+        if (b'"tool_use"' in data or b'"tool"' in data) and any(
+            tool.encode("utf-8") in data for tool in _ROO_API_TOOLS
+        ):
+            return AgentType.ROO_CODE
+        if (b'"say"' in data or b'"ask"' in data) and (
+            b'"type": "say"' in data
+            or b'"type":"say"' in data
+            or b'"type": "ask"' in data
+            or b'"type":"ask"' in data
+        ):
+            return AgentType.ROO_CODE
+
     # Every line the caller handed us, not a fixed count: see the note in
     # `_read_head`. It returns complete lines and already bounds the read.
     # Transcripts can open with many lines of `ai-title` / `agent-name` /
@@ -111,11 +156,7 @@ def detect_agent(data: bytes) -> AgentType | None:
 
         line_type = obj.get("type", "")
 
-        # Cursor CLI/agent: synthesized header line, always first (see
-        # agentplay.materialize.find_cursor_store_candidates).
-        # Distinct enough (no other agent emits this `type`) that checking
-        # it anywhere in the head, not just line 1, is safe.
-        if line_type in ("say", "ask") and ("say" in obj or "ask" in obj):
+        if _is_roo_record(obj):
             return AgentType.ROO_CODE
 
         if line_type == "cursor_store_session":
