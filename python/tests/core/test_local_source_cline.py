@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -46,7 +47,74 @@ def test_built_map_never_leaks_fixture_text(name):
     # absolute path nor the file name may appear.
     for part in (*PLACEHOLDERS, CWD, "file1", "file2"):
         assert part not in raw, part
+    # `ARG` stands for every command argument.
+    assert not re.search(r"\bARG\b", raw)
     assert doc["session"]["agentTool"] == "cline"
+
+
+def _build(*messages: dict) -> dict:
+    sid = "local:cline:t"
+    _, spans = parse_cline(json.dumps({"sessionId": "t", "messages": list(messages)}).encode(), sid)
+    return builder.build_map_from_spans(spans, session_id=sid, agent_tool="cline")
+
+
+def _prompt(text: str) -> dict:
+    return {"id": "u0", "role": "user", "ts": 1000, "content": [{"type": "text", "text": text}]}
+
+
+def _use(i: int, name: str, args: dict) -> dict:
+    block = {"type": "tool_use", "id": f"c{i}", "name": name, "input": args}
+    return {"id": f"a{i}", "role": "assistant", "ts": 1000 + i, "content": [block]}
+
+
+def _result(i: int, content, **extra) -> dict:
+    block = {"type": "tool_result", "tool_use_id": f"c{i}", "name": "x", "content": content, **extra}
+    return {"id": f"r{i}", "role": "user", "ts": 1000 + i, "content": [block]}
+
+
+def _item(success: bool = True, **extra) -> dict:
+    return {"query": "SECRET-QUERY", "result": "SECRET-OUTPUT", "success": success, **extra}
+
+
+def test_secret_text_never_reaches_the_map():
+    commands = [
+        "curl -H 'Authorization: Bearer SECRET-TOKEN' https://secret.example/x",
+        "FOO=SECRET-ENV echo SECRET-ARG > /home/SECRET-USER/out.txt",
+        "cd /SECRET-DIR && git push origin SECRET-BRANCH",
+    ]
+    reply = {"type": "text", "text": "SECRET-REPLY"}, {"type": "thinking", "thinking": "SECRET-THOUGHT"}
+    messages = [
+        _prompt("SECRET-PROMPT hunter2"),
+        _use(1, "run_commands", {"commands": commands}),
+        _result(1, [_item(False, error="Command exited with code 1 SECRET-ERR"), _item(), _item()]),
+        _use(2, "editor", {"path": "/home/SECRET-USER/proj/SECRET-FILE.py", "old_text": "SECRET-OLD", "new_text": "SECRET-NEW"}),
+        _result(2, "SECRET-EDIT-OUTPUT"),
+        _use(3, "read_files", {"files": [{"path": "/home/SECRET-USER/proj/SECRET-READ.md"}]}),
+        _result(3, [_item()]),
+        _use(4, "search_codebase", {"queries": ["SECRET-SEARCH"]}),
+        _result(4, [_item()]),
+        _use(5, "fetch_web_content", {"requests": [{"url": "https://secret.example/SECRET-URL"}]}),
+        _result(5, '{"error":"SECRET-JSON-ERR"}', is_error=True),
+        {"id": "a9", "role": "assistant", "ts": 1100, "content": list(reply), "modelInfo": {"id": "m"}},
+    ]
+    raw = json.dumps(_build(*messages))
+    for secret in ("SECRET", "hunter2", "secret.example"):
+        assert secret not in raw, secret
+
+
+def test_every_command_of_a_multi_command_call_gets_its_own_event():
+    def events(*commands: str) -> list[tuple]:
+        items = [_item()] * len(commands)
+        doc = _build(_prompt("go"), _use(1, "run_commands", {"commands": list(commands)}), _result(1, items))
+        return [(e["kind"], e.get("verb")) for e in doc["events"] if e.get("tool")]
+
+    assert events("git add -A", "git commit -m x", "git push") == [
+        ("exec", "git add"),
+        ("exec", "git commit"),
+        ("exec", "git push"),
+    ]
+    # One command does not take the kind of another: `pytest` verifies, `ls` does not.
+    assert events("ls", "pytest -q") == [("search", "ls"), ("verify", "pytest")]
 
 
 def test_built_map_classifies_reads_edits_shell_and_the_failures():
