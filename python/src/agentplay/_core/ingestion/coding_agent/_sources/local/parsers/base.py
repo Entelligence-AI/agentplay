@@ -28,6 +28,7 @@ class AgentType(StrEnum):
     KIRO = "kiro"
     GEMINI_CLI = "gemini-cli"
     ANTIGRAVITY_CLI = "antigravity-cli"
+    COMMAND_CODE = "command-code"
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -47,11 +48,11 @@ def detect_agent(data: bytes) -> AgentType | None:
             continue
         try:
             obj = json.loads(raw_line)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
             # UnicodeDecodeError: a fixed-size byte head can split a
             # multi-byte UTF-8 char at the boundary (unicode
-            # in transcripts). Skip the unparseable line, don't crash
-            # the whole index walk.
+            # in transcripts). RecursionError: a deeply nested line.
+            # Skip the unparseable line, don't crash the whole index walk.
             continue
 
         # A bare JSON primitive/array is valid JSON but not an agent header
@@ -90,6 +91,24 @@ def detect_agent(data: bytes) -> AgentType | None:
 
         if is_antigravity_step(obj):
             return AgentType.ANTIGRAVITY_CLI
+
+        # Command Code: the first line is a `type="session"` header with a
+        # string `id` and `cwd` and an int format `version`; no other agent
+        # emits that `type`. Its messages are `type="message"` records whose
+        # `parentId` (Claude Code's is `parentUuid`) and `message.meta.source`
+        # identify a file whose header was cut off.
+        if (
+            line_type == "session"
+            and isinstance(obj.get("id"), str)
+            and isinstance(obj.get("cwd"), str)
+            and isinstance(obj.get("version"), int)
+        ):
+            return AgentType.COMMAND_CODE
+        if line_type == "message" and "parentId" in obj:
+            message = obj.get("message")
+            meta = message.get("meta") if isinstance(message, dict) else None
+            if isinstance(meta, dict) and isinstance(meta.get("source"), str):
+                return AgentType.COMMAND_CODE
 
         # Codex: session_meta with codex originator.
         if line_type == "session_meta":
