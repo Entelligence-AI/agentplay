@@ -39,7 +39,7 @@ from agentplay._core.ingestion.coding_agent.spans import SpanData
 # those tool spans still hit tool_count, just no bucket.
 EDIT_TOOLS: frozenset[str] = frozenset({"Edit", "MultiEdit", "Write"})
 READ_TOOLS: frozenset[str] = frozenset({"Read", "NotebookRead"})
-SEARCH_TOOLS: frozenset[str] = frozenset({"Grep", "Glob", "Search", "ListDir"})
+SEARCH_TOOLS: frozenset[str] = frozenset({"Grep", "Glob", "Search", "ListDir", "LS"})
 SHELL_TOOLS: frozenset[str] = frozenset({"Bash", "BashOutput"})
 
 # Taxonomy for the ordering-dependent metrics (read-before-edit and
@@ -47,7 +47,7 @@ SHELL_TOOLS: frozenset[str] = frozenset({"Bash", "BashOutput"})
 # folds search / web tools into "reads", and the edit set excludes `Write`
 # (a full rewrite, counted on its own) and `MultiEdit`.
 RF_READ_TOOLS: frozenset[str] = frozenset(
-    {"Read", "Glob", "Grep", "Search", "ListDir", "WebFetch", "WebSearch"}
+    {"Read", "Glob", "Grep", "Search", "ListDir", "LS", "WebFetch", "WebSearch"}
 )
 RF_EDIT_TOOLS: frozenset[str] = frozenset({"Edit", "NotebookEdit"})
 RF_WRITE_TOOLS: frozenset[str] = frozenset({"Write"})

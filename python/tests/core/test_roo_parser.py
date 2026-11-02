@@ -13,6 +13,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_roo,
 )
 from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+from agentplay._core.ingestion.coding_agent.metrics import compute_task_counters
 
 FIXTURES = Path(__file__).parent / "fixtures" / "roo"
 
@@ -122,10 +123,14 @@ def test_roo_parser_api_history():
 
     tools = [s for s in spans if s.parent_id is not None and s.name != "Turn 1"]
     assert len(tools) == 2
-    assert tools[0].name == "LS"
+    assert tools[0].name == "ListDir"
     assert tools[0].status_code == "OK"
     assert tools[1].name == "Read"
     assert tools[1].status_code == "OK"
+
+    counters = compute_task_counters(spans, start_turn=1, end_turn=1)
+    assert counters.search_count == 1
+    assert counters.read_count == 1
 
 
 def test_roo_builder_never_leaks_free_text():

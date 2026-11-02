@@ -330,8 +330,8 @@ _ROO_ALIASES: dict[str, str] = {
     "apply_diff": "Edit",
     "applyDiff": "Edit",
     # search / listing
-    "list_files": "LS",
-    "listFiles": "LS",
+    "list_files": "ListDir",
+    "listFiles": "ListDir",
     "list_code_definition_names": "Grep",
     "listCodeDefinitionNames": "Grep",
     "search_files": "Grep",

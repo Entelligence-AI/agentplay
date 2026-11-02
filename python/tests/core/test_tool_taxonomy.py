@@ -70,6 +70,7 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
         ("roo-code", "execute_command", "Bash"),
         ("roo-code", "read_file", "Read"),
         ("roo-code", "replace_in_file", "Edit"),
+        ("roo-code", "list_files", "ListDir"),
     ],
 )
 def test_known_raw_names_resolve(agent, raw, canonical) -> None:
