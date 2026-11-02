@@ -21,6 +21,9 @@ returns the agent type by sniffing for marker lines:
   (`~/.commandcode/projects/<project>/<session-id>.jsonl`).
 - Goose: synthesized `type="goose_session"` header or `type="goose_message"`
   lines, decoded from `sessions.db`.
+- Cline: a pretty-printed JSON document (`<session-id>.messages.json`), so it
+  isn't detected here either -- `LocalSource._index_cline_file` checks the
+  shape directly (`~/.cline/data/sessions/<id>/`).
 - opencode: materialized records carrying a `message` object and a `parts` list.
 
 Each parser exposes `parse_X(data, trace_id, user_id=None,
@@ -37,6 +40,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers.base import (
     detect_agent,
 )
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.claude_code import parse_claude_code
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.cline import parse_cline
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.codex import parse_codex
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.command_code import (
     parse_command_code,
@@ -61,6 +65,7 @@ __all__ = [
     "detect_agent",
     "parse_antigravity",
     "parse_claude_code",
+    "parse_cline",
     "parse_codex",
     "parse_command_code",
     "parse_copilot",
