@@ -15,7 +15,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "cline"
 NAMES = ("edit_and_read", "failed_shell", "read_search_edit")
 CWD = "/work/project"
 # Every placeholder the fixtures use for text a session must never carry into the map.
-PLACEHOLDERS = ("PROMPT-", "REPLY-", "THINKING", "OUTPUT", "QUERY", "OLD-TEXT", "NEW-TEXT", "FILE-CONTENT")
+PLACEHOLDERS = ("PROMPT_", "REPLY_", "THINKING", "OUTPUT", "QUERY", "OLD-TEXT", "NEW-TEXT", "FILE-CONTENT")
 
 
 def _fixture(name: str) -> bytes:
