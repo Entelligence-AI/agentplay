@@ -17,12 +17,16 @@ names, and the ``success`` / ``is_error`` flags.
 
 from __future__ import annotations
 
+import copy
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.cline import parse_cline
+
+from .test_parser_robustness import WRONG_TYPES, _assign, _paths
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cline"
 NAMES = ("edit_and_read", "failed_shell", "read_search_edit")
@@ -64,11 +68,12 @@ def _tool_input(name: str, args: dict) -> tuple[str, dict]:
     ("name", "prompts", "tools"),
     [
         ("edit_and_read", 2, ["Read", "Bash", "Edit", "Bash", "Bash"]),
-        ("failed_shell", 3, ["Bash"] * 12),
+        # 12 shell calls, 24 commands: a call that runs several commands is one span each.
+        ("failed_shell", 3, ["Bash"] * 24),
         (
             "read_search_edit",
             1,
-            ["Read", "Bash", "Grep", "Read", "Grep", "Bash", "Read", "Grep", "Bash"]
+            ["Read", "Bash", "Bash", "Bash", "Grep", "Read", "Grep", "Bash", "Read", "Grep", "Bash"]
             + ["Read", "Read", "Read", "Edit", "Read", "Edit", "Edit", "Read", "Edit", "Bash"],
         ),
     ],
@@ -97,9 +102,10 @@ def test_a_read_with_one_missing_file_is_an_error():
     assert (read.name, read.status_code) == ("Read", "ERROR")
 
 
-def test_call_whose_result_is_missing_is_unset():
-    _, spans = parse_cline(_doc(_call("run_commands", {"command": "ls"})), "local:cline:x")
-    assert _tools(spans)[0].status_code == "UNSET"
+@pytest.mark.parametrize("args", [{"command": "ls"}, {"commands": ["ls", "pwd"]}])
+def test_call_whose_result_is_missing_is_unset(args):
+    _, spans = parse_cline(_doc(_call("run_commands", args)), "local:cline:x")
+    assert {s.status_code for s in _tools(spans)} == {"UNSET"}
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -123,13 +129,45 @@ def test_model_and_session_id():
     assert root.attributes["harness.agent_session_id"] == "fixture-failed_shell"
 
 
-def test_shell_commands_become_one_command_string():
-    assert _tool_input("run_commands", {"commands": ["git status", "ls"], "timeout": 5}) == (
+def test_a_single_shell_command_becomes_a_command_string():
+    assert _tool_input("run_commands", {"command": "ls -la", "timeout": 5}) == (
         "Bash",
-        {"command": "git status\nls", "timeout": 5},
+        {"command": "ls -la", "timeout": 5},
     )
-    assert _tool_input("run_commands", {"command": "ls -la"}) == ("Bash", {"command": "ls -la"})
+    assert _tool_input("run_commands", {"commands": ["ls"]}) == ("Bash", {"command": "ls"})
     assert _tool_input("shell", {"commands": [{"command": "pwd"}]}) == ("Bash", {"command": "pwd"})
+    assert _tool_input("shell", {"cmd": "pwd"}) == ("Bash", {"command": "pwd"})
+
+
+def _shell_call(commands: list[str], content, **result_extra) -> list:
+    block = {"type": "tool_result", "tool_use_id": "c1", "name": "run_commands", "content": content, **result_extra}
+    result = {"id": "r1", "role": "user", "ts": 1900, "content": [block]}
+    _, spans = parse_cline(_doc(_call("run_commands", {"commands": commands, "timeout": 5}), result), "local:cline:x")
+    return _tools(spans)
+
+
+def test_a_multi_command_call_becomes_one_span_per_command():
+    commands = ["git add -A", "git commit -m x", "git push"]
+    items = [{"query": c, "result": "o", "success": ok} for c, ok in zip(commands, (True, False, True), strict=True)]
+    tools = _shell_call(commands, items)
+    assert [json.loads(t.attributes["input.value"]) for t in tools] == [{"command": c, "timeout": 5} for c in commands]
+    # Each command takes its own result item.
+    assert [t.status_code for t in tools] == ["OK", "ERROR", "OK"]
+    assert len({t.span_id for t in tools}) == 3
+    # The call's time (1.0s to 1.9s) is shared out with no gap and no overlap.
+    assert tools[0].start_time == datetime.fromtimestamp(1.0, UTC)
+    assert tools[-1].end_time == datetime.fromtimestamp(1.9, UTC)
+    assert all(a.end_time == b.start_time for a, b in zip(tools, tools[1:], strict=False))
+
+
+def test_a_refused_multi_command_call_fails_every_command():
+    tools = _shell_call(["ls", "pwd"], '{"error":"refused"}', is_error=True)
+    assert [t.status_code for t in tools] == ["ERROR", "ERROR"]
+
+
+def test_results_that_do_not_line_up_with_the_commands_are_shared():
+    tools = _shell_call(["ls", "pwd"], [{"query": "ls", "result": "o", "success": False}])
+    assert [t.status_code for t in tools] == ["ERROR", "ERROR"]
 
 
 def test_read_takes_its_file_path_from_the_first_file():
@@ -161,6 +199,21 @@ def test_write_and_edit_record_edit_evidence():
         "write",
         "/a.py",
     )
+
+
+@pytest.mark.parametrize("name", ("edit_and_read", "failed_shell"))
+def test_wrong_typed_fields_never_raise(name):
+    base = json.loads(_fixture(name))
+    failures = []
+    for path in _paths(base):
+        for bad in WRONG_TYPES:
+            doc = copy.deepcopy(base)
+            _assign(doc, path, bad)
+            try:
+                parse_cline(json.dumps(doc).encode(), "t")
+            except Exception as exc:
+                failures.append(f"{path} = {bad!r}: {type(exc).__name__}: {exc}")
+    assert not failures, "\n".join(failures[:25])
 
 
 @pytest.mark.parametrize("model_info", ["x", ["x"], 3, {"id": 3}])

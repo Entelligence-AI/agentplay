@@ -95,7 +95,7 @@ def test_local_source_indexes_cline_sessions(tmp_path):
     assert source.get_project_name(sid) == "project"
     spans = source.get_spans_by_session(sid)
     assert {s.attributes["cwd"] for s in spans if s.parent_id} == {CWD}
-    assert [s.name for s in spans if ":tool:" in s.span_id] == ["Bash"] * 12
+    assert [s.name for s in spans if ":tool:" in s.span_id] == ["Bash"] * 24
 
 
 def test_session_without_metadata_still_indexes(tmp_path):

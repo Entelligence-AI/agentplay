@@ -31,6 +31,9 @@ A `tool_result` fails when it sets `is_error`, or when any item of its content
 list reports `"success": false` (a shell command's `Command exited with code
 <n>`, a missing file, a timed-out fetch).
 
+A shell call can run several commands. Its result list holds one item per
+command, so each command becomes its own tool span and fails on its own item.
+
 # Tokens
 
 `inputTokens` includes `cacheReadTokens`: summed over a session the metrics
@@ -63,6 +66,9 @@ _TOOL_ALIASES: dict[str, str] = aliases_for("cline")
 
 # Cline's argument names -> the names the edit and path readers expect.
 _ARG_RENAMES = {"path": "file_path", "old_text": "old_string", "new_text": "new_string"}
+
+# Where a shell call keeps its command(s).
+_SHELL_KEYS = ("command", "commands", "cmd")
 
 # Path arguments, `file_path` first, so a large write keeps its path inside
 # `input.value`'s 2,000 characters.
@@ -155,7 +161,7 @@ def parse_cline(
                 if kind == "text" and isinstance(block.get("text"), str) and block["text"]:
                     turn["output"].append(block["text"])
                 elif kind == "tool_use":
-                    turn["tools"].append(_tool_span(trace_id, turn, msg, block, len(turn["tools"]), results))
+                    turn["tools"].extend(_tool_spans(trace_id, turn, msg, block, len(turn["tools"]), results))
             _add_usage(turn, msg, model)
 
         ts = _dt(msg.get("ts"))
@@ -301,24 +307,70 @@ def _turn_span(trace_id: str, root_id: str, turn: dict) -> SpanData:
     return span
 
 
-def _tool_span(
+def _tool_spans(
     trace_id: str,
     turn: dict,
     msg: dict,
     block: dict,
     index: int,
     results: dict[str, tuple[dict, dict]],
-) -> SpanData:
+) -> list[SpanData]:
+    """The span for one `tool_use` block.
+
+    A shell call that runs several commands gets one span per command, each
+    with its own result item, so every command keeps its own verb and status.
+    The call's time is shared out evenly between them.
+    """
     raw_name = block.get("name")
     raw_name = raw_name if isinstance(raw_name, str) and raw_name else "unknown"
     args = block.get("input") if isinstance(block.get("input"), dict) else {}
-    tool_name, args = _normalise(raw_name, args)
-    input_value = json.dumps(args)
-
     call_id = block.get("id")
     if not isinstance(call_id, str) or not call_id:
         call_id = f"{msg.get('id')}:{index}"
     result, result_msg = results.get(call_id, (None, None))
+
+    start = _dt(msg.get("ts")) or turn["start"]
+    end = max(start, (_dt(result_msg.get("ts")) if result_msg else None) or start)
+    if end > turn["end"]:
+        turn["end"] = end
+
+    commands = _shell_commands(args) if _TOOL_ALIASES.get(raw_name) == "Bash" else []
+    if len(commands) < 2:
+        parts = [(call_id, args, result)]
+    else:
+        items = result.get("content") if result is not None else None
+        # Result items line up with the commands one to one in real sessions;
+        # if they ever don't, every command shares the call's whole result.
+        aligned = isinstance(items, list) and len(items) == len(commands)
+        rest = {k: v for k, v in args.items() if k not in _SHELL_KEYS}
+        parts = [
+            (
+                f"{call_id}:{i}",
+                {**rest, "command": command},
+                {**result, "content": [items[i]]} if aligned else result,
+            )
+            for i, command in enumerate(commands)
+        ]
+    step = (end - start) / len(parts)
+    return [
+        _tool_span(trace_id, turn, msg, raw_name, cid, a, r, start + step * i, start + step * (i + 1))
+        for i, (cid, a, r) in enumerate(parts)
+    ]
+
+
+def _tool_span(
+    trace_id: str,
+    turn: dict,
+    msg: dict,
+    raw_name: str,
+    call_id: str,
+    args: dict,
+    result: dict | None,
+    start: datetime,
+    end: datetime,
+) -> SpanData:
+    tool_name, args = _normalise(raw_name, args)
+    input_value = json.dumps(args)
     output_value = _result_text(result) if result is not None else ""
 
     if result is None:
@@ -327,13 +379,6 @@ def _tool_span(
         status_code = "ERROR"
     else:
         status_code = "OK"
-
-    start = _dt(msg.get("ts")) or turn["start"]
-    end = (_dt(result_msg.get("ts")) if result_msg else None) or start
-    if end < start:
-        end = start
-    if end > turn["end"]:
-        turn["end"] = end
 
     span = SpanData(
         span_id=f"{trace_id}:tool:{call_id}",
@@ -365,8 +410,8 @@ def _normalise(raw_name: str, args: dict) -> tuple[str, dict]:
     """
     name = _TOOL_ALIASES.get(raw_name, raw_name)
     if name == "Bash":
-        skip = ("command", "commands", "cmd")
-        return name, {"command": _shell_command(args), **{k: v for k, v in args.items() if k not in skip}}
+        rest = {k: v for k, v in args.items() if k not in _SHELL_KEYS}
+        return name, {"command": "\n".join(_shell_commands(args)), **rest}
     if raw_name in ("editor", "edit") and not args.get("old_text") and "insert_line" not in args:
         name = "Write"
         args = {k: v for k, v in args.items() if k not in ("old_text", "new_text")} | {
@@ -383,18 +428,18 @@ def _normalise(raw_name: str, args: dict) -> tuple[str, dict]:
     return name, {**first_keys, **{k: v for k, v in out.items() if k not in first_keys}}
 
 
-def _shell_command(args: dict) -> str:
-    """One command string from `command`, `cmd`, or a `commands` string / list."""
+def _shell_commands(args: dict) -> list[str]:
+    """The commands of a shell call: `command` / `cmd`, or a `commands` string / list."""
     single = args.get("command") or args.get("cmd")
     if isinstance(single, str):
-        return single
+        return [single]
     many = args.get("commands")
     if isinstance(many, (str, dict)):
         many = [many]
     if not isinstance(many, list):
-        return ""
+        return []
     items = [c if isinstance(c, str) else c.get("command") or c.get("cmd") for c in many if isinstance(c, (str, dict))]
-    return "\n".join(c for c in items if isinstance(c, str))
+    return [c for c in items if isinstance(c, str)]
 
 
 def _result_text(result: dict) -> str:
