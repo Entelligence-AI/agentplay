@@ -16,6 +16,8 @@ Kiro               ``~/.kiro/sessions``                                   decode
 Gemini CLI         ``~/.gemini/tmp/*/chats/session-*.jsonl``              file
 Antigravity CLI    ``~/.gemini/antigravity-cli/brain/*`` step logs        file
 Command Code       ``~/.commandcode/projects/*/*.jsonl``                  file
+Goose              ``~/.local/share/goose/sessions/sessions.db``          decoded
+                   (Windows ``%APPDATA%/Block/goose/data``)
 =================  =====================================================  ===========
 
 "Decoded" agents keep sessions in a database; :mod:`agentplay.materialize`
@@ -46,7 +48,7 @@ from ._util import captured
 logger = logging.getLogger("agentplay.discover")
 
 AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro", "gemini-cli",
-          "antigravity-cli", "command-code")
+          "antigravity-cli", "command-code", "goose")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
 # applies anyway; this keeps one pathological file from stalling a run).
@@ -77,6 +79,23 @@ def _opencode_data_dirs() -> list[Path]:
     return [base / "opencode"]
 
 
+def _goose_data_dirs() -> list[Path]:
+    """Goose's data dir: ``$GOOSE_PATH_ROOT/data`` when set, else the platform default.
+
+    Goose resolves it with ``etcetera``'s app strategy: XDG on Linux and macOS,
+    ``%APPDATA%/Block/goose/data`` on Windows.
+    """
+    root = os.environ.get("GOOSE_PATH_ROOT", "").strip()
+    if root and Path(root).is_absolute():
+        return [Path(root) / "data"]
+    if sys.platform == "win32":
+        appdata = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+        return [appdata / "Block" / "goose" / "data"]
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    return [base / "goose"]
+
+
 @dataclass(frozen=True)
 class Homes:
     """Resolved agent home directories (the raw agent stores, before decoding)."""
@@ -91,6 +110,7 @@ class Homes:
     gemini_cli: list[Path]
     antigravity_cli: list[Path]
     command_code: list[Path]
+    goose: list[Path]
 
     @classmethod
     def default(cls) -> Homes:
@@ -106,6 +126,7 @@ class Homes:
             gemini_cli=_homes_from_env("AGENTPLAY_GEMINI_HOMES", ["~/.gemini"]),
             antigravity_cli=_homes_from_env("AGENTPLAY_ANTIGRAVITY_HOMES", ["~/.gemini/antigravity-cli"]),
             command_code=_homes_from_env("AGENTPLAY_COMMANDCODE_HOMES", ["~/.commandcode"]),
+            goose=_homes_from_env("AGENTPLAY_GOOSE_HOMES", _goose_data_dirs()),
         )
 
     def present(self) -> dict[str, list[Path]]:
@@ -122,6 +143,7 @@ class Homes:
             ("gemini-cli", self.gemini_cli),
             ("antigravity-cli", self.antigravity_cli),
             ("command-code", self.command_code),
+            ("goose", self.goose),
         ):
             found = [p for p in paths if p.is_dir()]
             if found:
@@ -153,6 +175,11 @@ def materialize_all(homes: Homes, agents: set[str]) -> dict[str, int]:
             if h.is_dir():
                 jobs.append(("kiro", lambda h=h: materialize.find_kiro_candidates(
                     materialize.HomeSpec(kind=kinds.KIRO, path=h))))
+    if "goose" in agents:
+        for h in homes.goose:
+            if h.is_dir():
+                jobs.append(("goose", lambda h=h: materialize.find_goose_candidates(
+                    materialize.HomeSpec(kind=kinds.GOOSE, path=h))))
     if "cursor" in agents:
         for h in homes.cursor:
             if h.is_dir():
@@ -177,6 +204,8 @@ def _cache_dirs(agent: str) -> list[Path]:
         return [p for p in (root / "opencode").glob("*") if p.is_dir()]
     if agent == "kiro":
         return [p for p in (root / "kiro").glob("*") if p.is_dir()]
+    if agent == "goose":
+        return [p for p in (root / "goose").glob("*") if p.is_dir()]
     if agent == "cursor":
         return [p for p in (root / "cursor-store").glob("*") if p.is_dir()] + [
             p for p in (root / "cursor-composer").glob("*") if p.is_dir()
@@ -204,6 +233,7 @@ def local_source(homes: Homes, agents: set[str]) -> Any:
         gemini_homes=pick("gemini-cli", homes.gemini_cli),
         antigravity_homes=pick("antigravity-cli", homes.antigravity_cli),
         command_code_homes=pick("command-code", homes.command_code),
+        goose_homes=pick("goose", _cache_dirs("goose")),
     )
 
 

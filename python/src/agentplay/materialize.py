@@ -1,7 +1,7 @@
 """Decode agents that keep sessions in a database into NDJSON transcripts.
 
 OpenCode (``opencode.db``), Cursor CLI/agent (``store.db``), Cursor IDE composer
-chats (``state.vscdb``) and Kiro (session directories) do not write one plain
+chats (``state.vscdb``), Goose (``sessions.db``) and Kiro (session directories) do not write one plain
 file per session. Each ``find_*_candidates`` generator below decodes those stores
 and writes one NDJSON transcript per session into a local cache under
 ``~/.agentplay/cache/<agent>/``, which the parsers in ``agentplay._core`` then
@@ -80,6 +80,7 @@ class AgentKind(StrEnum):
     CURSOR = "cursor"
     KIRO = "kiro"
     COPILOT = "copilot"
+    GOOSE = "goose"
 
 
 @dataclass(frozen=True)
@@ -1511,6 +1512,292 @@ def find_kiro_candidates(home: HomeSpec, *, cache_root: Path | None = None) -> I
                 cwd=cwd,
                 secret_findings=[],
             )
+
+
+# ----- Discovery: Goose sessions.db ------------------------------------------
+#
+# Goose (Block's open-source agent) keeps every session in one SQLite db at
+# ``<data-dir>/sessions/sessions.db`` (older releases wrote one JSONL per session;
+# Goose imports those into the db itself on startup). A session is one
+# ``sessions`` row, which records ``working_dir``, plus its ``messages`` rows,
+# whose ``content_json`` is the message's content-block array, and its
+# ``usage_ledger`` rows, one per model request. The db is WAL-mode and live while
+# Goose runs, so it is copied (with its -wal/-shm) to a temp dir before reading.
+# Each session is synthesized into one NDJSON transcript: a ``goose_session``
+# header line, then ``goose_message`` and ``goose_usage`` lines in time order.
+# The db has had many migrations, so only columns that exist are selected.
+
+# Session types Goose itself hides from its session list: internal helper runs
+# and subagents (whose work is not split into lanes yet).
+_GOOSE_SKIPPED_TYPES = ("hidden", "sub_agent")
+
+_GOOSE_SESSION_COLUMNS = (
+    "id",
+    "working_dir",
+    "created_at",
+    "updated_at",
+    "session_type",
+    "provider_name",
+    "model_config_json",
+    "parent_session_id",
+)
+_GOOSE_USAGE_COLUMNS = (
+    "model",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "cost",
+    "is_compaction",
+)
+
+# Goose stores message times in seconds; a value past this is milliseconds.
+_GOOSE_MS_THRESHOLD = 10_000_000_000
+
+
+def goose_cache_root() -> Path:
+    return cache_root() / "goose"
+
+
+def _goose_db(home: Path) -> Path:
+    return home / "sessions" / "sessions.db"
+
+
+def _goose_columns(con: sqlite3.Connection, table: str) -> set[str]:
+    """The columns of ``table`` (empty when it does not exist). ``table`` is a constant."""
+    return {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+
+
+def _goose_epoch(value: object) -> float | None:
+    """Epoch seconds from a Goose timestamp: an epoch number, or SQLite's UTC text."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            value = float(text)
+        except ValueError:
+            try:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.timestamp()
+    if not isinstance(value, int | float) or value < 0:
+        return None
+    return value / 1000 if value > _GOOSE_MS_THRESHOLD else float(value)
+
+
+def _goose_json(raw: object, kind: type) -> object | None:
+    try:
+        obj = json.loads(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError, RecursionError):
+        return None
+    return obj if isinstance(obj, kind) else None
+
+
+def _goose_model(raw: object) -> str | None:
+    config = _goose_json(raw, dict)
+    name = config.get("model_name") if isinstance(config, dict) else None
+    return name if isinstance(name, str) and name else None
+
+
+def _goose_synthesize(
+    con: sqlite3.Connection,
+    session: dict,
+    message_columns: set[str],
+    usage_columns: set[str],
+) -> tuple[bytes, float | None]:
+    """One session's NDJSON and its last activity (epoch seconds). b'' when it has no messages."""
+    session_id = session["id"]
+    optional = [c for c in ("message_id", "metadata_json") if c in message_columns]
+    rows = con.execute(
+        f"SELECT id, role, content_json, created_timestamp{''.join(', ' + c for c in optional)} "
+        "FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
+        (session_id,),
+    ).fetchall()
+    records: list[tuple[float, int, int, dict]] = []
+    for seq, row in enumerate(rows):
+        content = _goose_json(row["content_json"], list)
+        if content is None or row["role"] not in ("user", "assistant"):
+            continue
+        created = _goose_epoch(row["created_timestamp"])
+        message_id = row["message_id"] if "message_id" in optional else None
+        metadata = _goose_json(row["metadata_json"], dict) if "metadata_json" in optional else None
+        records.append(
+            (
+                created or 0.0,
+                0,
+                seq,
+                {
+                    "type": "goose_message",
+                    "id": message_id if isinstance(message_id, str) and message_id else str(row["id"]),
+                    "role": row["role"],
+                    "created": created,
+                    "content": content,
+                    "metadata": metadata or {},
+                },
+            )
+        )
+    if not records:
+        return b"", None
+
+    if {"session_id", "created_timestamp"} <= usage_columns:
+        fields = [c for c in _GOOSE_USAGE_COLUMNS if c in usage_columns]
+        usage_rows = con.execute(
+            f"SELECT created_timestamp{''.join(', ' + c for c in fields)} "
+            "FROM usage_ledger WHERE session_id = ? ORDER BY created_timestamp, id",
+            (session_id,),
+        ).fetchall()
+        for seq, row in enumerate(usage_rows):
+            created = _goose_epoch(row["created_timestamp"])
+            # Usage is recorded when a request completes, so at an equal second
+            # it sorts after the messages.
+            records.append(
+                (
+                    created or 0.0,
+                    1,
+                    seq,
+                    {"type": "goose_usage", "created": created, **{c: row[c] for c in fields}},
+                )
+            )
+    records.sort(key=lambda r: r[:3])
+
+    created_at = _goose_epoch(session.get("created_at"))
+    updated_at = _goose_epoch(session.get("updated_at"))
+    last = max([t for t in (updated_at, *(r[0] for r in records)) if t], default=None)
+    header = {
+        "id": session_id,
+        "working_dir": session.get("working_dir"),
+        "created_at": created_at,
+        "updated_at": last,
+        "session_type": session.get("session_type"),
+        "provider": session.get("provider_name"),
+        "model": _goose_model(session.get("model_config_json")),
+        "parent_session_id": session.get("parent_session_id"),
+        # Marker key last, so no column can clobber it.
+        "type": "goose_session",
+    }
+    lines = [json.dumps(header, separators=(",", ":"))]
+    lines.extend(json.dumps(r[3], separators=(",", ":")) for r in records)
+    return ("\n".join(lines) + "\n").encode(), last
+
+
+def _goose_write(abs_path: Path, data: bytes, updated_s: float | None) -> bool:
+    """Write one cache file only when its bytes change, then pin its mtime.
+
+    Same contract as the OpenCode cache: readers take a session's time from
+    this file's mtime, so an unconditional rewrite would date every session
+    "now". Returns False when the file could not be written.
+    """
+    try:
+        prior_mtime = abs_path.stat().st_mtime if abs_path.is_file() else None
+    except OSError:
+        prior_mtime = None
+    try:
+        unchanged = (
+            abs_path.is_file()
+            and abs_path.stat().st_size == len(data)
+            and abs_path.read_bytes() == data
+        )
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        tmp_path = abs_path.with_name(abs_path.name + ".tmp")
+        try:
+            abs_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path.write_bytes(data)
+            os.replace(tmp_path, abs_path)
+        except OSError as exc:
+            logger.debug("goose materialize failed %s: %s", abs_path, exc)
+            with contextlib.suppress(OSError):
+                tmp_path.unlink()
+            return False
+    target = updated_s if updated_s is not None else prior_mtime
+    if target is not None and not _pin_cache_mtime(abs_path, target * 1000):
+        logger.debug(
+            "goose: could not pin cache mtime for %s; this session will be "
+            "re-read on the next run until it can",
+            abs_path,
+        )
+    return True
+
+
+def find_goose_candidates(home: HomeSpec, *, cache_root: Path | None = None) -> Iterator[Session]:
+    """Yield a Session per Goose session, materializing each into an NDJSON transcript.
+
+    ``home.path`` is the Goose data dir (holds ``sessions/sessions.db``). Each
+    session is synthesized to ``<cache_root>/<home_label>/<session_id>.jsonl``.
+    Subagent and hidden sessions are skipped.
+    """
+    db = _goose_db(home.path)
+    if not db.is_file():
+        logger.debug("Skipping %s (no goose sessions.db)", home.path)
+        return
+    root = (cache_root or goose_cache_root()) / home.label
+    with tempfile.TemporaryDirectory(prefix="goose_sessions_") as tmp:
+        copy = Path(tmp) / "sessions.db"
+        try:
+            shutil.copy2(db, copy)
+            for suffix in ("-wal", "-shm"):
+                side = db.with_name(db.name + suffix)
+                if side.exists():
+                    shutil.copy2(side, copy.with_name(copy.name + suffix))
+            con = sqlite3.connect(f"{copy.resolve().as_uri()}?mode=ro", uri=True)
+        except (OSError, sqlite3.Error) as exc:
+            _warn_unreadable_db("goose", db, exc)
+            return
+        try:
+            con.row_factory = sqlite3.Row
+            try:
+                session_columns = _goose_columns(con, "sessions")
+                message_columns = _goose_columns(con, "messages")
+                usage_columns = _goose_columns(con, "usage_ledger")
+                if "id" not in session_columns or not {
+                    "session_id", "role", "content_json", "created_timestamp"
+                } <= message_columns:
+                    raise sqlite3.DatabaseError("unrecognized sessions.db schema")
+                wanted = [c for c in _GOOSE_SESSION_COLUMNS if c in session_columns]
+                sessions = [
+                    dict(row) for row in con.execute(f"SELECT {', '.join(wanted)} FROM sessions")
+                ]
+            except sqlite3.Error as exc:
+                _warn_unreadable_db("goose", db, exc)
+                return
+            for s in sessions:
+                if s.get("session_type") in _GOOSE_SKIPPED_TYPES or not s.get("id"):
+                    continue
+                try:
+                    data, updated_s = _goose_synthesize(con, s, message_columns, usage_columns)
+                except sqlite3.Error as exc:
+                    logger.debug("goose synthesize failed for session %s: %s", s["id"], exc)
+                    continue
+                if not data:
+                    continue
+                rel = Path(f"{_safe_component(s['id'], 'session')}.jsonl")
+                abs_path = root / rel
+                if not _goose_write(abs_path, data, updated_s):
+                    continue
+                try:
+                    mtime = datetime.fromtimestamp(
+                        updated_s if updated_s is not None else abs_path.stat().st_mtime, tz=UTC
+                    )
+                except (OSError, OverflowError, ValueError):
+                    continue
+                working_dir = s.get("working_dir")
+                yield Session(
+                    agent=AgentKind.GOOSE,
+                    home_label=home.label,
+                    abs_path=abs_path,
+                    rel_path=rel,
+                    size_bytes=len(data),
+                    mtime=mtime,
+                    cwd=Path(working_dir) if isinstance(working_dir, str) and working_dir else None,
+                    secret_findings=[],
+                )
+        finally:
+            con.close()
 
 
 # ----- Discovery: GitHub Copilot CLI -----------------------------------------

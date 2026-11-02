@@ -16,6 +16,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     cursor_agent_transcript,
     cursor_store,
     gemini,
+    goose,
     kiro,
     opencode,
 )
@@ -30,6 +31,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
         (cursor_agent_transcript, "cursor"),
         (copilot, "copilot"),
         (gemini, "gemini-cli"),
+        (goose, "goose"),
         (kiro, "kiro"),
         (opencode, "opencode"),
     ],
@@ -57,6 +59,10 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
         ("gemini-cli", "read_file", "Read"),
         ("gemini-cli", "replace", "Edit"),
         ("gemini-cli", "write_file", "Write"),
+        ("goose", "shell", "Bash"),
+        ("goose", "developer__shell", "Bash"),
+        ("goose", "edit", "Edit"),
+        ("goose", "delegate", "Task"),
         ("kiro", "execute_bash", "Bash"),
         ("opencode", "todowrite", "TodoWrite"),
     ],
@@ -77,7 +83,7 @@ def test_table_sizes_are_pinned() -> None:
     # These counts are pinned; a changed count means a row was added or dropped on purpose -- update here.
     # copilot-vscode's 12 rows are pinned against real tool names; gemini-cli's
     # 12 against real sessions plus the 0.65 bundle's tool-name constants;
-    # command-code's 12 against real sessions.
+    # command-code's 12 against real sessions; goose's 8 against Goose's source.
     assert {a: len(t) for a, t in tt.TOOL_ALIASES.items() if a != "antigravity-cli"} == {  # own test pins it
         "codex": 7,
         "command-code": 12,
@@ -85,6 +91,7 @@ def test_table_sizes_are_pinned() -> None:
         "copilot": 23,
         "copilot-vscode": 12,
         "gemini-cli": 12,
+        "goose": 8,
         "kiro": 12,
         "opencode": 14,
     }
