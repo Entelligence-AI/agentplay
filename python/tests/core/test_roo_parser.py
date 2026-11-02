@@ -34,6 +34,29 @@ def test_fixture_is_detected_as_roo_code(name: str):
     assert detect_agent(data) == AgentType.ROO_CODE
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "read_and_edit.json",
+        "failed_command.json",
+        "api_history.json",
+    ],
+)
+def test_incomplete_array_head_is_detected_as_roo_code(name: str):
+    # Simulates _read_head capping at 5MB, cutting off the closing ']'
+    data = _fixture_bytes(name)
+    incomplete = data[: len(data) // 2]
+    assert detect_agent(incomplete) == AgentType.ROO_CODE
+
+
+def test_large_array_head_without_closing_bracket_is_detected():
+    # Simulates a large Roo session whose head has no closing bracket
+    data = _fixture_bytes("read_and_edit.json")
+    padded = data[:-1] + b"," + (b'{"ts": 1730000000000, "type": "say", "say": "text", "text": "filler"},') * 50
+    cut_head = padded[:1500]
+    assert detect_agent(cut_head) == AgentType.ROO_CODE
+
+
 def test_other_agent_fixtures_not_claimed_as_roo():
     gemini_fix = Path(__file__).parent / "fixtures" / "gemini" / "read_explain.jsonl"
     if gemini_fix.is_file():

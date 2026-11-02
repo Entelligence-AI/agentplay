@@ -41,23 +41,50 @@ def detect_agent(data: bytes) -> AgentType | None:
     """
     stripped = data.lstrip()
     if stripped.startswith(b"["):
+        arr: list[Any] = []
         try:
-            arr = json.loads(data)
-            if isinstance(arr, list) and arr and isinstance(arr[0], dict):
-                first = arr[0]
-                if first.get("type") in ("say", "ask") and ("say" in first or "ask" in first):
-                    return AgentType.ROO_CODE
-                if first.get("role") in ("user", "assistant") and "content" in first:
-                    for msg in arr[:5]:
-                        content = msg.get("content")
-                        if isinstance(content, list):
-                            for b in content:
-                                if isinstance(b, dict) and b.get("type") == "tool_use":
-                                    tname = b.get("name", "")
-                                    if tname in ("execute_command", "read_file", "write_to_file", "replace_in_file", "list_files", "browser_action"):
-                                        return AgentType.ROO_CODE
+            parsed = json.loads(data)
+            if isinstance(parsed, list):
+                arr = parsed[:5]
         except Exception:
-            pass
+            # When the file exceeds max_bytes (e.g. 5 MB cap in source.py),
+            # the supplied head is truncated before the closing bracket.
+            # Parse opening array objects incrementally.
+            try:
+                text = data.decode("utf-8", errors="replace")
+                idx = text.find("[")
+                if idx != -1:
+                    idx += 1
+                    decoder = json.JSONDecoder()
+                    n = len(text)
+                    while idx < n and len(arr) < 5:
+                        while idx < n and text[idx] in " \t\r\n,":
+                            idx += 1
+                        if idx >= n or text[idx] == "]":
+                            break
+                        try:
+                            obj, end = decoder.raw_decode(text, idx)
+                            if isinstance(obj, dict):
+                                arr.append(obj)
+                            idx = end
+                        except json.JSONDecodeError:
+                            break
+            except Exception:
+                pass
+
+        for msg in arr[:5]:
+            if isinstance(msg, dict):
+                mtype = msg.get("type")
+                if mtype in ("say", "ask") and ("say" in msg or "ask" in msg):
+                    return AgentType.ROO_CODE
+                if msg.get("role") in ("user", "assistant") and "content" in msg:
+                    content = msg.get("content")
+                    if isinstance(content, list):
+                        for b in content:
+                            if isinstance(b, dict) and b.get("type") == "tool_use":
+                                tname = b.get("name", "")
+                                if tname in ("execute_command", "read_file", "write_to_file", "replace_in_file", "list_files", "browser_action"):
+                                    return AgentType.ROO_CODE
     # Every line the caller handed us, not a fixed count: see the note in
     # `_read_head`. It returns complete lines and already bounds the read.
     # Transcripts can open with many lines of `ai-title` / `agent-name` /
