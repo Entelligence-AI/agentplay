@@ -1340,6 +1340,29 @@ def _goose_line(line: bytes) -> object:
         return None
 
 
+def _goose_has_messages(path: Path) -> bool:
+    """True when the file holds a `goose_message` line.
+
+    Streams the whole file like ``_command_code_has_messages`` (one line at a
+    time, at most ``MAX_SOURCE_BYTES``) rather than reading only the head, so a
+    first message larger than the head still counts. Only lines that mention
+    the type are decoded.
+    """
+    remaining = MAX_SOURCE_BYTES
+    with path.open("rb") as handle:
+        while remaining > 0:
+            line = handle.readline(remaining)
+            if not line:
+                break
+            remaining -= len(line)
+            if b"goose_message" not in line:
+                continue
+            obj = _goose_line(line)
+            if isinstance(obj, dict) and obj.get("type") == "goose_message":
+                return True
+    return False
+
+
 def _goose_header(head: bytes) -> dict | None:
     """The synthesized Goose session header: the first `type="goose_session"` record."""
     for line in head.split(b"\n"):
@@ -2342,10 +2365,12 @@ class LocalSource:
             return None
         # The materializer writes no message-less session, but an empty span
         # list would count as a failed parse, so a header-only file is skipped.
-        if not any(
-            isinstance(r, dict) and r.get("type") == "goose_message"
-            for r in (_goose_line(line) for line in head.split(b"\n"))
-        ):
+        try:
+            has_messages = _goose_has_messages(jsonl_file)
+        except OSError:
+            self._record_discovery("goose", "empty_or_unreadable")
+            return None
+        if not has_messages:
             logger.debug("goose: %s has no messages; session skipped", jsonl_file)
             self._record_discovery("goose", "empty_events")
             return None

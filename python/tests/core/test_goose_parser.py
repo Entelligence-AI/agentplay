@@ -89,7 +89,7 @@ CREATE TABLE usage_ledger (
 """
 
 VISIBLE = {"userVisible": True, "agentVisible": True}
-MODEL = "claude-sonnet-5-5"
+MODEL = "gpt-6-astra"
 
 
 def _text(text: str) -> dict:
@@ -237,7 +237,7 @@ def _make_db(data_dir: Path, sessions: dict = SESSIONS, *, schema: str = SCHEMA)
             "INSERT INTO sessions (id, name, description, session_type, working_dir, created_at, updated_at,"
             " provider_name, model_config_json, parent_session_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (sid, "PLACEHOLDER-NAME", "PLACEHOLDER-DESC", row["session_type"], FIXTURE_ROOT, row["created_at"],
-             row["updated_at"], "anthropic", _model_config(), row.get("parent_session_id")),
+             row["updated_at"], "openai", _model_config(), row.get("parent_session_id")),
         )
         for n, (role, content, offset, metadata) in enumerate(messages):
             con.execute(
@@ -308,8 +308,9 @@ def test_decoded_transcript_shape(decoded):
     kinds = [line["type"] for line in lines[1:]]
     assert kinds.count("goose_message") == 10
     assert kinds.count("goose_usage") == 2
-    # A usage row sorts after the messages of the same second.
-    assert kinds[3] == "goose_usage"
+    # A usage row follows the last assistant message at or before its time
+    # (the first request completes at T0+2, after the reply at T0+1).
+    assert kinds[:4] == ["goose_message", "goose_message", "goose_usage", "goose_message"]
     assert detect_agent(decoded["s-edit"]) == AgentType.GOOSE
 
 
@@ -683,3 +684,143 @@ def test_delegate_is_a_subagent_and_its_instructions_stay_out_of_the_map():
     for part in ("PLACEHOLDER", FIXTURE_ROOT):
         assert part not in raw, part
     assert [e["kind"] for e in doc["events"] if e.get("tool")] == ["subagent"]
+
+
+# --- review follow-ups -------------------------------------------------------
+
+
+def _session_lines(*records: dict) -> bytes:
+    return b"".join(json.dumps(r).encode() + b"\n" for r in records)
+
+
+def _msg(msg_id: str, role: str, offset: int, content: list, **metadata) -> dict:
+    return {"type": "goose_message", "id": msg_id, "role": role, "created": T0 + offset,
+            "content": content, "metadata": {**VISIBLE, **metadata}}
+
+
+def test_usage_stays_with_its_turn_when_the_next_prompt_shares_its_second(tmp_path):
+    """Ledger only (older Goose): the second prompt lands in the second the first request completed."""
+    usage = {"model": MODEL, "output_tokens": 1, "cache_read_tokens": 0, "cache_write_tokens": 0, "cost": 0.0}
+    sessions = {
+        "s-tie": (
+            {"session_type": "user", "created_at": T0, "updated_at": T0 + 5},
+            [
+                ("user", [_text("PLACEHOLDER-P1")], 0, VISIBLE),
+                ("assistant", [_text("PLACEHOLDER-R1")], 1, VISIBLE),
+                ("user", [_text("PLACEHOLDER-P2")], 3, VISIBLE),
+                ("assistant", [_text("PLACEHOLDER-R2")], 4, VISIBLE),
+            ],
+            [
+                {**usage, "created_timestamp": T0 + 3, "input_tokens": 100},
+                {**usage, "created_timestamp": T0 + 5, "input_tokens": 200},
+            ],
+        )
+    }
+    data = _materialize(tmp_path, sessions=sessions)["s-tie"].abs_path.read_bytes()
+    turns = _turns(parse_goose(data, "t")[1])
+    assert [t.attributes["llm.token_count.prompt"] for t in turns] == [100, 200]
+
+
+def test_per_message_usage_is_used_and_only_compactions_come_from_the_ledger():
+    message_usage = {"inputTokens": 100, "outputTokens": 10, "cacheReadTokens": 60, "cacheWriteTokens": 30}
+    inference = {"provider": "openai", "requestedModel": "gpt-6-luna"}
+    data = _session_lines(
+        {"type": "goose_session", "id": "u", "working_dir": FIXTURE_ROOT, "model": MODEL},
+        _msg("1", "user", 0, [_text("PLACEHOLDER-P")]),
+        _msg("2", "assistant", 1, [_text("PLACEHOLDER-R")], usage=message_usage, inference=inference),
+        # The same request in the ledger, but recorded with the next turn's
+        # prompt: time order alone would bill it to the wrong turn.
+        _msg("3", "user", 3, [_text("PLACEHOLDER-P2")]),
+        {"type": "goose_usage", "created": T0 + 3, "model": "gpt-6-luna", "input_tokens": 100, "output_tokens": 10,
+         "cache_read_tokens": 60, "cache_write_tokens": 30, "is_compaction": 0},
+        # A compaction made no message; only the ledger has it.
+        {"type": "goose_usage", "created": T0 + 4, "model": "gpt-6-luna", "input_tokens": 50, "output_tokens": 5,
+         "cache_read_tokens": 0, "cache_write_tokens": 0, "is_compaction": 1},
+    )
+    first, second = _turns(parse_goose(data, "t")[1])
+    assert second.attributes["llm.token_count.prompt"] == 50
+    attrs = first.attributes
+    assert attrs["llm.token_count.prompt"] == 100
+    assert attrs["llm.token_count.completion"] == 10
+    assert attrs["llm.token_count.cache_read"] == 60
+    assert attrs["llm.token_count.cache_write"] == 30
+    assert attrs["llm.model_name"] == "gpt-6-luna"
+
+
+def test_snapshot_falls_back_to_copying_the_files(tmp_path, monkeypatch):
+    data_dir = tmp_path / "goose-data"
+    db = _make_db(data_dir, {"s-edit": SESSIONS["s-edit"]})
+    real_connect = sqlite3.connect
+    live = db.resolve().as_uri()
+
+    def refuse_live(target, *args, **kwargs):
+        if isinstance(target, str) and target.startswith(live):
+            raise sqlite3.OperationalError("unable to open database file")
+        return real_connect(target, *args, **kwargs)
+
+    monkeypatch.setattr(materialize.sqlite3, "connect", refuse_live)
+    assert list(_materialize(tmp_path)) == ["s-edit"]
+
+
+def test_epoch_zero_activity_dates_the_session(tmp_path):
+    sessions = {"s-zero": ({"session_type": "user", "created_at": 0, "updated_at": 0}, [], [])}
+    data_dir = tmp_path / "goose-data"
+    db = _make_db(data_dir, sessions)
+    con = sqlite3.connect(db)
+    con.execute(
+        "INSERT INTO messages (session_id, role, content_json, created_timestamp) VALUES ('s-zero', 'user', ?, 0)",
+        (json.dumps([_text("PLACEHOLDER-ZERO")]),),
+    )
+    con.commit()
+    con.close()
+    session = _materialize(tmp_path)["s-zero"]
+    assert session.mtime == datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def test_is_error_alone_marks_a_failure():
+    result = {"type": "toolResponse", "id": "c1", "toolResult": {
+        "status": "success", "value": {"content": [_text("PLACEHOLDER-OUT")], "isError": True}}}
+    data = _session_lines(
+        {"type": "goose_session", "id": "e", "working_dir": FIXTURE_ROOT},
+        _msg("1", "user", 0, [_text("PLACEHOLDER-P")]),
+        _msg("2", "assistant", 1, [_call("c1", "shell", {"command": "make ARG-1"})]),
+        _msg("3", "user", 2, [result]),
+    )
+    (tool,) = _tools(parse_goose(data, "t")[1])
+    assert tool.status_code == "ERROR"
+
+
+def test_user_only_result_text_is_not_the_output():
+    result = {"type": "toolResponse", "id": "c1", "toolResult": {"status": "success", "value": {
+        "content": [{"type": "text", "text": "PLACEHOLDER-UI", "annotations": {"audience": ["user"]}}],
+        "isError": False}}}
+    data = _session_lines(
+        {"type": "goose_session", "id": "o", "working_dir": FIXTURE_ROOT},
+        _msg("1", "user", 0, [_text("PLACEHOLDER-P")]),
+        _msg("2", "assistant", 1, [_call("c1", "shell", {"command": "ls"})]),
+        _msg("3", "user", 2, [result]),
+    )
+    (tool,) = _tools(parse_goose(data, "t")[1])
+    assert tool.attributes["output.value"] == ""
+
+
+def test_text_editor_replacement_keys_are_normalized(decoded):
+    edit = _tools(_parse(decoded["s-legacy"], "s-legacy"))[1]
+    args = json.loads(edit.attributes["input.value"])
+    assert args["old_string"] == "PLACEHOLDER-OLD-2"
+    assert args["new_string"] == "PLACEHOLDER-NEW-2"
+    assert "old_str" not in args and "new_str" not in args
+
+
+def test_a_first_message_past_the_head_still_indexes(tmp_path):
+    home = tmp_path / "cache"
+    home.mkdir()
+    big = "x" * 6_000_000  # past `_read_head`'s 5 MB
+    (home / "big.jsonl").write_bytes(
+        _session_lines(
+            {"type": "goose_session", "id": "big", "working_dir": FIXTURE_ROOT},
+            _msg("1", "user", 0, [_text(big)]),
+        )
+    )
+    source = LocalSource(claude_code_homes=[], codex_homes=[], goose_homes=[home])
+    assert list(source._build_index()) == ["local:goose:big"]

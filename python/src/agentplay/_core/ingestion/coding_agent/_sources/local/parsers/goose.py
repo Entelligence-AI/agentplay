@@ -35,9 +35,13 @@ than 0). A `toolCall` with `status: "error"` is a call the model malformed.
 
 # Tokens
 
-One `goose_usage` line per model request. `input_tokens` is taken to include
-`cache_read_tokens` and `cache_write_tokens`, as in Goose's own context
-accounting; each is clamped so no count goes negative.
+Newer Goose stamps each request's usage on the assistant message it produced
+(`metadata.usage`), which ties it to its turn exactly; the `goose_usage`
+lines (Goose's `usage_ledger`) then only add compaction requests. Sessions
+whose messages carry no usage fall back to the ledger, each row placed after
+the last assistant message at or before its time. `input_tokens` includes
+`cache_read_tokens` and `cache_write_tokens` (as recorded in real sessions);
+each is clamped so no count goes negative.
 """
 
 from __future__ import annotations
@@ -71,8 +75,13 @@ _TEXT_EDITOR_COMMANDS = {"view": "Read", "write": "Write"}
 # downstream reader of `input.value` looks for.
 _FILE_TOOLS = ("write", "edit", _TEXT_EDITOR)
 
-# Goose's `edit` names its replacement `before` / `after`.
-_EDIT_KEYS = {"before": "old_string", "after": "new_string"}
+# Argument renames onto the keys downstream readers (edit evidence, line
+# counts) look for: `edit` names its replacement `before` / `after`, the older
+# text editor `old_str` / `new_str` / `file_text`.
+_ARG_RENAMES = {
+    "edit": {"before": "old_string", "after": "new_string"},
+    _TEXT_EDITOR: {"old_str": "old_string", "new_str": "new_string", "file_text": "content"},
+}
 
 # Goose stores times in seconds; a value past this is milliseconds.
 _MS_THRESHOLD = 10_000_000_000
@@ -112,6 +121,10 @@ def parse_goose(
     cwd = raw_cwd if isinstance(raw_cwd, str) else ""
     header_model = model_id_or_none(header.get("model")) or ""
     results = _tool_results(events)
+    # Newer Goose stamps each request's usage on the assistant message it
+    # produced, an exact link; the ledger then only adds requests that made
+    # no message (compactions).
+    per_message_usage = any(_message_usage(r) is not None for r in events)
 
     times = [t for t in (_dt(header.get("created_at")), *(_dt(r.get("created")) for r in events)) if t]
     session_start = min(times) if times else datetime.now(UTC)
@@ -152,14 +165,20 @@ def parse_goose(
             all_spans.append(_turn_span(trace_id, root_id, turn, cwd))
             all_spans.extend(turn["tools"])
 
+    def _usage(usage: dict, source: dict) -> None:
+        nonlocal usage_num, session_model
+        if turn is None:
+            return
+        usage_num += 1
+        model = _add_usage(turn, usage, source, usage_num, header_model)
+        if model:
+            session_model = model
+
     for record in events:
         ts = _dt(record.get("created"))
         if record.get("type") == "goose_usage":
-            if turn is not None:
-                usage_num += 1
-                model = _add_usage(turn, record, usage_num, header_model)
-                if model:
-                    session_model = model
+            if not per_message_usage or record.get("is_compaction") in (1, True):
+                _usage(record, record)
         elif _visible(record):
             content = _blocks(record.get("content"))
             if record["role"] == "user":
@@ -180,6 +199,11 @@ def parse_goose(
                     elif kind == "toolRequest":
                         index = len(turn["tools"])
                         turn["tools"].append(_tool_span(trace_id, turn, record, block, index, results, cwd))
+        if record.get("type") == "goose_message":
+            # Counted even on a hidden message: the request was still billed.
+            usage = _message_usage(record)
+            if usage is not None:
+                _usage(usage, record)
         if turn is not None and ts is not None and ts > turn["end"]:
             turn["end"] = ts
     _close_turn()
@@ -252,8 +276,31 @@ def _tool_results(events: list[dict]) -> dict[str, tuple[dict, dict]]:
     return out
 
 
-def _add_usage(turn: dict, record: dict, num: int, header_model: str) -> str:
-    """Fold one model request's usage into its turn; returns the request's model."""
+def _message_usage(record: dict) -> dict | None:
+    """An assistant message's own `metadata.usage`, in the ledger's field names."""
+    if record.get("type") != "goose_message" or record.get("role") != "assistant":
+        return None
+    metadata = record.get("metadata")
+    usage = metadata.get("usage") if isinstance(metadata, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    inference = metadata.get("inference")
+    model = inference.get("requestedModel") if isinstance(inference, dict) else None
+    return {
+        "created": record.get("created"),
+        "model": model,
+        "input_tokens": usage.get("inputTokens"),
+        "output_tokens": usage.get("outputTokens"),
+        "cache_read_tokens": usage.get("cacheReadTokens"),
+        "cache_write_tokens": usage.get("cacheWriteTokens"),
+    }
+
+
+def _add_usage(turn: dict, record: dict, source: dict, num: int, header_model: str) -> str:
+    """Fold one model request's usage into its turn; returns the request's model.
+
+    `record` holds the ledger's field names; `source` is the line it came from.
+    """
     model = model_id_or_none(record.get("model")) or ""
     if model:
         turn["model"] = model
@@ -282,7 +329,7 @@ def _add_usage(turn: dict, record: dict, num: int, header_model: str) -> str:
             "output_tokens": completion,
             "reasoning_tokens": 0,
             "usage_basis": "message_tokens",
-            **source_attrs(record),
+            **source_attrs(source),
         }
     )
     return model
@@ -393,15 +440,14 @@ def _normalize_args(raw_name: str, args: dict) -> dict:
     """The call's arguments with file paths under `file_path`, emitted first.
 
     Path first so a large `write` keeps its path inside `input.value`'s 2,000
-    characters; `edit`'s `before` / `after` become `old_string` / `new_string`.
+    characters; replacement and content keys take their downstream names.
     """
     out = dict(args)
     if raw_name in _FILE_TOOLS and "path" in out and "file_path" not in out:
         out["file_path"] = out.pop("path")
-    if raw_name == "edit":
-        for old, new in _EDIT_KEYS.items():
-            if old in out and new not in out:
-                out[new] = out.pop(old)
+    for old, new in _ARG_RENAMES.get(raw_name, {}).items():
+        if old in out and new not in out:
+            out[new] = out.pop(old)
     if "file_path" in out:
         out = {"file_path": out.pop("file_path"), **out}
     return out
@@ -427,11 +473,11 @@ def _result_text(result: dict) -> str:
     # Older sessions stored the content list itself as the value.
     content = value.get("content") if isinstance(value, dict) else value
     texts = [b for b in _blocks(content) if b.get("type") == "text" and isinstance(b.get("text"), str)]
-    for_model = [b for b in texts if _for_model(b)]
-    return "\n".join(b["text"] for b in (for_model or texts))
+    return "\n".join(b["text"] for b in texts if _for_model(b))
 
 
 def _for_model(block: dict) -> bool:
+    """False for a block annotated for an audience that excludes the model (UI-only text)."""
     annotations = block.get("annotations")
     audience = annotations.get("audience") if isinstance(annotations, dict) else None
     return not isinstance(audience, list) or "assistant" in audience

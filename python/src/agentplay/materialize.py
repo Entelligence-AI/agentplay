@@ -14,6 +14,7 @@ a network call.
 
 from __future__ import annotations
 
+import bisect
 import contextlib
 import hashlib
 import json
@@ -1522,9 +1523,10 @@ def find_kiro_candidates(home: HomeSpec, *, cache_root: Path | None = None) -> I
 # ``sessions`` row, which records ``working_dir``, plus its ``messages`` rows,
 # whose ``content_json`` is the message's content-block array, and its
 # ``usage_ledger`` rows, one per model request. The db is WAL-mode and live while
-# Goose runs, so it is copied (with its -wal/-shm) to a temp dir before reading.
-# Each session is synthesized into one NDJSON transcript: a ``goose_session``
-# header line, then ``goose_message`` and ``goose_usage`` lines in time order.
+# Goose runs, so a consistent snapshot of it is copied to a temp dir before
+# reading. Each session is synthesized into one NDJSON transcript: a
+# ``goose_session`` header line, then its ``goose_message`` lines in order, each
+# ``goose_usage`` line right after the assistant message it bills.
 # The db has had many migrations, so only columns that exist are selected.
 
 # Session types Goose itself hides from its session list: internal helper runs
@@ -1617,32 +1619,31 @@ def _goose_synthesize(
         "FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
         (session_id,),
     ).fetchall()
-    records: list[tuple[float, int, int, dict]] = []
-    for seq, row in enumerate(rows):
+    messages: list[dict] = []
+    for row in rows:
         content = _goose_json(row["content_json"], list)
         if content is None or row["role"] not in ("user", "assistant"):
             continue
-        created = _goose_epoch(row["created_timestamp"])
         message_id = row["message_id"] if "message_id" in optional else None
         metadata = _goose_json(row["metadata_json"], dict) if "metadata_json" in optional else None
-        records.append(
-            (
-                created or 0.0,
-                0,
-                seq,
-                {
-                    "type": "goose_message",
-                    "id": message_id if isinstance(message_id, str) and message_id else str(row["id"]),
-                    "role": row["role"],
-                    "created": created,
-                    "content": content,
-                    "metadata": metadata or {},
-                },
-            )
+        messages.append(
+            {
+                "type": "goose_message",
+                "id": message_id if isinstance(message_id, str) and message_id else str(row["id"]),
+                "role": row["role"],
+                "created": _goose_epoch(row["created_timestamp"]),
+                "content": content,
+                "metadata": metadata or {},
+            }
         )
-    if not records:
+    if not messages:
         return b"", None
 
+    # Each ledger row goes right after the last assistant message at or before
+    # its time: the request that produced that message is the one it bills.
+    # Placing it by time alone would hand a request's tokens to the next turn
+    # whenever the next prompt lands in the same second.
+    usage_after: dict[int, list[dict]] = {}
     if {"session_id", "created_timestamp"} <= usage_columns:
         fields = [c for c in _GOOSE_USAGE_COLUMNS if c in usage_columns]
         usage_rows = con.execute(
@@ -1650,23 +1651,25 @@ def _goose_synthesize(
             "FROM usage_ledger WHERE session_id = ? ORDER BY created_timestamp, id",
             (session_id,),
         ).fetchall()
-        for seq, row in enumerate(usage_rows):
+        assistant_at = [i for i, m in enumerate(messages) if m["role"] == "assistant"]
+        assistant_times = [messages[i]["created"] or 0.0 for i in assistant_at]
+        for row in usage_rows:
             created = _goose_epoch(row["created_timestamp"])
-            # Usage is recorded when a request completes, so at an equal second
-            # it sorts after the messages.
-            records.append(
-                (
-                    created or 0.0,
-                    1,
-                    seq,
-                    {"type": "goose_usage", "created": created, **{c: row[c] for c in fields}},
-                )
+            n = bisect.bisect_right(assistant_times, created) if created is not None else len(assistant_at)
+            position = assistant_at[n - 1] if n else -1
+            usage_after.setdefault(position, []).append(
+                {"type": "goose_usage", "created": created, **{c: row[c] for c in fields}}
             )
-    records.sort(key=lambda r: r[:3])
+    records = list(usage_after.get(-1, []))
+    for i, message in enumerate(messages):
+        records.append(message)
+        records.extend(usage_after.get(i, []))
 
     created_at = _goose_epoch(session.get("created_at"))
     updated_at = _goose_epoch(session.get("updated_at"))
-    last = max([t for t in (updated_at, *(r[0] for r in records)) if t], default=None)
+    last = max(
+        [t for t in (updated_at, *(r["created"] for r in records)) if t is not None], default=None
+    )
     header = {
         "id": session_id,
         "working_dir": session.get("working_dir"),
@@ -1680,7 +1683,7 @@ def _goose_synthesize(
         "type": "goose_session",
     }
     lines = [json.dumps(header, separators=(",", ":"))]
-    lines.extend(json.dumps(r[3], separators=(",", ":")) for r in records)
+    lines.extend(json.dumps(r, separators=(",", ":")) for r in records)
     return ("\n".join(lines) + "\n").encode(), last
 
 
@@ -1724,6 +1727,40 @@ def _goose_write(abs_path: Path, data: bytes, updated_s: float | None) -> bool:
     return True
 
 
+def _goose_snapshot(db: Path, copy: Path) -> None:
+    """Write one consistent snapshot of the live ``db`` to ``copy``.
+
+    SQLite's backup API copies the database as one read transaction sees it,
+    WAL included, so a commit or checkpoint by a running Goose cannot leave
+    the copy and its WAL describing different states (copying the files one by
+    one can). The source is opened read-only. Should SQLite refuse to open it
+    that way (a WAL file without its -shm in a read-only directory), the
+    files are copied instead; a torn copy then only costs a stale session
+    until the next run. Raises OSError or sqlite3.Error when neither works.
+    """
+    try:
+        source = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            target = sqlite3.connect(copy)
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+        finally:
+            source.close()
+        return
+    except sqlite3.Error as exc:
+        logger.debug("goose: snapshot of %s failed (%s); copying the files", db, exc)
+    for path in (copy, copy.with_name(copy.name + "-wal"), copy.with_name(copy.name + "-shm")):
+        with contextlib.suppress(OSError):
+            path.unlink()
+    shutil.copy2(db, copy)
+    for suffix in ("-wal", "-shm"):
+        side = db.with_name(db.name + suffix)
+        if side.exists():
+            shutil.copy2(side, copy.with_name(copy.name + suffix))
+
+
 def find_goose_candidates(home: HomeSpec, *, cache_root: Path | None = None) -> Iterator[Session]:
     """Yield a Session per Goose session, materializing each into an NDJSON transcript.
 
@@ -1739,11 +1776,7 @@ def find_goose_candidates(home: HomeSpec, *, cache_root: Path | None = None) -> 
     with tempfile.TemporaryDirectory(prefix="goose_sessions_") as tmp:
         copy = Path(tmp) / "sessions.db"
         try:
-            shutil.copy2(db, copy)
-            for suffix in ("-wal", "-shm"):
-                side = db.with_name(db.name + suffix)
-                if side.exists():
-                    shutil.copy2(side, copy.with_name(copy.name + suffix))
+            _goose_snapshot(db, copy)
             con = sqlite3.connect(f"{copy.resolve().as_uri()}?mode=ro", uri=True)
         except (OSError, sqlite3.Error) as exc:
             _warn_unreadable_db("goose", db, exc)
