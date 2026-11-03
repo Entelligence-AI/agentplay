@@ -31,6 +31,7 @@ import hmac
 import json
 import os
 import re
+import shlex
 from collections.abc import Iterable
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -991,6 +992,239 @@ def pr_create_intent(tool: str, inp: dict[str, Any]) -> dict[str, Any] | None:
     ):
         return {"provider": "bitbucket", "repo": None}
     return None
+
+
+# ---------------------------------------------------------------- shell file ops
+# Which files a shell command changes is read from the command the way the shell
+# reads it, never from raw text: heredoc bodies are file content (not commands),
+# quoted text is one argument (a `;` or `>` inside it is not syntax), and pipes and
+# redirects are operators (not file names). Anything that can't be known from the
+# text alone — `$VAR`, globs, command substitution, an unparseable command — records
+# nothing: a missing entry undercounts, a wrong one is false information.
+_SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+# Programs that run a script given as an argument: `bash -lc S`, `cmd /c S`, …
+_WRAPPER_SHELLS = _SHELLS | {"powershell", "pwsh", "cmd"}
+_SCRIPT_FLAG_RE = re.compile(r"-[a-z]*c|-command|/c|/k", re.I)
+_SHELL_PREFIXES = {"sudo", "command", "builtin", "exec", "nohup", "time", "then", "do",
+                   "else", "elif", "if", "while", "until", "!", "{", "}"}
+_SEPARATOR_CHARS = set(";&|\n()")
+_HEREDOC_RE = re.compile(r"<<(-?)[ \t]*\\?(['\"]?)([^\s'\";&|<>()\\]+)\2")
+_UNKNOWN_ARG_RE = re.compile("[$`*?\\[\\]{}\ue0ff]")
+_NUMBER_RE = re.compile(r"[\d.]+(s|ms|h|m|x|%)?")
+_SHELL_ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
+# `$NAME` / `${NAME}`; inside double quotes the `$` is the _QUOTED_DOLLAR marker.
+_VAR_RE = re.compile(
+    "([$\ue0ff])(?:[{\ue00b]([A-Za-z_][A-Za-z0-9_]*)[}\ue00c]|([A-Za-z_][A-Za-z0-9_]*))"
+)
+_WINDOWS_BASE_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
+_WINDOWS_PATH_RE = re.compile(r"(?<![\w$:])[A-Za-z]:\\\w")
+# Options that take the next word as their value, so it isn't a file operand.
+_VALUE_OPTIONS = {"touch": {"-d", "-r", "-t"}, "cp": {"-S"}, "mv": {"-S"}}
+# A shell token parse is quadratic in the longest word; past this, give up.
+_MAX_SHELL_CHARS = 100_000
+_SUBSHELL_OPEN, _SUBSHELL_CLOSE = "(", ")"
+_PUNCT_CHARS = set("();<>|&\n")
+_PUNCT_SPLIT_RE = re.compile(r"\(+|\)+|[;\n]+|[<>&|]+")
+_QUOTED_OR_COMMENT_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"|(?:^|(?<=\s))#[^\n]*")
+# Quoted or backslash-escaped punctuation is text, not syntax: it's swapped for
+# private-use characters before tokenizing so `grep ">" f` never reads as a redirect.
+_MASK = {c: chr(0xE000 + k) for k, c in enumerate("();<>|&[]*?{}~$\"")}
+# A `$` inside double quotes still expands, but its value isn't word-split or globbed.
+_QUOTED_DOLLAR = "\ue0ff"
+_UNMASK = str.maketrans({**{v: k for k, v in _MASK.items()}, _QUOTED_DOLLAR: "$"})
+_GLOB_OR_SPACE_RE = re.compile("[\\s*?\\[" + _MASK["*"] + _MASK["?"] + _MASK["["] + "]")
+
+
+def _unmask(text: str) -> str:
+    return text.translate(_UNMASK)
+
+
+def _program_name(word: str) -> str:
+    name = re.split(r"[\\/]", word)[-1].lower()
+    return name[:-4] if name.endswith(".exe") else name
+
+
+def _shell_script(argv: list[str]) -> str | None:
+    """The script a wrapper runs: `bash -lc S`, `env bash -c S`, `pwsh -Command S`, `cmd /c S`."""
+    i = 0
+    if argv and _program_name(argv[0]) == "env":
+        i = 1
+        while i < len(argv) and (argv[i].startswith("-") or "=" in argv[i]):
+            i += 1
+    if i >= len(argv) or _program_name(argv[i]) not in _WRAPPER_SHELLS:
+        return None
+    powershell = _program_name(argv[i]) in ("powershell", "pwsh")
+    j = i + 1
+    while j < len(argv) - 1:
+        a = argv[j]
+        if _SCRIPT_FLAG_RE.fullmatch(a) and not (powershell and a.lower() == "/c"):
+            return argv[j + 1]
+        if powershell:
+            j += 1  # `-ExecutionPolicy Bypass`, `-NoProfile`: options may come first
+            continue
+        if a in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
+            j += 2  # `bash -o pipefail -c S`
+            continue
+        if not a.startswith(("-", "/")):
+            return None  # `bash script.sh`: the script's contents aren't in the text
+        j += 1
+    return None
+
+
+def _strip_heredocs(cmd: str, windows: bool = False) -> str:
+    """Prepare a command for tokenizing: drop heredoc bodies and `#` comments, and mask
+    quoted or escaped punctuation.
+
+    The `<<WORD` operator itself is replaced by a space: it feeds stdin and names
+    no file. Only a `<<` outside quotes and arithmetic opens a heredoc, so Python's
+    `x << 2` in a quoted script or `$((1<<2))` is left alone — but `"$( … )"` is shell
+    again, so `git commit -m "$(cat <<'EOF' … EOF)"` loses its body too. On Windows a
+    backslash is a path separator, not an escape.
+    """
+    out: list[str] = []
+    pending: list[tuple[str, bool]] = []
+    # Context stack: "" top level, "$(" a substitution inside double quotes (with
+    # its paren depth and where its text starts), "((" arithmetic (paren depth),
+    # or the open quote character.
+    stack: list[list[Any]] = [["", 0]]
+    i, n = 0, len(cmd)
+    while i < n:
+        c = cmd[i]
+        kind = stack[-1][0]
+        if kind == "'":
+            if c == "'":
+                stack.pop()
+                out.append(c)
+            else:
+                out.append(_MASK.get(c, c))
+            i += 1
+            continue
+        if kind == '"':
+            if c == "\\" and i + 1 < n:
+                nxt = cmd[i + 1]
+                if windows:
+                    if nxt == '"':  # `\"` is a literal quote even to PowerShell and cmd
+                        out.append(_MASK['"'])
+                        i += 2
+                        continue
+                elif nxt in '"\\`':
+                    out.append(c + nxt)  # the tokenizer applies these escapes itself
+                    i += 2
+                    continue
+                elif nxt in "$\n" or nxt in _MASK:
+                    out.append("" if nxt == "\n" else _MASK[nxt])
+                    i += 2
+                    continue
+            if cmd.startswith("$(", i) and not cmd.startswith("$((", i):
+                out.append(_QUOTED_DOLLAR + "(")
+                stack.append(["$(", 0, len(out)])
+                i += 2
+                continue
+            if c == '"':
+                stack.pop()
+                out.append(c)
+            else:
+                out.append(_QUOTED_DOLLAR if c == "$" else _MASK.get(c, c))
+            i += 1
+            continue
+        if kind == "((":
+            if c == "(":
+                stack[-1][1] += 1
+            elif c == ")":
+                if stack[-1][1] == 0 and cmd.startswith("))", i):
+                    stack.pop()
+                    out.append("))")
+                    i += 2
+                    continue
+                stack[-1][1] = max(stack[-1][1] - 1, 0)
+            out.append(c)
+            i += 1
+            continue
+        # Unquoted: the top level or inside `"$( … )"`.
+        if c == "\\" and not windows and i + 1 < n:
+            nxt = cmd[i + 1]
+            out.append(_MASK[nxt] if nxt in _MASK else cmd[i : i + 2])
+            i += 2
+            continue
+        if c in "'\"":
+            stack.append([c, 0])
+            out.append(c)
+            i += 1
+            continue
+        if cmd.startswith("((", i):
+            stack.append(["((", 0])
+            out.append("((")
+            i += 2
+            continue
+        if kind == "$(":
+            if c == "(":
+                stack[-1][1] += 1
+            elif c == ")":
+                if stack[-1][1] == 0:
+                    # `"… $(cmd "arg") …"` is one quoted word to the tokenizer, which
+                    # can't nest quotes: keep the word, drop the substitution's text.
+                    del out[stack.pop()[2] :]
+                    out.append(":)")
+                    i += 1
+                    continue
+                stack[-1][1] -= 1
+        if c == "#" and (i == 0 or cmd[i - 1] in " \t\n;&|("):
+            j = cmd.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if cmd.startswith("<<", i) and not cmd.startswith("<<<", i):
+            m = _HEREDOC_RE.match(cmd, i)
+            if m:
+                pending.append((m.group(3), bool(m.group(1))))
+                out.append(" ")
+                i = m.end()
+                continue
+        if c == "\n" and pending:
+            out.append("\n")
+            i += 1
+            for delim, strip_tabs in pending:
+                while i < n:
+                    j = cmd.find("\n", i)
+                    line = cmd[i : n if j < 0 else j].rstrip("\r")
+                    i = n if j < 0 else j + 1
+                    if (line.lstrip("\t") if strip_tabs else line) == delim:
+                        break
+            pending = []
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _shell_tokens(cmd: str, windows: bool = False) -> list[str] | None:
+    """Shell words and operators; None when the command can't be parsed.
+
+    Words keep quoted punctuation masked; `_unmask` a word before using it as text.
+    """
+    text = _strip_heredocs(cmd, windows)
+    if not windows:
+        text = text.replace("\\\n", "")  # a line continuation joins the two lines
+    if len(text) > _MAX_SHELL_CHARS:
+        return None
+    lex = shlex.shlex(text, posix=True, punctuation_chars="();<>|&\n")
+    lex.whitespace = " \t\r"
+    lex.whitespace_split = True
+    lex.commenters = ""
+    if windows:
+        lex.escape = ""
+    try:
+        tokens = list(lex)
+    except ValueError:  # unbalanced quotes, e.g. a truncated command
+        return None
+    # shlex glues neighbouring punctuation (`)>`, `))>`, `&&(`): split it into
+    # parens, separators and redirect operators.
+    out: list[str] = []
+    for t in tokens:
+        if t and set(t) <= _PUNCT_CHARS and len(t) > 1:
+            out.extend(_PUNCT_SPLIT_RE.findall(t))
+        else:
+            out.append(t)
+    return out
 
 
 def file_ops(tool: str, inp: dict[str, Any], cwd: str | None) -> dict[str, str]:
