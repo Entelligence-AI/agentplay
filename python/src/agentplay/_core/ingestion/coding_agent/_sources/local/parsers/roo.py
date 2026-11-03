@@ -407,14 +407,33 @@ def _parse_ui_messages(
                 pending_tool = None
             if isinstance(raw_text, str) and raw_text:
                 parsed_q = _safe_json(raw_text)
-                q_text = (
-                    parsed_q.get("question") or parsed_q.get("text") or raw_text
-                    if isinstance(parsed_q, dict)
-                    else raw_text
-                )
+                if isinstance(parsed_q, dict):
+                    cand = parsed_q.get("question")
+                    if cand is None:
+                        cand = parsed_q.get("text")
+                    if isinstance(cand, str):
+                        q_text = cand
+                    elif isinstance(cand, (dict, list)):
+                        q_text = json.dumps(cand)
+                    elif cand is not None:
+                        q_text = str(cand)
+                    else:
+                        q_text = raw_text
+                else:
+                    q_text = raw_text
                 turn["output"].append(q_text)
             elif isinstance(raw_text, dict):
-                q_text = str(raw_text.get("question") or raw_text.get("text") or "")
+                cand = raw_text.get("question")
+                if cand is None:
+                    cand = raw_text.get("text")
+                if isinstance(cand, str):
+                    q_text = cand
+                elif isinstance(cand, (dict, list)):
+                    q_text = json.dumps(cand)
+                elif cand is not None:
+                    q_text = str(cand)
+                else:
+                    q_text = ""
                 if q_text:
                     turn["output"].append(q_text)
             continue
@@ -614,7 +633,7 @@ def _build_turn_span(trace_id: str, root_id: str, turn: dict[str, Any]) -> SpanD
         end_time=turn["end"],
         attributes={
             "input.value": turn["prompt"][:_TRUNCATE],
-            "output.value": "\n".join(turn["output"])[:_TRUNCATE],
+            "output.value": "\n".join(str(o) for o in turn["output"])[:_TRUNCATE],
             "cwd": "",
             "llm.token_count.prompt": p_tokens,
             "llm.token_count.completion": c_tokens,

@@ -430,3 +430,47 @@ def test_roo_parser_source_cursor_attributes_on_fixtures():
     assert api_anchored[1].attributes["source.content_hash"] == record_hash(api_records[1])
     assert api_anchored[2].attributes["source.kind"] == "json_doc"
     assert api_anchored[2].attributes["source.content_hash"] == record_hash(api_records[3])
+
+
+def test_roo_parser_handles_json_assistant_response_with_non_string_text():
+    session = [
+        {"ts": 1730000000000, "type": "say", "say": "task", "text": "Process request"},
+        # Assistant say: text where "text" inside JSON is an integer
+        {
+            "ts": 1730000001000,
+            "type": "say",
+            "say": "text",
+            "text": json.dumps({"text": 123}),
+        },
+        # Assistant say: text where "text" inside JSON is a dict
+        {
+            "ts": 1730000002000,
+            "type": "say",
+            "say": "text",
+            "text": json.dumps({"text": {"status": "success", "code": 0}}),
+        },
+        # Assistant ask: followup where "question" inside JSON is a list
+        {
+            "ts": 1730000003000,
+            "type": "ask",
+            "ask": "followup",
+            "text": json.dumps({"question": ["option_a", "option_b"]}),
+        },
+        # Assistant say: text where text field is directly a dict
+        {
+            "ts": 1730000004000,
+            "type": "say",
+            "say": "text",
+            "text": {"text": {"nested": True}},
+        },
+    ]
+    raw_bytes = json.dumps(session).encode("utf-8")
+    trace, spans = parse_roo(raw_bytes, trace_id="local:roo-code:non-string-text")
+    turns = [s for s in spans if s.name.startswith("Turn ")]
+    assert len(turns) == 1
+    turn = turns[0]
+    out_val = turn.attributes["output.value"]
+    assert "123" in out_val
+    assert '{"status": "success", "code": 0}' in out_val
+    assert '["option_a", "option_b"]' in out_val
+    assert '{"nested": true}' in out_val
