@@ -1051,6 +1051,8 @@ def test_shell_file_ops_reads_commands_like_the_shell(cmd, expected):
         ("cp -r src/. dest/", {"/repo/dest": "create"}),
         ("cp -r a/ b/ c/", {}),
         ("cp -rt dest a b; mv -vt dest c d", {}),
+        # `=` can be part of a file name; a leading `NAME=value` is still an assignment
+        ("touch foo=bar; rm name=with-equals; A=1 rm a.txt", {"/repo/foo=bar": "create", "/repo/name=with-equals": "delete", "/repo/a.txt": "delete"}),
         ('cd $DIR && bash -c "rm a.txt"', {}),
         # a variable holding quoted punctuation keeps it as text
         ('A="src/app/(admin)/admin"; cat > $A/page.tsx', {"/repo/src/app/(admin)/admin/page.tsx": "create"}),
@@ -1105,20 +1107,23 @@ def test_shell_file_ops_resolves_cd_and_variables(cmd, expected):
 
 
 @pytest.mark.parametrize(
-    "argv, name",
+    "argv, expected",
     [
-        (["bash", "-lc", "rm -f a.txt 2>&1 | tail -1"], "a.txt"),
-        (["bash", "-l", "-c", "rm a.txt"], "a.txt"),
-        (["/usr/bin/env", "bash", "-lc", "rm a.txt"], "a.txt"),
-        (["pwsh", "-NoProfile", "-Command", "rm a.txt"], "a.txt"),
-        (["cmd.exe", "/c", "echo 1 > a.txt"], "a.txt"),
-        (["rm", "a b.txt"], "a b.txt"),
-        (["rm a.txt"], "a.txt"),
+        (["bash", "-lc", "rm -f a.txt 2>&1 | tail -1"], {"a.txt": "delete"}),
+        (["bash", "-l", "-c", "rm a.txt"], {"a.txt": "delete"}),
+        (["/usr/bin/env", "bash", "-lc", "rm a.txt"], {"a.txt": "delete"}),
+        (["pwsh", "-NoProfile", "-Command", "rm a.txt"], {"a.txt": "delete"}),
+        (["cmd.exe", "/c", "echo 1 > a.txt"], {"a.txt": "create"}),
+        (["bash", "-lc", "echo 1 >> a.txt"], {"a.txt": "modify"}),
+        (["bash", "-lc", "cp src.txt a.txt"], {"a.txt": "create"}),
+        (["bash", "-lc", "mv a.txt b.txt"], {"a.txt": "rename-from", "b.txt": "rename-to"}),
+        (["rm", "a b.txt"], {"a b.txt": "delete"}),
+        (["rm a.txt"], {"a.txt": "delete"}),
     ],
 )
-def test_argv_shell_commands_are_parsed(argv, name):
+def test_argv_shell_commands_are_parsed(argv, expected):
     ops = sm.file_ops("shell", {"command": argv}, "/repo")
-    assert set(ops) == {os.path.normpath(f"/repo/{name}")}
+    assert ops == {os.path.normpath(f"/repo/{p}"): op for p, op in expected.items()}
 
 
 _SHELL_JUNK = re.compile(r"^(?:\||&|<|>|2>&1|null|None|tail|head|cat)$|[|<>&]")
