@@ -54,8 +54,9 @@ def test_incomplete_array_head_is_detected_as_roo_code(name: str):
 def test_large_array_head_without_closing_bracket_is_detected():
     # Simulates a large Roo session whose head has no closing bracket
     data = _fixture_bytes("read_and_edit.json")
-    padded = data[:-1] + b"," + (b'{"ts": 1730000000000, "type": "say", "say": "text", "text": "filler"},') * 50
+    padded = data.rstrip()[:-1] + b"," + (b'{"ts": 1730000000000, "type": "say", "say": "text", "text": "filler"},') * 50
     cut_head = padded[:1500]
+    assert b"]" not in cut_head
     assert detect_agent(cut_head) == AgentType.ROO_CODE
 
 
