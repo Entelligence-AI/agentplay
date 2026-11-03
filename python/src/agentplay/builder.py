@@ -1434,8 +1434,7 @@ def _shell_file_ops(cmd: str, base: str | None, depth: int = 0) -> dict[str, str
             elif a == "--" and not options_done:
                 options_done = True
             elif options_done or not a.startswith("-"):
-                if "=" not in a:
-                    args.append(a)
+                args.append(a)  # `foo=bar` is a valid file name
             elif a in value_opts:
                 skip_next = True
         paths = [_path(a) for a in args]
