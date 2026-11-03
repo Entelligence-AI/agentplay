@@ -1265,9 +1265,10 @@ def _shell_file_ops(cmd: str, base: str | None, depth: int = 0) -> dict[str, str
         if not a or _UNKNOWN_ARG_RE.search(a):
             return None
         a = _unmask(os.path.expanduser(a))
+        if a == "/dev" or a.startswith("/dev/"):
+            return None  # checked before normpath, which turns it into `\dev\…` on Windows
         if _isabs(a):
-            a = os.path.normpath(a)
-            return None if a.startswith("/dev/") or a == "/dev" else a
+            return os.path.normpath(a)
         if not base_known:
             return None
         return os.path.normpath(os.path.join(base, a) if base else a)
