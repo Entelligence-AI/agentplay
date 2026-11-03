@@ -341,8 +341,9 @@ _ROO_ALIASES: dict[str, str] = {
     # tasks
     "new_task": "Task",
     "newTask": "Task",
-    "switch_mode": "Task",
-    "switchMode": "Task",
+    # mode transitions (not subagents)
+    "switch_mode": "SwitchMode",
+    "switchMode": "SwitchMode",
 }
 
 TOOL_ALIASES: dict[str, dict[str, str]] = {

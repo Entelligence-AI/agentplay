@@ -324,3 +324,53 @@ def test_roo_discovery_and_indexing(tmp_path: Path):
     spans = source.get_spans_by_session("local:roo-code:task_abc")
     assert len(spans) == 4
     assert spans[0].name == "Session"
+
+
+def test_roo_parser_switch_mode_is_not_subagent():
+    # ui_messages format
+    session = [
+        {"ts": 1730000000000, "type": "say", "say": "task", "text": "Switch mode"},
+        {
+            "ts": 1730000001000,
+            "type": "ask",
+            "ask": "tool",
+            "text": json.dumps({"tool": "switch_mode", "mode_slug": "code"}),
+        },
+        {"ts": 1730000002000, "type": "say", "say": "text", "text": "Switched mode."},
+    ]
+    raw_bytes = json.dumps(session).encode("utf-8")
+    trace, spans = parse_roo(raw_bytes, trace_id="local:roo-code:switch-mode-ui")
+    tools = [s for s in spans if s.name == "SwitchMode"]
+    assert len(tools) == 1
+    assert tools[0].status_code == "OK"
+
+    doc = builder.build_map_from_spans(spans, session_id="local:roo-code:switch-mode-ui", agent_tool="roo-code")
+    tool_events = [e for e in doc["events"] if e.get("tool") == "SwitchMode"]
+    assert len(tool_events) == 1
+    assert tool_events[0]["kind"] == "tool"
+    assert tool_events[0]["kind"] != "subagent"
+    assert doc["totals"]["calls"] == 1
+    assert doc["totals"]["subagents"] == 0
+
+    # api_conversation_history format
+    api_session = [
+        {"role": "user", "content": "Switch to architect mode"},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "call_switch",
+                    "name": "switchMode",
+                    "input": {"mode_slug": "architect"},
+                }
+            ],
+        },
+    ]
+    raw_api = json.dumps(api_session).encode("utf-8")
+    _, api_spans = parse_roo(raw_api, trace_id="local:roo-code:switch-mode-api")
+    api_tools = [s for s in api_spans if s.name == "SwitchMode"]
+    assert len(api_tools) == 1
+    api_doc = builder.build_map_from_spans(api_spans, session_id="local:roo-code:switch-mode-api", agent_tool="roo-code")
+    assert api_doc["totals"]["calls"] == 1
+    assert api_doc["totals"]["subagents"] == 0
