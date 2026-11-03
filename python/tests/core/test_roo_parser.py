@@ -118,6 +118,37 @@ def test_api_history_with_supported_roo_tools_is_detected(tool_name: str):
     assert detect_agent(raw) == AgentType.ROO_CODE
 
 
+@pytest.mark.parametrize(
+    "malformed_name",
+    [
+        {"bad": "object"},
+        [1, 2, 3],
+        12345,
+        None,
+        True,
+    ],
+)
+def test_api_history_with_non_string_tool_name_does_not_crash_detection(malformed_name):
+    msg = [
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_01",
+                    "name": malformed_name,
+                    "input": {},
+                }
+            ],
+        }
+    ]
+    raw_array = json.dumps(msg).encode("utf-8")
+    assert detect_agent(raw_array) is None
+
+    line = json.dumps(msg[0]).encode("utf-8") + b"\n"
+    assert detect_agent(line) is None
+
+
 def test_other_agent_fixtures_not_claimed_as_roo():
     gemini_fix = Path(__file__).parent / "fixtures" / "gemini" / "read_explain.jsonl"
     if gemini_fix.is_file():

@@ -49,8 +49,8 @@ def _is_roo_record(msg: Any) -> bool:
         if isinstance(content, list):
             for b in content:
                 if isinstance(b, dict) and b.get("type") == "tool_use":
-                    tname = b.get("name", "")
-                    if tname in _ROO_API_TOOLS:
+                    tname = b.get("name")
+                    if isinstance(tname, str) and tname in _ROO_API_TOOLS:
                         return True
     return False
 
