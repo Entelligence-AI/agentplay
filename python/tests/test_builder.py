@@ -941,3 +941,82 @@ def test_hex_named_files_are_still_file_operations():
     ops = sm.file_ops("Bash", {"command": "rm deadbeef1 && echo x > cafe1234"}, "/repo")
     assert ops.get(os.path.normpath("/repo/deadbeef1")) == "delete"
     assert ops.get(os.path.normpath("/repo/cafe1234")) == "create"
+
+
+# ---------------------------------------------------------------- shell file ops (F2)
+# A shell command's file changes are read the way the shell reads it: heredoc bodies
+# are content, quoted text is one argument, pipes and redirects are operators. Each
+# case below once produced fake "edited"/"deleted" files in real sessions.
+@pytest.mark.parametrize(
+    "cmd, expected",
+    [
+        # pipes and redirects are not file names
+        ("rm -f old.log 2>&1 | tail -5", {"old.log": "delete"}),
+        ("mv a.txt b.txt 2>&1 | tail -3", {"a.txt": "rename-from", "b.txt": "rename-to"}),
+        ("cp src.txt dst.txt | cat", {"dst.txt": "create"}),
+        ("touch a.txt 2>/dev/null", {"a.txt": "create"}),
+        ("rm -f a.txt > /dev/null", {"a.txt": "delete"}),
+        ("rm -rf .next 2>&1 | tail -1; ls | grep next", {".next": "delete"}),
+        ("cp src/x.ts /dev/null", {}),
+        # quoted text is one argument, not commands
+        ('git commit -m "fix login; rm old banner"', {}),
+        ('echo "use a > b to redirect"', {}),
+        ('python3 -c "print(1 if x > limit else 0)"', {}),
+        ("""node -e "const ev = 1; console.log(Math.floor(ev))" > out.txt""", {"out.txt": "create"}),
+        # commands run on another machine or in a container change nothing here
+        ("ssh prod 'cd /app && rm -rf cache'", {}),
+        ('docker exec web sh -c "cd /app; rm -rf node_modules"', {}),
+        ('gcloud compute ssh vm --command "cd /srv; rm -f app.log 2>&1 | tail -3"', {}),
+        ("ssh vm 'cat /tmp/x' 2>&1 | tail -3 > local.json", {"local.json": "create"}),
+        # a local `bash -c` script does run here
+        ('bash -c "rm -f gone.txt"', {"gone.txt": "delete"}),
+        # heredoc bodies are file content, not commands
+        ("cat > clean.sh <<'EOF'\nrm -rf logs cache\nEOF", {"clean.sh": "create"}),
+        ("cat > t.js <<'EOF'\nif (a >b) { x() }\nconsole.log(y)\nEOF", {"t.js": "create"}),
+        (
+            "cat >> t.py <<'EOF'\ndef f() -> None:\n    pass\nEOF\nrm -f stale.py",
+            {"t.py": "modify", "stale.py": "delete"},
+        ),
+        ("python3 - <<'EOF' > out.json\nprint({'a': 1 > 0})\nEOF", {"out.json": "create"}),
+        ("cat <<-EOF > x.txt\n\trm y\n\tEOF\ntouch z", {"x.txt": "create", "z": "create"}),
+        # `"$( … )"` is shell again: a heredoc in a commit or PR body is still content
+        ("git commit -m \"$(cat <<'EOF'\nTreat \"<\" and \">\" as operators\nEOF\n)\"", {}),
+        ("gh pr create --body \"$(cat <<'EOF'\n- Stop recording \"2>&1\" as a file\nEOF\n)\"", {}),
+        ("git commit -m \"$(cat <<'EOF'\nHandle \"x > y\"\nEOF\n)\" && rm old.txt", {"old.txt": "delete"}),
+        ('echo "today: $(date) > not a file" > log.txt', {"log.txt": "create"}),
+        # comparisons are not redirects
+        ("if [[ $a > $b ]]; then echo hi; fi", {}),
+        ("i=$((i > 2 ? 1 : 0)); echo $i", {}),
+        ('python3 -c "print(open(open_p()).read())" > o.txt', {"o.txt": "create"}),
+        # quoted or escaped punctuation is text, not syntax
+        ('grep -n ">" src/app.ts', {}),
+        ("grep -rn '>>' src/ && cut -d '>' -f2 names.txt", {}),
+        ("echo ';' rm x; echo \\> y; echo \\; rm z", {}),
+        ('grep "[[" f > out.txt', {"out.txt": "create"}),
+        ("echo $((1<<2))\ntouch x", {"x": "create"}),
+        # quoted brackets, parens and globs are part of the name (Next.js routes)
+        ('rm -rf "src/app/[id]/page.tsx"', {"src/app/[id]/page.tsx": "delete"}),
+        ("mv 'app/[id]/a.tsx' 'app/[id]/b.tsx'", {"app/[id]/a.tsx": "rename-from", "app/[id]/b.tsx": "rename-to"}),
+        ("rm src/app/\\[id\\]/page.tsx", {"src/app/[id]/page.tsx": "delete"}),
+        ('git rm -q -r "src/app/api/x/[blockId]/step-b"', {"src/app/api/x/[blockId]/step-b": "delete"}),
+        ('rm -f *.log; rm "*.log"', {"*.log": "delete"}),
+        ("cat > x.sh <<\\EOF\nrm y\nEOF\ntouch after", {"x.sh": "create", "after": "create"}),
+        # case patterns and script wrappers
+        ('bash -o pipefail -c "rm a.txt"', {"a.txt": "delete"}),
+        ('powershell -ExecutionPolicy Bypass -Command "rm b.txt"', {"b.txt": "delete"}),
+        ("case $x in (a|b) rm a.txt ;; *) rm b.txt ;; esac", {"a.txt": "delete", "b.txt": "delete"}),
+        ('powershell -Command "echo 1 > b.txt"', {"b.txt": "create"}),
+        ('env FOO=1 bash -lc "rm q.txt"', {"q.txt": "delete"}),
+        # comments are not commands
+        ("npm run build  # then rm -rf dist", {}),
+        # `&&` inside `[[ … ]]` doesn't end the test
+        ("[[ $a > 1.0 && $b > lim ]] && echo ok", {}),
+        # `git rm --cached` only unstages; option values are not files
+        ("git rm -r --cached node_modules && git rm old.txt", {"old.txt": "delete"}),
+        ('touch -d "2 days ago" x; touch -r ref.txt y', {"x": "create", "y": "create"}),
+        ("mv -t dest a b; cp -t dest a b", {}),
+    ],
+)
+def test_shell_file_ops_reads_commands_like_the_shell(cmd, expected):
+    got = sm.file_ops("Bash", {"command": cmd}, "/repo")
+    assert got == {os.path.normpath(f"/repo/{p}"): op for p, op in expected.items()}
