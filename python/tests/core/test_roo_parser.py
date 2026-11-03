@@ -13,6 +13,9 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     detect_agent,
     parse_roo,
 )
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.base import (
+    _ROO_API_TOOLS,
+)
 from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
 from agentplay._core.ingestion.coding_agent.metrics import compute_task_counters
 
@@ -74,18 +77,36 @@ def test_api_history_tool_use_beyond_first_five_messages_is_detected():
             {"type": "text", "text": "I will inspect the file."},
             {
                 "type": "tool_use",
-                "id": "toolu_01",
+                "id": "call_01",
                 "name": "read_file",
                 "input": {"path": "src/app.py"},
             },
         ],
     })
-    # Complete JSON array
-    raw = json.dumps(messages).encode("utf-8")
-    assert detect_agent(raw) == AgentType.ROO_CODE
+    # Trailing message so truncating the array cuts off the trailing message,
+    # leaving the preceding tool_use message intact for incremental decoding.
+    messages.append({"role": "user", "content": "Waiting for results..."})
 
-    # Incomplete/truncated array (no closing bracket)
-    truncated = raw[:-5]
+    # Escape raw keywords with JSON unicode escapes so raw-byte fallback cannot match
+    raw = json.dumps(messages).encode("utf-8")
+    escaped = (
+        raw.replace(b"tool_use", b"\\u0074ool_use")
+        .replace(b"read_file", b"\\u0072ead_file")
+        .replace(b"tool", b"\\u0074ool")
+    )
+
+    # Verify raw-byte fallback signatures cannot match
+    assert b"tool" not in escaped
+    assert not any(tool.encode("utf-8") in escaped for tool in _ROO_API_TOOLS)
+    assert b"say" not in escaped
+    assert b"ask" not in escaped
+
+    # Complete JSON array: recognized by parsed-array scan beyond first 5 messages
+    assert detect_agent(escaped) == AgentType.ROO_CODE
+
+    # Incomplete array (truncated during trailing message, no closing bracket):
+    # recognized by incremental parsed-record scan beyond first 5 messages
+    truncated = escaped[:-15]
     assert detect_agent(truncated) == AgentType.ROO_CODE
 
 
