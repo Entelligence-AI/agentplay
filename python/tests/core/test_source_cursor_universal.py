@@ -26,6 +26,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     cursor_store,
     kiro,
     opencode,
+    roo,
 )
 
 
@@ -183,6 +184,29 @@ def _copilot() -> list[dict]:
     ]
 
 
+def _roo() -> list[dict]:
+    return [
+        {
+            "ts": 1756684800000,
+            "type": "say",
+            "say": "task",
+            "text": "hi",
+        },
+        {
+            "ts": 1756684801000,
+            "type": "ask",
+            "ask": "tool",
+            "text": json.dumps({"tool": "read_file", "path": "/w/file"}),
+        },
+        {
+            "ts": 1756684802000,
+            "type": "say",
+            "say": "tool",
+            "text": json.dumps({"tool": "read_file", "content": "ok"}),
+        },
+    ]
+
+
 _PARSERS = {
     # name: (parser, fixture, expected kind, (turn line index, tool line index))
     # — the fixture line each anchor MUST come from: the line that opened the
@@ -205,6 +229,7 @@ _PARSERS = {
     ),
     "cursor_store": (cursor_store.parse_cursor_store, _cursor_store, "sqlite", None),
     "copilot": (copilot.parse_copilot, _copilot, "jsonl", (1, 3)),
+    "roo": (roo.parse_roo, _roo, "json_doc", None),
 }
 
 
@@ -418,3 +443,41 @@ def test_the_row_cursor_stamp_never_changes_the_content_hash():
     )
     assert source_attrs(None, row_cursor="r") == {"source.kind": "jsonl", "source.row_cursor": "r"}
     assert "source.row_cursor" not in source_attrs({"a": 1, SOURCE_ROW_CURSOR_KEY: ""})
+
+
+def test_roo_anchors_turn_to_opening_record_and_tool_to_request_record():
+    records = _roo()
+    expected_turn_hash = record_hash(records[0])
+    expected_tool_hash = record_hash(records[1])
+
+    # ui_messages format (as JSON array)
+    raw_array = json.dumps(records).encode("utf-8")
+    _, spans = roo.parse_roo(raw_array, "trace-1")
+    turn = next(s for s in spans if s.name.startswith("Turn "))
+    tool = next(s for s in spans if s.attributes.get("tool.name"))
+    assert turn.attributes["source.kind"] == "json_doc"
+    assert turn.attributes["source.content_hash"] == expected_turn_hash
+    assert "source.byte_offset" not in turn.attributes
+    assert tool.attributes["source.kind"] == "json_doc"
+    assert tool.attributes["source.content_hash"] == expected_tool_hash
+    assert "source.byte_offset" not in tool.attributes
+
+
+def test_roo_api_history_source_cursor():
+    msgs = [
+        {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+        {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "t1", "name": "read_file", "input": {}}],
+        },
+    ]
+    raw = json.dumps(msgs).encode("utf-8")
+    _, spans = roo.parse_roo(raw, "trace-1")
+    turn = next(s for s in spans if s.name.startswith("Turn "))
+    tool = next(s for s in spans if s.attributes.get("tool.name"))
+    assert turn.attributes["source.kind"] == "json_doc"
+    assert turn.attributes["source.content_hash"] == record_hash(msgs[0])
+    assert "source.byte_offset" not in turn.attributes
+    assert tool.attributes["source.kind"] == "json_doc"
+    assert tool.attributes["source.content_hash"] == record_hash(msgs[1])
+    assert "source.byte_offset" not in tool.attributes

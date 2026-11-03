@@ -23,6 +23,7 @@ from typing import Any
 
 from agentplay._core.code_authorship import extract_edit_evidence
 from agentplay._core.ingestion.coding_agent._sources._jsonl_utils import (
+    SOURCE_KIND_JSON_DOC,
     as_count,
     source_attrs,
 )
@@ -39,6 +40,16 @@ _RE_EXIT_CODE = re.compile(
     r"(?:Process exited with code|Command exited with code|Exit code:)\s*(-?\d+)",
     re.IGNORECASE,
 )
+
+
+def _source_attrs(record: object) -> dict[str, Any]:
+    """Source-cursor attributes for a Roo JSON document record (content-hash anchored)."""
+    rec = record if isinstance(record, dict) else {}
+    return {
+        k: v
+        for k, v in source_attrs(rec, kind=SOURCE_KIND_JSON_DOC).items()
+        if k != "source.byte_offset"
+    }
 
 
 def _safe_json(val: Any) -> Any:
@@ -150,7 +161,7 @@ def _parse_ui_messages(
     pending_tool: SpanData | None = None
     last_model: str = ""
 
-    def _open_turn(prompt: str, ts: datetime) -> dict[str, Any]:
+    def _open_turn(prompt: str, ts: datetime, src: dict[str, Any] | None = None) -> dict[str, Any]:
         nonlocal turn_num
         turn_num += 1
         return {
@@ -166,6 +177,7 @@ def _parse_ui_messages(
             "cost_events": [],
             "tools": [],
             "model": last_model,
+            "_src": src,
         }
 
     def _close_turn() -> None:
@@ -201,11 +213,11 @@ def _parse_ui_messages(
                 parsed_prompt = _safe_json(prompt_text)
                 if isinstance(parsed_prompt, dict) and "text" in parsed_prompt:
                     prompt_text = str(parsed_prompt["text"])
-            turn = _open_turn(prompt_text, ts)
+            turn = _open_turn(prompt_text, ts, r)
             continue
 
         if turn is None:
-            turn = _open_turn("", ts)
+            turn = _open_turn("", ts, r)
 
         if ts > turn["end"]:
             turn["end"] = ts
@@ -264,6 +276,7 @@ def _parse_ui_messages(
                     "input.value": input_val[:_TRUNCATE],
                     "output.value": "",
                     "cwd": "",
+                    **_source_attrs(r),
                 },
             )
             continue
@@ -316,6 +329,7 @@ def _parse_ui_messages(
                         "code.edit_evidence": extract_edit_evidence(
                             canonical_tool, input_val, successful=status_code == "OK"
                         ),
+                        **_source_attrs(r),
                     },
                 )
             continue
@@ -369,6 +383,7 @@ def _parse_ui_messages(
                         "code.edit_evidence": extract_edit_evidence(
                             canonical_tool, input_val, successful=status_code == "OK"
                         ),
+                        **_source_attrs(r),
                     },
                 )
                 turn["tools"].append(span)
@@ -456,7 +471,7 @@ def _parse_api_history(
     pending_calls: dict[str, SpanData] = {}
     last_model = ""
 
-    def _open_turn(prompt: str) -> dict[str, Any]:
+    def _open_turn(prompt: str, src: dict[str, Any] | None = None) -> dict[str, Any]:
         nonlocal turn_num
         turn_num += 1
         return {
@@ -472,6 +487,7 @@ def _parse_api_history(
             "cost_events": [],
             "tools": [],
             "model": last_model,
+            "_src": src,
         }
 
     def _close_turn() -> None:
@@ -507,11 +523,11 @@ def _parse_api_history(
 
             if texts:
                 _close_turn()
-                turn = _open_turn("\n".join(texts))
+                turn = _open_turn("\n".join(texts), rec)
 
         elif role == "assistant":
             if turn is None:
-                turn = _open_turn("")
+                turn = _open_turn("", rec)
 
             if isinstance(content, str):
                 turn["output"].append(content)
@@ -547,6 +563,7 @@ def _parse_api_history(
                                 "code.edit_evidence": extract_edit_evidence(
                                     canonical, input_val, successful=True
                                 ),
+                                **_source_attrs(rec),
                             },
                         )
                         turn["tools"].append(span)
@@ -607,5 +624,6 @@ def _build_turn_span(trace_id: str, root_id: str, turn: dict[str, Any]) -> SpanD
             "llm.token_count.input_fresh": max(0, p_tokens - cr_tokens),
             "llm.cost_events": turn["cost_events"],
             "llm.model_name": turn["model"] or "",
+            **_source_attrs(turn.get("_src")),
         },
     )

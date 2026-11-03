@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from agentplay import builder, facts, search
+from agentplay._core.ingestion.coding_agent._sources._jsonl_utils import record_hash
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
@@ -374,3 +375,57 @@ def test_roo_parser_switch_mode_is_not_subagent():
     api_doc = builder.build_map_from_spans(api_spans, session_id="local:roo-code:switch-mode-api", agent_tool="roo-code")
     assert api_doc["totals"]["calls"] == 1
     assert api_doc["totals"]["subagents"] == 0
+
+
+def test_roo_parser_source_cursor_attributes_on_fixtures():
+    # read_and_edit.json
+    data = _fixture_bytes("read_and_edit.json")
+    records = json.loads(data)
+    _, spans = parse_roo(data, trace_id="local:roo-code:fixture-test")
+    anchored = [s for s in spans if s.name.startswith("Turn ") or s.attributes.get("tool.name")]
+    assert len(anchored) == 3
+
+    turn = anchored[0]
+    assert turn.attributes["source.kind"] == "json_doc"
+    assert turn.attributes["source.content_hash"] == record_hash(records[0])
+    assert "source.byte_offset" not in turn.attributes
+
+    read_tool = anchored[1]
+    assert read_tool.name == "Read"
+    assert read_tool.attributes["source.kind"] == "json_doc"
+    assert read_tool.attributes["source.content_hash"] == record_hash(records[2])
+    assert "source.byte_offset" not in read_tool.attributes
+
+    edit_tool = anchored[2]
+    assert edit_tool.name == "Edit"
+    assert edit_tool.attributes["source.kind"] == "json_doc"
+    assert edit_tool.attributes["source.content_hash"] == record_hash(records[4])
+    assert "source.byte_offset" not in edit_tool.attributes
+
+    # failed_command.json
+    cmd_data = _fixture_bytes("failed_command.json")
+    cmd_records = json.loads(cmd_data)
+    _, cmd_spans = parse_roo(cmd_data, trace_id="local:roo-code:cmd-test")
+    cmd_anchored = [s for s in cmd_spans if s.name.startswith("Turn ") or s.attributes.get("tool.name")]
+    assert len(cmd_anchored) == 3  # Turn 1, Bash 1, Bash 2
+
+    assert cmd_anchored[0].attributes["source.kind"] == "json_doc"
+    assert cmd_anchored[0].attributes["source.content_hash"] == record_hash(cmd_records[0])
+    assert cmd_anchored[1].attributes["source.kind"] == "json_doc"
+    assert cmd_anchored[1].attributes["source.content_hash"] == record_hash(cmd_records[2])
+    assert cmd_anchored[2].attributes["source.kind"] == "json_doc"
+    assert cmd_anchored[2].attributes["source.content_hash"] == record_hash(cmd_records[5])
+
+    # api_history.json
+    api_data = _fixture_bytes("api_history.json")
+    api_records = json.loads(api_data)
+    _, api_spans = parse_roo(api_data, trace_id="local:roo-code:api-test")
+    api_anchored = [s for s in api_spans if s.name.startswith("Turn ") or s.attributes.get("tool.name")]
+    assert len(api_anchored) == 3  # Turn 1, ListDir, Read
+
+    assert api_anchored[0].attributes["source.kind"] == "json_doc"
+    assert api_anchored[0].attributes["source.content_hash"] == record_hash(api_records[0])
+    assert api_anchored[1].attributes["source.kind"] == "json_doc"
+    assert api_anchored[1].attributes["source.content_hash"] == record_hash(api_records[1])
+    assert api_anchored[2].attributes["source.kind"] == "json_doc"
+    assert api_anchored[2].attributes["source.content_hash"] == record_hash(api_records[3])
