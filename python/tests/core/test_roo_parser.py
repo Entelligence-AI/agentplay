@@ -322,9 +322,37 @@ def test_roo_parser_handles_null_and_malformed_token_metrics():
     assert turn.attributes["llm.token_count.completion"] == 20
     assert turn.attributes["llm.token_count.cache_read"] == 10
     cost_events = turn.attributes["llm.cost_events"]
-    assert len(cost_events) == 2
+    assert len(cost_events) == 1
     assert cost_events[0]["cache_write_5m_tokens"] == 0
-    assert cost_events[1]["cache_write_5m_tokens"] == 0
+
+
+def test_roo_parser_counts_request_lifecycle_with_both_started_and_finished_only_once():
+    session = [
+        {"ts": 1730000000000, "type": "say", "say": "task", "text": "Run analysis"},
+        {
+            "ts": 1730000001000,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps({"tokensIn": 100, "tokensOut": 25, "model": "claude-3-7-sonnet"}),
+        },
+        {
+            "ts": 1730000002000,
+            "type": "say",
+            "say": "api_req_finished",
+            "text": json.dumps({"tokensIn": 100, "tokensOut": 25, "model": "claude-3-7-sonnet"}),
+        },
+        {"ts": 1730000003000, "type": "say", "say": "text", "text": "Analysis complete"},
+    ]
+    raw_bytes = json.dumps(session).encode("utf-8")
+    trace, spans = parse_roo(raw_bytes, trace_id="local:roo-code:single-lifecycle")
+    turn = spans[1]
+    assert turn.name == "Turn 1"
+    assert turn.attributes["llm.token_count.prompt"] == 100
+    assert turn.attributes["llm.token_count.completion"] == 25
+    cost_events = turn.attributes["llm.cost_events"]
+    assert len(cost_events) == 1
+    assert cost_events[0]["input_tokens"] == 100
+    assert cost_events[0]["output_tokens"] == 25
 
 
 def test_roo_builder_never_leaks_free_text():

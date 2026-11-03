@@ -160,6 +160,35 @@ def _parse_ui_messages(
     turn_num = 0
     pending_tool: SpanData | None = None
     last_model: str = ""
+    active_req: dict[str, Any] | None = None
+
+    def _flush_active_req() -> None:
+        nonlocal active_req
+        if active_req is not None and turn is not None:
+            p_tokens = active_req["prompt_tokens"]
+            c_tokens = active_req["completion_tokens"]
+            cr_tokens = active_req["cache_read"]
+            cw_tokens = active_req["cache_write_5m"]
+            req_model = active_req["model"] or turn["model"] or ""
+            req_ts = active_req["ts"]
+
+            turn["prompt_tokens"] += p_tokens
+            turn["completion_tokens"] += c_tokens
+            turn["cache_read"] += cr_tokens
+            turn["cost_events"].append(
+                {
+                    "timestamp": req_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "model": req_model,
+                    "input_tokens": max(0, p_tokens - cr_tokens),
+                    "cache_read_tokens": cr_tokens,
+                    "cache_write_5m_tokens": cw_tokens,
+                    "cache_write_1h_tokens": 0,
+                    "output_tokens": c_tokens,
+                    "reasoning_tokens": 0,
+                    "usage_basis": "message_tokens",
+                }
+            )
+            active_req = None
 
     def _open_turn(prompt: str, ts: datetime, src: dict[str, Any] | None = None) -> dict[str, Any]:
         nonlocal turn_num
@@ -182,6 +211,7 @@ def _parse_ui_messages(
 
     def _close_turn() -> None:
         nonlocal pending_tool
+        _flush_active_req()
         if pending_tool is not None and turn is not None:
             turn["tools"].append(pending_tool)
             pending_tool = None
@@ -229,27 +259,46 @@ def _parse_ui_messages(
                 p_tokens = as_count(parsed_usage.get("tokensIn")) or as_count(parsed_usage.get("prompt_tokens"))
                 c_tokens = as_count(parsed_usage.get("tokensOut")) or as_count(parsed_usage.get("completion_tokens"))
                 cr_tokens = as_count(parsed_usage.get("cacheReads"))
+                cw_tokens = as_count(parsed_usage.get("cacheWrites"))
                 model_cand = model_id_or_none(parsed_usage.get("model") or parsed_usage.get("selectedModel"))
                 if model_cand:
                     last_model = model_cand
                     turn["model"] = model_cand
 
-                turn["prompt_tokens"] += p_tokens
-                turn["completion_tokens"] += c_tokens
-                turn["cache_read"] += cr_tokens
-                turn["cost_events"].append(
-                    {
-                        "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "model": turn["model"] or "",
-                        "input_tokens": max(0, p_tokens - cr_tokens),
-                        "cache_read_tokens": cr_tokens,
-                        "cache_write_5m_tokens": as_count(parsed_usage.get("cacheWrites")),
-                        "cache_write_1h_tokens": 0,
-                        "output_tokens": c_tokens,
-                        "reasoning_tokens": 0,
-                        "usage_basis": "message_tokens",
+                if say == "api_req_started":
+                    _flush_active_req()
+                    active_req = {
+                        "ts": ts,
+                        "prompt_tokens": p_tokens,
+                        "completion_tokens": c_tokens,
+                        "cache_read": cr_tokens,
+                        "cache_write_5m": cw_tokens,
+                        "model": model_cand or turn["model"] or "",
                     }
-                )
+                else:  # api_req_finished
+                    if active_req is not None:
+                        active_req["ts"] = ts
+                        if model_cand:
+                            active_req["model"] = model_cand
+                        if p_tokens:
+                            active_req["prompt_tokens"] = p_tokens
+                        if c_tokens:
+                            active_req["completion_tokens"] = c_tokens
+                        if cr_tokens:
+                            active_req["cache_read"] = cr_tokens
+                        if cw_tokens:
+                            active_req["cache_write_5m"] = cw_tokens
+                        _flush_active_req()
+                    else:
+                        active_req = {
+                            "ts": ts,
+                            "prompt_tokens": p_tokens,
+                            "completion_tokens": c_tokens,
+                            "cache_read": cr_tokens,
+                            "cache_write_5m": cw_tokens,
+                            "model": model_cand or turn["model"] or "",
+                        }
+                        _flush_active_req()
             continue
 
         # 3. Tool execution: Command
