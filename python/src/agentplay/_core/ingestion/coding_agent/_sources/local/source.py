@@ -1,4 +1,4 @@
-"""Local filesystem source — walks ~/.claude / ~/.codex / ~/.gemini / ~/.commandcode / Copilot dirs.
+"""Local filesystem source — walks ~/.claude / ~/.codex / ~/.gemini / ~/.commandcode / ~/.qwen / Copilot dirs.
 
 Indexes JSONL session files under per-agent homes, detects the agent
 from the file head, and emits the universal `SpanData` shape via the
@@ -44,9 +44,13 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_goose,
     parse_kiro,
     parse_opencode,
+    parse_qwen_code,
 )
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.command_code import (
     _user_prompt as _command_code_user_prompt,
+)
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.qwen_code import (
+    _user_prompt as _qwen_code_user_prompt,
 )
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.gemini import (
     _user_prompt as _gemini_user_prompt,
@@ -1372,6 +1376,57 @@ def _goose_header(head: bytes) -> dict | None:
     return None
 
 
+def _qwen_code_session(head: bytes) -> tuple[str | None, str | None]:
+    """The session id and cwd of a Qwen Code transcript: the first record carrying each."""
+    session_id: str | None = None
+    cwd: str | None = None
+    for line in head.split(b"\n"):
+        try:
+            obj = json.loads(line)
+        except (ValueError, RecursionError):  # blank, truncated, split mid-character, or deeply nested
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if session_id is None and isinstance(obj.get("sessionId"), str) and obj["sessionId"]:
+            session_id = obj["sessionId"]
+        if cwd is None and isinstance(obj.get("cwd"), str) and obj["cwd"]:
+            cwd = obj["cwd"]
+        if session_id and cwd:
+            break
+    return session_id, cwd
+
+
+def _qwen_code_has_messages(path: Path) -> bool:
+    """True when the file holds a real prompt or a model reply.
+
+    Streams like ``_gemini_has_messages``: one line at a time, at most
+    ``MAX_SOURCE_BYTES``, stopping at the first qualifying record. A session
+    opened only to run slash commands (``system`` records) is skipped.
+    """
+    remaining = MAX_SOURCE_BYTES
+    with path.open("rb") as handle:
+        while remaining > 0:
+            line = handle.readline(remaining)
+            if not line:
+                break
+            remaining -= len(line)
+            at_cap = remaining == 0 and not line.endswith(b"\n")
+            try:
+                obj = json.loads(line)
+            except (ValueError, RecursionError):
+                if at_cap:
+                    break
+                continue
+            if not isinstance(obj, dict):
+                continue
+            kind = obj.get("type")
+            if kind == "assistant" and isinstance(obj.get("message"), dict):
+                return True
+            if kind == "user" and _qwen_code_user_prompt(obj) is not None:
+                return True
+    return False
+
+
 def _cwd_from_gemini_project(jsonl_file: Path, header: dict | None) -> str | None:
     """The project root of a Gemini CLI session.
 
@@ -1530,6 +1585,7 @@ class LocalSource:
         antigravity_homes: list[Path] | None = None,
         command_code_homes: list[Path] | None = None,
         goose_homes: list[Path] | None = None,
+        qwen_code_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1577,6 +1633,11 @@ class LocalSource:
         # per session, laid out flat as `<home>/<session_id>.jsonl`. The cwd
         # comes from the synthesized `goose_session` header.
         self.goose_homes = goose_homes or []
+        # Qwen Code writes a real per-session JSONL itself:
+        # `<home>/projects/<sanitized-cwd>/chats/<session-id>.jsonl`. Every
+        # record carries the `sessionId` and `cwd`. Background subagents write
+        # to `<home>/projects/<sanitized-cwd>/subagents/`, which is not walked.
+        self.qwen_code_homes = qwen_code_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1604,6 +1665,7 @@ class LocalSource:
             *self.antigravity_homes,
             *self.command_code_homes,
             *self.goose_homes,
+            *self.qwen_code_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1854,6 +1916,18 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Qwen Code: `<home>/projects/<sanitized-cwd>/chats/<session-id>.jsonl`.
+        # `detect_agent` sniffs the records, so a stray `.jsonl` is skipped.
+        for home in self.qwen_code_homes:
+            projects_dir = home / "projects"
+            if not projects_dir.is_dir():
+                logger.debug("Skipping non-existent path: %s", projects_dir)
+                continue
+            for jsonl_file in projects_dir.glob("*/chats/*.jsonl"):
+                ref = self._index_qwen_code_file(jsonl_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1869,7 +1943,8 @@ class LocalSource:
             + len(self.gemini_homes)
             + len(self.antigravity_homes)
             + len(self.command_code_homes)
-            + len(self.goose_homes),
+            + len(self.goose_homes)
+            + len(self.qwen_code_homes),
         )
         return index
 
@@ -2394,6 +2469,71 @@ class LocalSource:
             home=home,
         )
 
+    def _index_qwen_code_file(
+        self,
+        jsonl_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Qwen Code session JSONL."""
+        if not jsonl_file.is_file():
+            # See _index_cc_file's identical guard: a directory/broken symlink
+            # is never tallied, only a genuinely empty real file is.
+            return None
+        size = jsonl_file.stat().st_size
+        if size == 0:
+            self._record_discovery("qwen-code", "empty_or_unreadable")
+            return None
+        # `build_map` refuses the same cap with SkipSession("too_large"). Skip
+        # here, before any read, so discovery does not allocate the file.
+        if size > MAX_SOURCE_BYTES:
+            logger.debug("qwen-code: %s exceeds the source byte cap; session skipped", jsonl_file)
+            self._record_discovery("qwen-code", "too_large")
+            return None
+        try:
+            head = _read_head(jsonl_file, stop_when=_agent_detected)
+        except OSError:
+            self._record_discovery("qwen-code", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            logger.warning(
+                "agent detection failed for %s (%d bytes); session skipped",
+                jsonl_file,
+                size,
+            )
+            self._record_discovery("qwen-code", "detection_failed")
+            return None
+        if agent != AgentType.QWEN_CODE:
+            self._record_discovery("qwen-code", "different_agent")
+            return None
+
+        try:
+            has_messages = _qwen_code_has_messages(jsonl_file)
+        except OSError:
+            self._record_discovery("qwen-code", "empty_or_unreadable")
+            return None
+        if not has_messages:
+            logger.debug("qwen-code: %s has no messages; session skipped", jsonl_file)
+            self._record_discovery("qwen-code", "empty_events")
+            return None
+
+        native_id, cwd = _qwen_code_session(head)
+        session_id = f"local:{agent}:{native_id or jsonl_file.stem}"
+        mtime = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=UTC)
+        project_name = _project_from_cwd(cwd) if cwd else None
+
+        self._record_discovery("qwen-code", "indexed")
+        return session_id, _FileRef(
+            path=jsonl_file,
+            agent=agent,
+            mtime=mtime,
+            project_name=project_name,
+            cwd=cwd,
+            home=home,
+        )
+
     def _index_copilot_file(
         self,
         jsonl_file: Path,
@@ -2814,6 +2954,7 @@ class LocalSource:
             AgentType.ANTIGRAVITY_CLI: parse_antigravity,
             AgentType.COMMAND_CODE: parse_command_code,
             AgentType.GOOSE: parse_goose,
+            AgentType.QWEN_CODE: parse_qwen_code,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label

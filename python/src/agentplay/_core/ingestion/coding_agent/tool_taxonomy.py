@@ -314,12 +314,35 @@ _GOOSE: dict[str, str] = {
     "todo__todo_write": "TodoWrite",
 }
 
+
+# Qwen Code's built-in tool names (`ToolNames` in its core `tool-names.ts`,
+# 0.26). Qwen Code began as a Gemini CLI fork and kept most of its names, but
+# its in-place old_string/new_string edit is `edit` (Gemini CLI: `replace`), its
+# web search is `web_search`, its todo list `todo_write` and its subagent tool
+# `agent`. `write_file` writes the whole file. Meta tools (`save_memory`,
+# `skill`, `exit_plan_mode`, `ask_user_question`, `lsp`, ...) and MCP tools pass
+# through unaliased.
+_QWEN_CODE: dict[str, str] = {
+    "run_shell_command": "Bash",
+    "read_file": "Read",
+    "edit": "Edit",
+    "write_file": "Write",
+    "grep_search": "Grep",
+    "glob": "Glob",
+    "list_directory": "ListDir",
+    "web_fetch": "WebFetch",
+    "web_search": "WebSearch",
+    "todo_write": "TodoWrite",
+    "agent": "Task",
+}
+
 TOOL_ALIASES: dict[str, dict[str, str]] = {
     "antigravity-cli": _ANTIGRAVITY_ALIASES,
     "codex": _CODEX,
     "command-code": _COMMAND_CODE,
     "gemini-cli": _GEMINI_CLI,
     "goose": _GOOSE,
+    "qwen-code": _QWEN_CODE,
     "cursor": _CURSOR,
     "copilot": _COPILOT,
     "copilot-vscode": _COPILOT_VSCODE,

@@ -30,6 +30,10 @@ class AgentType(StrEnum):
     ANTIGRAVITY_CLI = "antigravity-cli"
     COMMAND_CODE = "command-code"
     GOOSE = "goose"
+    QWEN_CODE = "qwen-code"
+
+
+_QWEN_RECORD_TYPES = ("user", "assistant", "tool_result", "system")
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -139,6 +143,18 @@ def detect_agent(data: bytes) -> AgentType | None:
             # without hardcoding a launcher name.
             if isinstance(payload.get("model_provider"), str) and payload["model_provider"]:
                 return AgentType.CODEX
+
+        # Qwen Code: uuid-linked records like Claude Code's (`type` + `sessionId`
+        # + `uuid`), but the message is a Gemini API `Content` with a `parts`
+        # list (Claude Code's carries `content`), and system records keep their
+        # data in `systemPayload`, a key no other agent writes. Checked before
+        # the Claude Code and opencode rules below, which both match these lines.
+        if line_type in _QWEN_RECORD_TYPES and isinstance(obj.get("sessionId"), str) and "uuid" in obj:
+            message = obj.get("message")
+            if (isinstance(message, dict) and isinstance(message.get("parts"), list)) or (
+                isinstance(obj.get("systemPayload"), dict)
+            ):
+                return AgentType.QWEN_CODE
 
         # Copilot: session.start with producer=copilot-agent.
         if line_type == "session.start":

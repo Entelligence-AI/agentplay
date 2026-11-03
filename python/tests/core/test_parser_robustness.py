@@ -32,6 +32,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_goose,
     parse_kiro,
     parse_opencode,
+    parse_qwen_code,
 )
 
 TS = "2026-09-14T10:00:0{}Z"
@@ -365,6 +366,28 @@ def _goose() -> list[dict]:
     ]
 
 
+def _qwen_code() -> list[dict]:
+    def record(uid, kind, ts, message=None, **extra):
+        rec = {"uuid": uid, "parentUuid": None, "sessionId": "s1", "timestamp": TS.format(ts), "type": kind,
+               "cwd": "/repo", "version": "0.26.5", **extra}
+        if message is not None:
+            rec["message"] = message
+        return rec
+
+    usage = {"promptTokenCount": 10, "candidatesTokenCount": 5, "cachedContentTokenCount": 2, "thoughtsTokenCount": 1}
+    call = {"id": "c1", "name": "run_shell_command", "args": {"command": "ls"}}
+    response = {"id": "c1", "name": "run_shell_command", "response": {"output": "x"}}
+    return [
+        record("u1", "user", 0, {"role": "user", "parts": [{"text": "list files"}]}),
+        record("a1", "assistant", 1, {"role": "model", "parts": [{"text": "t", "thought": True},
+                                                                 {"functionCall": call}]},
+               model="m", usageMetadata=usage),
+        record("r1", "tool_result", 2, {"role": "user", "parts": [{"functionResponse": response}]},
+               toolCallResult={"callId": "c1", "status": "error"}),
+        record("a2", "assistant", 3, {"role": "model", "parts": [{"text": "done"}]}, model="m", usageMetadata=usage),
+    ]
+
+
 PARSERS = {
     "claude_code": (parse_claude_code, _claude),
     "codex": (parse_codex, _codex),
@@ -377,6 +400,7 @@ PARSERS = {
     "goose": (parse_goose, _goose),
     "kiro": (parse_kiro, _kiro),
     "opencode": (parse_opencode, _opencode),
+    "qwen_code": (parse_qwen_code, _qwen_code),
 }
 UNKNOWN_RECORD = {"type": "agentplay-future-record", "payload": {"x": 1}}
 
