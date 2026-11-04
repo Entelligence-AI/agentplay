@@ -19,6 +19,8 @@ returns the agent type by sniffing for marker lines:
 - Command Code: `type="session"` header with `id` + `cwd` + int `version`, or
   a `type="message"` record with `parentId` + `message.meta.source`
   (`~/.commandcode/projects/<project>/<session-id>.jsonl`).
+- Goose: synthesized `type="goose_session"` header or `type="goose_message"`
+  lines, decoded from `sessions.db`.
 - opencode: materialized records carrying a `message` object and a `parts` list.
 
 Each parser exposes `parse_X(data, trace_id, user_id=None,
@@ -50,6 +52,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers.cursor_store 
     parse_cursor_store,
 )
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.gemini import parse_gemini
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.goose import parse_goose
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.kiro import parse_kiro
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.opencode import parse_opencode
 
@@ -65,6 +68,7 @@ __all__ = [
     "parse_cursor_agent_transcript",
     "parse_cursor_store",
     "parse_gemini",
+    "parse_goose",
     "parse_kiro",
     "parse_opencode",
 ]

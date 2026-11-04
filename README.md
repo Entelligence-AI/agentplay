@@ -9,7 +9,7 @@
   <a href="https://github.com/Entelligence-AI/agentplay/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Entelligence-AI/agentplay?style=social"></a>
 </p>
 
-**See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro, Gemini CLI, Antigravity CLI and Command Code.**
+**See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro, Gemini CLI, Antigravity CLI, Command Code and Goose.**
 
 ```bash
 uvx agentplay@latest
@@ -143,6 +143,7 @@ Every view is a URL, so a link to a moment in a session reopens it for anyone wh
 | **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl` | main lane only | per turn | The project folder is read from the CLI's `.project_root` file |
 | **Antigravity CLI** (`agy`) | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl` | main lane only | per turn | Project folder and subagent links from `conversation_summaries.db`, copied and read locally, read-only. Subagents are listed as separate subagent sessions. Model not recorded yet |
 | **Command Code** | `~/.commandcode/projects/*/*.jsonl` | main lane only | per request | Tool failures are read from the result text, which carries no error flag |
+| **Goose** | `~/.local/share/goose/sessions/sessions.db` (Windows: `%APPDATA%\Block\goose\data\sessions\sessions.db`) | main lane only | per request | SQLite, copied and decoded locally, read-only. Subagent and hidden sessions are skipped |
 
 "Main lane only" means the session's own tool calls are all there, but subagent work is not split out into separate lanes on the map.
 
@@ -188,22 +189,39 @@ The full contract, and the tests that enforce it, are described in [docs/format.
 agentplay [view]      build maps and open the viewer (default command)
 agentplay build       build maps for new or changed sessions
 agentplay list        list built sessions
+agentplay stats       cost, time and errors per agent over a window
 agentplay export      write one session's map to a .json or .json.gz file
 agentplay import      add map files (a teammate's, another machine's) to your local store
 agentplay agents      show which agents were found on this machine
 ```
 
+`stats` adds up the sessions `list` would show, one row per agent:
+
+```
+$ agentplay stats --since 7d
+             sessions    cost   time  calls  errors
+claude-code        41  $38.20  11.4h  3,912     118
+codex              12   $6.75   3.1h    804      22
+cursor              5     n/a   0.9h    211       4
+total              58  $44.95  15.4h  4,927     144
+Costs are estimates from public list prices. "n/a" is an agent that records no usable cost.
+```
+
+<sub>Illustrative counts.</sub>
+
+It reads only the local index, so it needs no map files and makes no network call. `n/a` is an agent with no priced session, which is every Cursor one (see [Known limitations](#known-limitations)); `--json` reports it as `null`.
+
 | Flag | On | Meaning |
 |---|---|---|
-| `--since 30d` | build, view, list | only sessions changed in the window (`12h`, `2w`, `2026-09-01`); list uses the stored transcript modification time, or the start time when that time is unavailable |
-| `--agents claude-code,codex` | build, view, list | limit to these agents |
+| `--since 30d` | build, view, list, stats | only sessions changed in the window (`12h`, `2w`, `2026-09-01`); list and stats use the stored transcript modification time, or the start time when that time is unavailable |
+| `--agents claude-code,codex` | build, view, list, stats | limit to these agents |
 | `--rebuild` | build, view | rebuild even unchanged sessions |
 | `--path-mode dirs_only` | build, view | see [Privacy](#privacy) |
 | `--limit N` | build, view, list | newest N sessions (for list: after `--sort`) |
 | `--sort cost` | list | order before `--limit`: `recent` (default), `cost`, `duration`, `calls`, `errors` |
 | `--no-titles` | build, view | don't keep local titles, and clear any already stored |
 | `--port 7317`, `--no-open`, `--no-build` | view | server options |
-| `--json` | build, list | machine-readable output |
+| `--json` | build, list, stats | machine-readable output |
 
 ## The session map format
 
@@ -280,6 +298,7 @@ All configuration is through environment variables. The examples in this README 
 | `AGENTPLAY_GEMINI_HOMES` | `~/.gemini` | Gemini CLI homes |
 | `AGENTPLAY_ANTIGRAVITY_HOMES` | `~/.gemini/antigravity-cli` | Antigravity CLI homes |
 | `AGENTPLAY_COMMANDCODE_HOMES` | `~/.commandcode` | Command Code homes |
+| `AGENTPLAY_GOOSE_HOMES` | `$XDG_DATA_HOME/goose` (Windows `%APPDATA%\Block\goose\data`) | Goose data dirs (each holds `sessions/sessions.db`) |
 | `AGENTPLAY_HMAC_KEY` | unset | key for `--path-mode hashed` |
 | `DO_NOT_TRACK`, `AGENTPLAY_NO_NETWORK` | unset | set either to turn off the email signup and its one network call |
 | `AGENTPLAY_SIGNUP_URL` | built in | where the signup sends an email (for testing; see [docs/signup-endpoint.md](docs/signup-endpoint.md)) |

@@ -1,4 +1,4 @@
-"""Command line: ``agentplay [view|build|list|export|import|agents|fix|repos|autotune]``.
+"""Command line: ``agentplay [view|build|list|stats|export|import|agents|fix|repos|autotune]``.
 
 Run with no arguments to build maps for your sessions and open the viewer.
 """
@@ -238,7 +238,45 @@ def cmd_view(args: argparse.Namespace) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------- list
+# --------------------------------------------------------------------------- list / stats
+def _changed_since(row: dict, since: datetime) -> bool:
+    """Whether an index row's session changed inside the ``--since`` window."""
+    # Imported maps and discovery's zero sentinel have no transcript mtime.
+    changed = row.get("sourceMtime")
+    if changed is None or changed == 0:
+        try:
+            started = datetime.fromisoformat(row.get("startedAt") or "")
+        except ValueError:
+            return False
+        changed = (started if started.tzinfo else started.replace(tzinfo=UTC)).timestamp()
+    return changed >= since.timestamp()
+
+
+def _selected_rows(st: Store, args: argparse.Namespace) -> list[dict]:
+    """Index rows matching ``--agents`` and ``--since``, newest first.
+
+    Shared by `list` and `stats` so a window means the same sessions in both.
+    Subagent and helper rows are left out: their calls, cost and errors are
+    already counted in the parent session's map.
+    """
+    agents = _agents(args.agents)
+    since = _since(args.since)
+    rows = []
+    for row in st.rows():
+        if row.get("role") in ("subagent", "helper"):
+            continue
+        if agents is not None and row.get("agentTool") not in agents:
+            continue
+        if since is not None and not _changed_since(row, since):
+            continue
+        rows.append(row)
+    return rows
+
+
+def _no_rows_message(args: argparse.Namespace) -> str:
+    return "No sessions match these filters." if (args.agents or args.since) else "No maps yet. Run `agentplay build`."
+
+
 _LIST_SORT_FIELDS = {
     "recent": "startedAt",
     "cost": "costUsd",
@@ -266,35 +304,12 @@ def _sort_list_rows(rows: list[dict], sort: str) -> list[dict]:
 
 def cmd_list(args: argparse.Namespace) -> int:
     st = Store()
-    agents = _agents(args.agents)
-    since = _since(args.since)
-    rows = []
-    for row in st.rows():
-        if row.get("role") in ("subagent", "helper"):
-            continue
-        if agents is not None and row.get("agentTool") not in agents:
-            continue
-        if since is not None:
-            # Imported maps and discovery's zero sentinel have no transcript mtime.
-            changed = row.get("sourceMtime")
-            if changed is None or changed == 0:
-                try:
-                    started = datetime.fromisoformat(row.get("startedAt") or "")
-                    changed = (started if started.tzinfo else started.replace(tzinfo=UTC)).timestamp()
-                except ValueError:
-                    continue
-            if changed < since.timestamp():
-                continue
-        rows.append(row)
-    rows = _sort_list_rows(rows, args.sort)[: args.limit or 30]
+    rows = _sort_list_rows(_selected_rows(st, args), args.sort)[: args.limit or 30]
     if args.json:
         print(json.dumps(rows, indent=2))
         return 0
     if not rows:
-        if agents is not None or since is not None:
-            print("No sessions match these filters.")
-        else:
-            print("No maps yet. Run `agentplay build`.")
+        print(_no_rows_message(args))
         return 0
     for r in rows:
         cost = f"${r.get('costUsd') or 0:.2f}"
@@ -303,6 +318,73 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"{(r.get('startedAt') or '')[:16].replace('T', ' ')}  {r.get('agentTool', ''):<14} "
               f"{cost:>8} {mins:6.0f}m {r.get('calls', 0):5} calls  {r.get('errors', 0):3} err  {title}")
         print("  " + _dim(r["sessionId"]))
+    return 0
+
+
+# --------------------------------------------------------------------------- stats
+def _totals(rows: list[dict], label: str | None = None) -> dict:
+    """Add up the index fields `stats` reports over a group of sessions.
+
+    ``costUsd`` is None when no session in the group had a priced request.
+    Cursor records no usable token counts, and a $0.00 there would read as
+    free rather than unknown (the same distinction as ``facts.hasCost``).
+    """
+    costs = [float(r.get("costUsd") or 0.0) for r in rows]
+    priced = [c for c in costs if c > 0]
+    totals = {
+        "sessions": len(rows),
+        "costUsd": round(sum(costs), 4) if priced else None,
+        "pricedSessions": len(priced),
+        "durationMs": sum(int(r.get("durationMs") or 0) for r in rows),
+        "calls": sum(int(r.get("calls") or 0) for r in rows),
+        "errors": sum(int(r.get("errors") or 0) for r in rows),
+    }
+    return totals if label is None else {"agentTool": label, **totals}
+
+
+_STATS_COLUMNS = (
+    ("sessions", lambda r: f"{r['sessions']:,}"),
+    ("cost", lambda r: "n/a" if r["costUsd"] is None else f"${r['costUsd']:,.2f}"),
+    ("time", lambda r: f"{r['durationMs'] / 3_600_000:.1f}h"),
+    ("calls", lambda r: f"{r['calls']:,}"),
+    ("errors", lambda r: f"{r['errors']:,}"),
+)
+
+
+def _stats_table(agents: list[dict], total: dict) -> list[str]:
+    """The table's lines: a header, one row per agent, then the total."""
+    body = [*agents, {**total, "agentTool": "total"}]
+    cells = [[fmt(r) for _, fmt in _STATS_COLUMNS] for r in body]
+    labels = max(len(r["agentTool"]) for r in body)
+    widths = [max(len(head), *(len(row[i]) for row in cells)) for i, (head, _) in enumerate(_STATS_COLUMNS)]
+    lines = [f"{'':<{labels}}  " + "  ".join(h.rjust(w) for (h, _), w in zip(_STATS_COLUMNS, widths, strict=True))]
+    for n, (r, row) in enumerate(zip(body, cells, strict=True), 1):
+        line = f"{r['agentTool']:<{labels}}  " + "  ".join(c.rjust(w) for c, w in zip(row, widths, strict=True))
+        # Padding is already in, so bolding the last row can't shift a column.
+        lines.append(_b(line) if n == len(body) else line)
+    return lines
+
+
+def cmd_stats(args: argparse.Namespace) -> int:
+    st = Store()
+    rows = _selected_rows(st, args)
+    by_agent: dict[str, list[dict]] = {}
+    for row in rows:
+        by_agent.setdefault(row.get("agentTool") or "unknown", []).append(row)
+    agents = [_totals(group, label) for label, group in by_agent.items()]
+    # Biggest spend first; an agent with no cost data at all sorts last.
+    agents.sort(key=lambda a: (a["costUsd"] is None, -(a["costUsd"] or 0.0), -a["sessions"], a["agentTool"]))
+    if args.json:
+        print(json.dumps({"agents": agents, "total": _totals(rows)}, indent=2))
+        return 0
+    if not agents:
+        print(_no_rows_message(args))
+        return 0
+    print("\n".join(_stats_table(agents, _totals(rows))))
+    note = "Costs are estimates from public list prices."
+    if any(a["costUsd"] is None for a in agents):
+        note += ' "n/a" is an agent that records no usable cost.'
+    print(_dim(note))
     return 0
 
 
@@ -541,6 +623,13 @@ def _build_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--no-titles", action="store_true", help="don't keep local session titles in the index")
 
 
+def _filter_flags(p: argparse.ArgumentParser) -> None:
+    """The window `list` and `stats` select sessions with."""
+    p.add_argument("--agents", help=f"comma-separated subset of: {', '.join(discover.AGENTS)}")
+    p.add_argument("--since", help="only sessions changed since (30d, 12h, 2w, YYYY-MM-DD); "
+                                   "missing modification times use start time")
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="agentplay",
@@ -567,13 +656,17 @@ def parser() -> argparse.ArgumentParser:
     b.set_defaults(fn=cmd_build)
 
     ls = sub.add_parser("list", parents=[common], help="list built sessions")
-    ls.add_argument("--agents", help=f"comma-separated subset of: {', '.join(discover.AGENTS)}")
-    ls.add_argument("--since", help="only sessions changed since (30d, 12h, 2w, YYYY-MM-DD); missing modification times use start time")
+    _filter_flags(ls)
     ls.add_argument("--sort", default="recent", choices=list(_LIST_SORT_FIELDS),
                     help="order before --limit (default: recent)")
     ls.add_argument("--limit", type=int)
     ls.add_argument("--json", action="store_true")
     ls.set_defaults(fn=cmd_list)
+
+    sta = sub.add_parser("stats", parents=[common], help="cost, time and errors per agent over a window")
+    _filter_flags(sta)
+    sta.add_argument("--json", action="store_true")
+    sta.set_defaults(fn=cmd_stats)
 
     e = sub.add_parser("export", parents=[common], help="write one session's map to a file you can share or open elsewhere")
     e.add_argument("session", help="session id (or a unique suffix of one)")

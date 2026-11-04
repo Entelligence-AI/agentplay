@@ -41,6 +41,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_cursor_store,
     parse_antigravity,
     parse_gemini,
+    parse_goose,
     parse_kiro,
     parse_opencode,
 )
@@ -1332,6 +1333,45 @@ def _command_code_has_messages(path: Path) -> bool:
     return False
 
 
+def _goose_line(line: bytes) -> object:
+    try:
+        return json.loads(line)
+    except (ValueError, RecursionError):  # blank, truncated, or split mid-character
+        return None
+
+
+def _goose_has_messages(path: Path) -> bool:
+    """True when the file holds a `goose_message` line.
+
+    Streams the whole file like ``_command_code_has_messages`` (one line at a
+    time, at most ``MAX_SOURCE_BYTES``) rather than reading only the head, so a
+    first message larger than the head still counts. Only lines that mention
+    the type are decoded.
+    """
+    remaining = MAX_SOURCE_BYTES
+    with path.open("rb") as handle:
+        while remaining > 0:
+            line = handle.readline(remaining)
+            if not line:
+                break
+            remaining -= len(line)
+            if b"goose_message" not in line:
+                continue
+            obj = _goose_line(line)
+            if isinstance(obj, dict) and obj.get("type") == "goose_message":
+                return True
+    return False
+
+
+def _goose_header(head: bytes) -> dict | None:
+    """The synthesized Goose session header: the first `type="goose_session"` record."""
+    for line in head.split(b"\n"):
+        obj = _goose_line(line)
+        if isinstance(obj, dict) and obj.get("type") == "goose_session":
+            return obj
+    return None
+
+
 def _cwd_from_gemini_project(jsonl_file: Path, header: dict | None) -> str | None:
     """The project root of a Gemini CLI session.
 
@@ -1489,6 +1529,7 @@ class LocalSource:
         gemini_homes: list[Path] | None = None,
         antigravity_homes: list[Path] | None = None,
         command_code_homes: list[Path] | None = None,
+        goose_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1532,6 +1573,10 @@ class LocalSource:
         # `<session-id>.checkpoints.jsonl` that is not a transcript. The
         # session id and cwd come from the `type="session"` header.
         self.command_code_homes = command_code_homes or []
+        # Goose keeps sessions in SQLite; the materializer writes one NDJSON
+        # per session, laid out flat as `<home>/<session_id>.jsonl`. The cwd
+        # comes from the synthesized `goose_session` header.
+        self.goose_homes = goose_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1558,6 +1603,7 @@ class LocalSource:
             *self.gemini_homes,
             *self.antigravity_homes,
             *self.command_code_homes,
+            *self.goose_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1797,6 +1843,17 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Goose: materialized NDJSON at `<home>/<session_id>.jsonl`.
+        # `detect_agent` sniffs the synthesized header, so a stray `.jsonl` is skipped.
+        for home in self.goose_homes:
+            if not home.is_dir():
+                logger.debug("Skipping non-existent path: %s", home)
+                continue
+            for jsonl_file in home.glob("*.jsonl"):
+                ref = self._index_goose_file(jsonl_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1811,7 +1868,8 @@ class LocalSource:
             + len(self.copilot_vscode_homes)
             + len(self.gemini_homes)
             + len(self.antigravity_homes)
-            + len(self.command_code_homes),
+            + len(self.command_code_homes)
+            + len(self.goose_homes),
         )
         return index
 
@@ -2268,6 +2326,74 @@ class LocalSource:
             home=home,
         )
 
+    def _index_goose_file(
+        self,
+        jsonl_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one materialized Goose NDJSON transcript."""
+        if not jsonl_file.is_file():
+            # See _index_cc_file's identical guard: a directory/broken symlink
+            # is never tallied, only a genuinely empty real file is.
+            return None
+        size = jsonl_file.stat().st_size
+        if size == 0:
+            self._record_discovery("goose", "empty_or_unreadable")
+            return None
+        if size > MAX_SOURCE_BYTES:
+            logger.debug("goose: %s exceeds the source byte cap; session skipped", jsonl_file)
+            self._record_discovery("goose", "too_large")
+            return None
+        try:
+            head = _read_head(jsonl_file, stop_when=_agent_detected)
+        except OSError:
+            self._record_discovery("goose", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            logger.warning(
+                "agent detection failed for %s (%d bytes); session skipped",
+                jsonl_file,
+                size,
+            )
+            self._record_discovery("goose", "detection_failed")
+            return None
+        if agent != AgentType.GOOSE:
+            self._record_discovery("goose", "different_agent")
+            return None
+        # The materializer writes no message-less session, but an empty span
+        # list would count as a failed parse, so a header-only file is skipped.
+        try:
+            has_messages = _goose_has_messages(jsonl_file)
+        except OSError:
+            self._record_discovery("goose", "empty_or_unreadable")
+            return None
+        if not has_messages:
+            logger.debug("goose: %s has no messages; session skipped", jsonl_file)
+            self._record_discovery("goose", "empty_events")
+            return None
+
+        header = _goose_header(head) or {}
+        native_id = header.get("id") if isinstance(header.get("id"), str) and header["id"] else jsonl_file.stem
+        session_id = f"local:{agent}:{native_id}"
+        mtime = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=UTC)
+
+        raw_cwd = header.get("working_dir")
+        cwd = raw_cwd if isinstance(raw_cwd, str) and raw_cwd else None
+        project_name = _project_from_cwd(cwd) if cwd else None
+
+        self._record_discovery("goose", "indexed")
+        return session_id, _FileRef(
+            path=jsonl_file,
+            agent=agent,
+            mtime=mtime,
+            project_name=project_name,
+            cwd=cwd,
+            home=home,
+        )
+
     def _index_copilot_file(
         self,
         jsonl_file: Path,
@@ -2687,6 +2813,7 @@ class LocalSource:
             AgentType.GEMINI_CLI: parse_gemini,
             AgentType.ANTIGRAVITY_CLI: parse_antigravity,
             AgentType.COMMAND_CODE: parse_command_code,
+            AgentType.GOOSE: parse_goose,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label

@@ -295,11 +295,31 @@ _COMMAND_CODE: dict[str, str] = {
     "agent": "Task",
 }
 
+# Goose's tool names, read from Goose's source (v1.57). The built-in
+# `developer` extension exposes its tools unprefixed (`shell`, `write`, `edit`,
+# `tree`, `read_image`); older releases prefixed them with the extension name
+# (`developer__shell`) and edited files through one `developer__text_editor`
+# whose `command` argument picks the operation. That row is the default for
+# the edit commands; `goose.py` resolves `view` to Read and `write` to Write.
+# `delegate` (the `summon` extension) runs a subagent. Other extensions'
+# tools are `<extension>__<tool>` and pass through unaliased, like MCP tools.
+_GOOSE: dict[str, str] = {
+    "shell": "Bash",
+    "developer__shell": "Bash",
+    "write": "Write",
+    "edit": "Edit",
+    "developer__text_editor": "Edit",
+    "tree": "ListDir",
+    "delegate": "Task",
+    "todo__todo_write": "TodoWrite",
+}
+
 TOOL_ALIASES: dict[str, dict[str, str]] = {
     "antigravity-cli": _ANTIGRAVITY_ALIASES,
     "codex": _CODEX,
     "command-code": _COMMAND_CODE,
     "gemini-cli": _GEMINI_CLI,
+    "goose": _GOOSE,
     "cursor": _CURSOR,
     "copilot": _COPILOT,
     "copilot-vscode": _COPILOT_VSCODE,

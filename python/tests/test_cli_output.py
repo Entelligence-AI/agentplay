@@ -282,3 +282,106 @@ def test_list_uses_start_time_for_zero_source_mtime(list_store, capsys, started,
     list_store.save_index()
     assert cli.main(["list", "--since", "2026-10-16", "--json"]) == 0
     assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == expected
+
+
+@pytest.fixture
+def stats_store(monkeypatch, tmp_path):
+    """Two priced agents, one unpriced (Cursor), and a subagent that must not be counted."""
+    monkeypatch.setenv("AGENTPLAY_HOME", str(tmp_path))
+    monkeypatch.setattr(cli, "_TTY", False)
+    st = cli.Store()
+    recent = datetime(2026, 10, 20, tzinfo=UTC).timestamp()
+    old = datetime(2026, 9, 1, tzinfo=UTC).timestamp()
+    for sid, agent, cost, hours, calls, errors, modified, role in [
+        ("cc-1", "claude-code", 30.0, 9.0, 3_000, 100, recent, None),
+        ("cc-2", "claude-code", 8.2, 2.4, 912, 18, recent, None),
+        ("cx-1", "codex", 6.75, 3.1, 804, 22, recent, None),
+        ("cu-1", "cursor", 0.0, 0.6, 150, 3, recent, None),
+        ("cu-2", "cursor", None, 0.3, 61, 1, recent, None),
+        ("cx-sub", "codex", 99.0, 9.9, 500, 50, recent, "subagent"),
+        ("cx-help", "codex", 99.0, 9.9, 500, 50, recent, "helper"),
+        ("cx-old", "codex", 1.5, 1.0, 40, 7, old, None),
+    ]:
+        st.index[sid] = {
+            "sessionId": sid, "agentTool": agent, "startedAt": "2026-10-20T00:00:00Z", "role": role,
+            "costUsd": cost, "durationMs": round(hours * 3_600_000), "calls": calls, "errors": errors,
+            "sourceMtime": modified,
+        }
+    st.save_index()
+    return st
+
+
+def test_stats_sums_each_agent_and_the_whole_window(stats_store, capsys):
+    assert cli.main(["stats"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == ["sessions", "cost", "time", "calls", "errors"]
+    # Biggest spend first, and the subagent and helper rows are left out of codex.
+    assert [line.split() for line in lines[1:5]] == [
+        ["claude-code", "2", "$38.20", "11.4h", "3,912", "118"],
+        ["codex", "2", "$8.25", "4.1h", "844", "29"],
+        ["cursor", "2", "n/a", "0.9h", "211", "4"],
+        ["total", "6", "$46.45", "16.4h", "4,967", "151"],
+    ]
+    assert lines[5] == "Costs are estimates from public list prices. " \
+                       '"n/a" is an agent that records no usable cost.'
+
+
+def test_stats_json_reports_unpriced_agents_as_null(stats_store, capsys):
+    assert cli.main(["stats", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert [(a["agentTool"], a["costUsd"], a["pricedSessions"]) for a in report["agents"]] == [
+        ("claude-code", 38.2, 2), ("codex", 8.25, 2), ("cursor", None, 0),
+    ]
+    assert report["total"] == {
+        "sessions": 6, "costUsd": 46.45, "pricedSessions": 4,
+        "durationMs": 59_040_000, "calls": 4_967, "errors": 151,
+    }
+
+
+@pytest.mark.parametrize(("flags", "expected"), [
+    (["--agents", "cursor"], [("cursor", 2, None)]),
+    (["--agents", "claude-code,codex"], [("claude-code", 2, 38.2), ("codex", 2, 8.25)]),
+    # `cx-old` changed before the window, so codex drops to its one recent session.
+    (["--since", "2026-10-16"], [("claude-code", 2, 38.2), ("codex", 1, 6.75), ("cursor", 2, None)]),
+])
+def test_stats_takes_the_same_filters_as_list(stats_store, capsys, flags, expected):
+    assert cli.main(["stats", "--json", *flags]) == 0
+    agents = json.loads(capsys.readouterr().out)["agents"]
+    assert [(a["agentTool"], a["sessions"], a["costUsd"]) for a in agents] == expected
+    # The same window has to select the same sessions in both commands.
+    assert cli.main(["list", "--json", *flags]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert sum(a["sessions"] for a in agents) == len(listed)
+
+
+def test_stats_notes_the_estimate_without_the_na_sentence_when_everything_is_priced(stats_store, capsys):
+    assert cli.main(["stats", "--agents", "codex"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "Costs are estimates from public list prices."
+
+
+@pytest.mark.parametrize("filtered", [False, True])
+def test_stats_empty_message(stats_store, capsys, filtered):
+    flags = ["--agents", "kiro"] if filtered else []
+    if not filtered:
+        stats_store.index.clear()
+        stats_store.save_index()
+    assert cli.main(["stats", *flags]) == 0
+    expected = "No sessions match these filters." if filtered else "No maps yet. Run `agentplay build`."
+    assert capsys.readouterr().out.strip() == expected
+
+
+def test_stats_json_is_still_a_report_when_nothing_matches(stats_store, capsys):
+    assert cli.main(["stats", "--json", "--agents", "kiro"]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "agents": [],
+        "total": {"sessions": 0, "costUsd": None, "pricedSessions": 0, "durationMs": 0, "calls": 0, "errors": 0},
+    }
+
+
+@pytest.mark.parametrize(("flags", "message"), [
+    (["--agents", "unknown"], "unknown agent"),
+    (["--since", "yesterday"], "can't read --since"),
+])
+def test_stats_rejects_invalid_filters(stats_store, flags, message):
+    with pytest.raises(SystemExit, match=message):
+        cli.main(["stats", *flags])
