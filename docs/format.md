@@ -192,7 +192,7 @@ Every event has these fields:
 ### Signals
 
 - **Failures.** A failed tool, MCP or subagent call can carry the following:
-  - `errClass`: one of `exit_code`, `timeout`, `not_found`, `validation`, `permission_denied`, `blocked`, `stale_file`, `model_unavailable`, `rate_limit`, `api_error`, `interrupted`, `no_result`, `subagent_failed`, `subagent_killed` or `other`;
+  - `errClass`: one of `exit_code`, `timeout`, `not_found`, `validation`, `needs_approval`, `permission_denied`, `blocked`, `browser`, `patch_failed`, `stale_file`, `model_unavailable`, `rate_limit`, `api_error`, `interrupted`, `no_result`, `subagent_failed`, `subagent_killed` or `other`;
   - `exitCode`;
   - `retryOf`: the `seq` of the failed attempt it repeats (same agent, tool, verb or server, and first target, within the last 8 calls);
   - `attempt`: 2 or higher.
