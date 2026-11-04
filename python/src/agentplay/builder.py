@@ -787,6 +787,13 @@ _WRAPPER_MARKERS: tuple[str, ...] = (
     "auto mode classifier",
     "auto mode cannot determine",
     "built-in Claude Code safety check",
+    # Claude Code's own approval refusals; looser phrasing such as
+    # "' needs approval." stays out because page text can say it too.
+    "following part requires approval",
+    "following parts require approval",
+    "require explicit approval to ensure paths are evaluated correctly",
+    "can't be checked before it runs",
+    "was blocked. For security, Claude Code",
 )
 # Claude in Chrome's per-site permission refusals ("Permission denied for
 # reading pages on this domain", ...): the extension's text, not page text.

@@ -680,6 +680,8 @@ def test_classify_tool_error(text, cls, code):
         ("claude-in-chrome", "Permission for this action was denied by the Claude Code auto mode classifier.",
          "needs_approval"),
         ("remote-devices Claude_Browser", "Element missing", "browser"),
+        ("claude-in-chrome", "The following part requires approval: rm -rf x", "needs_approval"),
+        ("playwright", "A variable in this command can't be checked before it runs", "needs_approval"),
         # The extension's own site-permission refusal is a denial, not a page failure.
         ("claude-in-chrome", "Permission denied for this action on this domain", "permission_denied"),
         ("claude-in-chrome", "Permission denied for reading page content on this domain", "permission_denied"),
