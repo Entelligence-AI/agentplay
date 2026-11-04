@@ -1157,6 +1157,8 @@ def _branch_from_copilot_head(start: dict | None) -> str | None:
 # covers any realistic preamble while keeping a cwd-less legacy file (a folder
 # already trusted earlier emits no notice at all) from costing a 5 MB read.
 _COPILOT_CWD_SCAN_MAX_BYTES = 1_000_000
+# Cline's `<id>.json` holds a cwd and a little metadata; real ones are a few KB.
+_CLINE_META_MAX_BYTES = 1_000_000
 
 
 def _copilot_cwd_present(buf: bytes) -> bool:
@@ -2452,7 +2454,10 @@ class LocalSource:
         native_id = messages_file.name.removesuffix(".messages.json")
         cwd = None
         try:
-            meta = json.loads(messages_file.with_name(f"{native_id}.json").read_bytes())
+            with messages_file.with_name(f"{native_id}.json").open("rb") as handle:
+                raw_meta = handle.read(_CLINE_META_MAX_BYTES + 1)
+            # An oversized metadata file is treated as missing: cwd is optional.
+            meta = json.loads(raw_meta) if len(raw_meta) <= _CLINE_META_MAX_BYTES else None
         except (OSError, ValueError, RecursionError):
             meta = None
         if isinstance(meta, dict) and isinstance(meta.get("cwd"), str) and meta["cwd"]:

@@ -186,6 +186,15 @@ def test_malformed_metadata_file_does_not_abort_indexing(tmp_path, text):
     assert index["local:cline:100_failed_shell"].cwd is None
 
 
+def test_oversized_metadata_file_is_ignored(tmp_path):
+    home = _cline_home(tmp_path)
+    meta = home / "data" / "sessions" / "100_failed_shell" / "100_failed_shell.json"
+    meta.write_text(json.dumps({"cwd": CWD, "pad": "x" * 1_100_000}))
+    index = LocalSource(claude_code_homes=[], codex_homes=[], cline_homes=[home])._build_index()
+    assert sorted(index) == [f"local:cline:100_{name}" for name in NAMES]
+    assert index["local:cline:100_failed_shell"].cwd is None
+
+
 def test_discovery_lists_cline_with_env_override(tmp_path, monkeypatch):
     assert "cline" in discover.AGENTS
     monkeypatch.setenv("AGENTPLAY_CLINE_HOMES", str(tmp_path))
