@@ -29,6 +29,7 @@ class AgentType(StrEnum):
     GEMINI_CLI = "gemini-cli"
     ANTIGRAVITY_CLI = "antigravity-cli"
     COMMAND_CODE = "command-code"
+    GOOSE = "goose"
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -75,6 +76,11 @@ def detect_agent(data: bytes) -> AgentType | None:
         # rationale as Cursor's — no other agent emits this `type`.
         if line_type == "kiro_session":
             return AgentType.KIRO
+
+        # Goose: synthesized lines (see agentplay.materialize.find_goose_candidates);
+        # no other agent emits these `type`s.
+        if line_type in ("goose_session", "goose_message"):
+            return AgentType.GOOSE
 
         # Gemini CLI: the first line is a header with `sessionId`, a
         # `projectHash` string and NO `type` (Claude Code's records all carry

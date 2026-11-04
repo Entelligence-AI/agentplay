@@ -29,6 +29,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_cursor_agent_transcript,
     parse_cursor_store,
     parse_gemini,
+    parse_goose,
     parse_kiro,
     parse_opencode,
 )
@@ -342,6 +343,28 @@ def _command_code() -> list[dict]:
     ]
 
 
+def _goose() -> list[dict]:
+    def message(msg_id, role, content, ts, **metadata):
+        return {"type": "goose_message", "id": msg_id, "role": role, "created": 1789380000 + ts,
+                "content": content, "metadata": {"userVisible": True, "agentVisible": True, **metadata}}
+
+    call = {"status": "success", "value": {"name": "shell", "arguments": {"command": "ls"}}}
+    result = {"status": "success", "value": {"content": [{"type": "text", "text": "x"}], "isError": True}}
+    usage = {"type": "goose_usage", "created": 1789380002, "model": "m", "input_tokens": 10,
+             "output_tokens": 5, "cache_read_tokens": 2, "cache_write_tokens": 0, "cost": 0.01,
+             "is_compaction": 0}
+    return [
+        {"type": "goose_session", "id": "s1", "working_dir": "/repo", "created_at": 1789380000,
+         "updated_at": 1789380003, "session_type": "user", "provider": "p", "model": "m"},
+        message("u1", "user", [{"type": "text", "text": "list files"}], 0),
+        message("a1", "assistant", [{"type": "thinking", "thinking": "t", "signature": ""},
+                                    {"type": "toolRequest", "id": "c1", "toolCall": call}], 1),
+        message("r1", "user", [{"type": "toolResponse", "id": "c1", "toolResult": result}], 2),
+        usage,
+        message("a2", "assistant", [{"type": "text", "text": "done"}], 3),
+    ]
+
+
 PARSERS = {
     "claude_code": (parse_claude_code, _claude),
     "codex": (parse_codex, _codex),
@@ -351,6 +374,7 @@ PARSERS = {
     "cursor_store": (parse_cursor_store, _cursor_store),
     "cursor_agent": (parse_cursor_agent_transcript, _cursor_agent),
     "gemini": (parse_gemini, _gemini),
+    "goose": (parse_goose, _goose),
     "kiro": (parse_kiro, _kiro),
     "opencode": (parse_opencode, _opencode),
 }
