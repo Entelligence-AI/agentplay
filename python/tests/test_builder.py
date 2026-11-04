@@ -941,3 +941,246 @@ def test_hex_named_files_are_still_file_operations():
     ops = sm.file_ops("Bash", {"command": "rm deadbeef1 && echo x > cafe1234"}, "/repo")
     assert ops.get(os.path.normpath("/repo/deadbeef1")) == "delete"
     assert ops.get(os.path.normpath("/repo/cafe1234")) == "create"
+
+
+# ---------------------------------------------------------------- shell file ops (F2)
+# A shell command's file changes are read the way the shell reads it: heredoc bodies
+# are content, quoted text is one argument, pipes and redirects are operators. Each
+# case below once produced fake "edited"/"deleted" files in real sessions.
+@pytest.mark.parametrize(
+    "cmd, expected",
+    [
+        # pipes and redirects are not file names
+        ("rm -f old.log 2>&1 | tail -5", {"old.log": "delete"}),
+        ("mv a.txt b.txt 2>&1 | tail -3", {"a.txt": "rename-from", "b.txt": "rename-to"}),
+        ("cp src.txt dst.txt | cat", {"dst.txt": "create"}),
+        ("touch a.txt 2>/dev/null", {"a.txt": "create"}),
+        ("rm -f a.txt > /dev/null", {"a.txt": "delete"}),
+        ("rm -rf .next 2>&1 | tail -1; ls | grep next", {".next": "delete"}),
+        ("cp src/x.ts /dev/null", {}),
+        # quoted text is one argument, not commands
+        ('git commit -m "fix login; rm old banner"', {}),
+        ('echo "use a > b to redirect"', {}),
+        ('python3 -c "print(1 if x > limit else 0)"', {}),
+        ("""node -e "const ev = 1; console.log(Math.floor(ev))" > out.txt""", {"out.txt": "create"}),
+        # commands run on another machine or in a container change nothing here
+        ("ssh prod 'cd /app && rm -rf cache'", {}),
+        ('docker exec web sh -c "cd /app; rm -rf node_modules"', {}),
+        ('gcloud compute ssh vm --command "cd /srv; rm -f app.log 2>&1 | tail -3"', {}),
+        ("ssh vm 'cat /tmp/x' 2>&1 | tail -3 > local.json", {"local.json": "create"}),
+        # a local `bash -c` script does run here
+        ('bash -c "rm -f gone.txt"', {"gone.txt": "delete"}),
+        # heredoc bodies are file content, not commands
+        ("cat > clean.sh <<'EOF'\nrm -rf logs cache\nEOF", {"clean.sh": "create"}),
+        ("cat > t.js <<'EOF'\nif (a >b) { x() }\nconsole.log(y)\nEOF", {"t.js": "create"}),
+        (
+            "cat >> t.py <<'EOF'\ndef f() -> None:\n    pass\nEOF\nrm -f stale.py",
+            {"t.py": "modify", "stale.py": "delete"},
+        ),
+        ("python3 - <<'EOF' > out.json\nprint({'a': 1 > 0})\nEOF", {"out.json": "create"}),
+        ("cat <<-EOF > x.txt\n\trm y\n\tEOF\ntouch z", {"x.txt": "create", "z": "create"}),
+        # `"$( … )"` is shell again: a heredoc in a commit or PR body is still content
+        ("git commit -m \"$(cat <<'EOF'\nTreat \"<\" and \">\" as operators\nEOF\n)\"", {}),
+        ("gh pr create --body \"$(cat <<'EOF'\n- Stop recording \"2>&1\" as a file\nEOF\n)\"", {}),
+        ("git commit -m \"$(cat <<'EOF'\nHandle \"x > y\"\nEOF\n)\" && rm old.txt", {"old.txt": "delete"}),
+        ('echo "today: $(date) > not a file" > log.txt', {"log.txt": "create"}),
+        # comparisons are not redirects
+        ("if [[ $a > $b ]]; then echo hi; fi", {}),
+        ("i=$((i > 2 ? 1 : 0)); echo $i", {}),
+        ('python3 -c "print(open(open_p()).read())" > o.txt', {"o.txt": "create"}),
+        # quoted or escaped punctuation is text, not syntax
+        ('grep -n ">" src/app.ts', {}),
+        ("grep -rn '>>' src/ && cut -d '>' -f2 names.txt", {}),
+        ("echo ';' rm x; echo \\> y; echo \\; rm z", {}),
+        ('grep "[[" f > out.txt', {"out.txt": "create"}),
+        ("echo $((1<<2))\ntouch x", {"x": "create"}),
+        # quoted brackets, parens and globs are part of the name (Next.js routes)
+        ('rm -rf "src/app/[id]/page.tsx"', {"src/app/[id]/page.tsx": "delete"}),
+        ("mv 'app/[id]/a.tsx' 'app/[id]/b.tsx'", {"app/[id]/a.tsx": "rename-from", "app/[id]/b.tsx": "rename-to"}),
+        ("rm src/app/\\[id\\]/page.tsx", {"src/app/[id]/page.tsx": "delete"}),
+        ('git rm -q -r "src/app/api/x/[blockId]/step-b"', {"src/app/api/x/[blockId]/step-b": "delete"}),
+        ('rm -f *.log; rm "*.log"', {"*.log": "delete"}),
+        ("cat > x.sh <<\\EOF\nrm y\nEOF\ntouch after", {"x.sh": "create", "after": "create"}),
+        # case patterns and script wrappers
+        ('bash -o pipefail -c "rm a.txt"', {"a.txt": "delete"}),
+        ('powershell -ExecutionPolicy Bypass -Command "rm b.txt"', {"b.txt": "delete"}),
+        ("case $x in (a|b) rm a.txt ;; *) rm b.txt ;; esac", {"a.txt": "delete", "b.txt": "delete"}),
+        ('powershell -Command "echo 1 > b.txt"', {"b.txt": "create"}),
+        ('env FOO=1 bash -lc "rm q.txt"', {"q.txt": "delete"}),
+        # comments are not commands
+        ("npm run build  # then rm -rf dist", {}),
+        # `&&` inside `[[ … ]]` doesn't end the test
+        ("[[ $a > 1.0 && $b > lim ]] && echo ok", {}),
+        # `git rm --cached` only unstages; option values are not files
+        ("git rm -r --cached node_modules && git rm old.txt", {"old.txt": "delete"}),
+        ('touch -d "2 days ago" x; touch -r ref.txt y', {"x": "create", "y": "create"}),
+        ("mv -t dest a b; cp -t dest a b", {}),
+    ],
+)
+def test_shell_file_ops_reads_commands_like_the_shell(cmd, expected):
+    got = sm.file_ops("Bash", {"command": cmd}, "/repo")
+    assert got == {os.path.normpath(f"/repo/{p}"): op for p, op in expected.items()}
+
+
+@pytest.mark.parametrize(
+    "cmd, expected",
+    [
+        # `cd` applies to everything after it, redirects included
+        ("cd apps/web && cat > scripts/a.ts <<'EOF'\nx\nEOF", {"/repo/apps/web/scripts/a.ts": "create"}),
+        ("touch a; cd /tmp; rm b", {"/repo/a": "create", "/tmp/b": "delete"}),
+        # a variable set earlier in the same command resolves
+        ("S=/tmp/s; cat > $S/sa.py <<'EOF'\nrm -rf x\nEOF", {"/tmp/s/sa.py": "create"}),
+        ("D=/a; P=${D}/pr; cd $P && mv 49.jpg 49c.jpg", {"/a/pr/49.jpg": "rename-from", "/a/pr/49c.jpg": "rename-to"}),
+        ("export O=/out; cp x $O/y", {"/out/y": "create"}),
+        # a quoted or escaped `~` is a literal folder name; only a bare `~` is home
+        ('touch "~/notes.md"; rm \\~/x', {"/repo/~/notes.md": "create", "/repo/~/x": "delete"}),
+        ('D="~/x"; touch $D/f', {"/repo/~/x/f": "create"}),
+        # an unquoted variable with spaces or a glob is split by the shell: unknown
+        ('FILES="a.txt b.txt"; rm $FILES; P="*.pyc"; rm -f $P', {}),
+        ('FILES="a.txt b.txt"; rm "$FILES"', {"/repo/a.txt b.txt": "delete"}),
+        ("rm '$HOME/x'", {"/repo/$HOME/x": "delete"}),
+        # copying or moving into a folder changes the files inside it
+        ("cp a.py dir/; cp a b out", {"/repo/dir/a.py": "create", "/repo/out/a": "create", "/repo/out/b": "create"}),
+        ("mv a.txt b.txt docs", {"/repo/a.txt": "rename-from", "/repo/docs/a.txt": "rename-to",
+                                 "/repo/b.txt": "rename-from", "/repo/docs/b.txt": "rename-to"}),
+        # `bash -c "…"`: the outer quotes expand `$X` first; unknown ones stay unknown
+        ('X=/tmp/d; bash -c "rm \'$X\'/f"', {"/tmp/d/f": "delete"}),
+        ("bash -c \"echo > '$(date).log'\"; bash -lc \"cd '$DIR' && rm x\"", {}),
+        ('X=/t; rm "${X}/f"', {"/t/f": "delete"}),
+        # copying a folder's contents names the destination, not a folder inside it
+        ("cp -r src/. dest/", {"/repo/dest": "create"}),
+        ("cp -r a/ b/ c/", {}),
+        ("cp -rt dest a b; mv -vt dest c d", {}),
+        # `=` can be part of a file name; a leading `NAME=value` is still an assignment
+        ("touch foo=bar; rm name=with-equals; A=1 rm a.txt", {"/repo/foo=bar": "create", "/repo/name=with-equals": "delete", "/repo/a.txt": "delete"}),
+        ('cd $DIR && bash -c "rm a.txt"', {}),
+        # a variable holding quoted punctuation keeps it as text
+        ('A="src/app/(admin)/admin"; cat > $A/page.tsx', {"/repo/src/app/(admin)/admin/page.tsx": "create"}),
+        ('F="report (1).pdf"; mv "$F" out.pdf', {"/repo/report (1).pdf": "rename-from", "/repo/out.pdf": "rename-to"}),
+        ('OUT="build;tmp"; echo hi > $OUT/x', {"/repo/build;tmp/x": "create"}),
+        # a loop or `read` rebinds the variable, so the earlier literal no longer applies
+        ("S=/tmp/a; cp x $S/y; for S in /tmp/b /tmp/c; do rm $S/z; done", {"/tmp/a/y": "create"}),
+        ("S=/tmp/a; while read -r S; do rm $S/z; done < list.txt", {}),
+        # anything that can't be known from the text records nothing
+        ("rm -f $UNSET/x", {}),
+        ("X=$(pwd); rm $X/y", {}),
+        ("for f in a b; do rm $f; done", {}),
+        ("rm -f *.jar dist/{a,b}", {}),
+        ("cd $SOMEWHERE && rm local.txt && rm /abs/kept.txt", {"/abs/kept.txt": "delete"}),
+        ("echo 'unterminated", {}),
+        # `( … )` and `$( … )` are subshells: a `cd` or variable inside doesn't leak out
+        ("(cd frontend && npm run build) && rm -f build.log", {"/repo/build.log": "delete"}),
+        ("ROOT=$(cd .. && pwd); rm -f build.log", {"/repo/build.log": "delete"}),
+        ("x=$(cd sub; ls); rm y", {"/repo/y": "delete"}),
+        ("D=/a; (D=/b); rm $D/y", {"/a/y": "delete"}),
+        # a `)` glued to a redirect still closes the subshell
+        ("(cd sub && make)>build.log 2>&1 && touch done", {"/repo/build.log": "create", "/repo/done": "create"}),
+        ("x=$(cd sub && pwd)>/dev/null; touch y", {"/repo/y": "create"}),
+        ("(cd sub)<in; touch y", {"/repo/y": "create"}),
+        ("echo '(' ; cd sub; echo ')' ; touch f", {"/repo/sub/f": "create"}),
+        ("(cd sub && case $1 in a) ;; esac; touch f)", {"/repo/sub/f": "create"}),
+        ("echo $((1+2))>out; touch y", {"/repo/out": "create", "/repo/y": "create"}),
+        # process substitution is not a file
+        ("diff <(sort a) <(sort b) > d.txt; cat <(cd sub; ls) && rm z", {"/repo/d.txt": "create", "/repo/z": "delete"}),
+        # nested quotes inside a quoted `$( … )`: the substitution is skipped, the rest is read
+        ('echo "$(git log -1 --format="%h > %s")" > last.txt', {"/repo/last.txt": "create"}),
+        ('until [ "$(sqlite3 db "select 1")" = 1 ]; do sleep 1; done; touch ok', {"/repo/ok": "create"}),
+        # a `C:\` inside quotes or a comment doesn't switch to Windows parsing
+        ('python -c "print(\\"x > y\\")" # C:\\Users', {}),
+        # arithmetic inside a subshell still closes the subshell
+        ("x=$(cd /tmp && echo $((1+2))) && rm f", {"/repo/f": "delete"}),
+        ("n=$(cd build && echo $(($(ls | wc -l)+1))) && rm f", {"/repo/f": "delete"}),
+        # but a `{ … }` group runs in the same shell
+        ("{ cd sub; rm x; }; rm y", {"/repo/sub/x": "delete", "/repo/sub/y": "delete"}),
+        # folders the text doesn't name
+        ("cd /tmp && cd - && rm x", {}),
+        ("pushd sub; rm x; popd; rm z", {"/repo/sub/x": "delete", "/repo/z": "delete"}),
+        ("pushd; rm z", {}),
+        ("D=/a; D+=b; rm $D/y", {}),
+        # a line continuation joins the two lines
+        ("echo x > a\\\nb", {"/repo/ab": "create"}),
+    ],
+)
+def test_shell_file_ops_resolves_cd_and_variables(cmd, expected):
+    got = sm.file_ops("Bash", {"command": cmd}, "/repo")
+    assert got == {os.path.normpath(p): op for p, op in expected.items()}
+
+
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (["bash", "-lc", "rm -f a.txt 2>&1 | tail -1"], {"a.txt": "delete"}),
+        (["bash", "-l", "-c", "rm a.txt"], {"a.txt": "delete"}),
+        (["/usr/bin/env", "bash", "-lc", "rm a.txt"], {"a.txt": "delete"}),
+        (["pwsh", "-NoProfile", "-Command", "rm a.txt"], {"a.txt": "delete"}),
+        (["cmd.exe", "/c", "echo 1 > a.txt"], {"a.txt": "create"}),
+        (["bash", "-lc", "echo 1 >> a.txt"], {"a.txt": "modify"}),
+        (["bash", "-lc", "cp src.txt a.txt"], {"a.txt": "create"}),
+        (["bash", "-lc", "mv a.txt b.txt"], {"a.txt": "rename-from", "b.txt": "rename-to"}),
+        (["rm", "a b.txt"], {"a b.txt": "delete"}),
+        (["rm a.txt"], {"a.txt": "delete"}),
+    ],
+)
+def test_argv_shell_commands_are_parsed(argv, expected):
+    ops = sm.file_ops("shell", {"command": argv}, "/repo")
+    assert ops == {os.path.normpath(f"/repo/{p}"): op for p, op in expected.items()}
+
+
+_SHELL_JUNK = re.compile(r"^(?:\||&|<|>|2>&1|null|None|tail|head|cat)$|[|<>&]")
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "rm -f x 2>&1 | tail -5 | head -2 && cat y | grep z >/dev/null 2>&1",
+        "cp a b 2>/dev/null || mv c d >&2; touch e &> /dev/null",
+        "cat > f.py <<'EOF'\ndef g() -> None:\n    return a > b and c < d\nEOF",
+        "node -e 'x => x > 1 ? console.log(null) : 0' | tail -1",
+    ],
+)
+def test_shell_file_ops_never_records_operators_or_tokens_as_files(cmd):
+    for p in sm.file_ops("Bash", {"command": cmd}, "/repo"):
+        assert not _SHELL_JUNK.search(os.path.basename(p)), (cmd, p)
+
+
+def test_shell_file_ops_survives_odd_input():
+    assert sm.file_ops("Bash", {"command": "rm x", "workdir": 5}, None) == {"x": "delete"}
+    assert sm.file_ops("Bash", {"command": "rm x", "workdir": 5}, "/r") == {os.path.normpath("/r/x"): "delete"}
+    # one huge literal word is skipped instead of parsed (shlex is quadratic on it)
+    assert sm.file_ops("Bash", {"command": "echo " + "a" * 200_000 + " > o"}, "/r") == {}
+
+
+def test_shell_file_ops_keeps_windows_backslash_paths(monkeypatch):
+    import ntpath
+    import types
+
+    fake_os = types.SimpleNamespace(**{k: getattr(os, k) for k in dir(os) if not k.startswith("__")})
+    fake_os.path = ntpath
+    monkeypatch.setattr(sm, "os", fake_os)
+    cwd = r"C:\proj"
+    assert sm.file_ops("Bash", {"command": r"rm .\build\out.txt"}, cwd) == {r"C:\proj\build\out.txt": "delete"}
+    assert sm.file_ops("Bash", {"command": r"rm C:\proj\old.txt"}, cwd) == {r"C:\proj\old.txt": "delete"}
+    assert sm.file_ops("Bash", {"command": r"cp src\a.ts dist\a.ts"}, cwd) == {r"C:\proj\dist\a.ts": "create"}
+    # `\\"` inside double quotes is a literal quote
+    assert sm.file_ops("Bash", {"command": 'python -c "print(\\"a > b\\")" > res.txt'}, cwd) == {r"C:\proj\res.txt": "create"}
+    # Gemini CLI, Antigravity and Cursor spans may carry no cwd at all
+    assert sm.file_ops("Bash", {"command": r"rm C:\proj\x.txt"}, None) == {r"C:\proj\x.txt": "delete"}
+    assert sm.file_ops("Bash", {"command": r"cd C:\proj && rm x.txt"}, None) == {r"C:\proj\x.txt": "delete"}
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        'A="src/app/(admin)/admin"; cat > $A/page.tsx',
+        "D='/tmp/a(b)'; touch \"$D/x\"; bash -c 'touch \"/tmp/c;d\"'",
+        'echo "<|>&;()[]*?{}" > "o[1](2).txt"',
+    ],
+)
+def test_shell_file_ops_never_leaks_masking_characters(cmd):
+    for p in sm.file_ops("Bash", {"command": cmd}, "/repo"):
+        assert not any("\ue000" <= ch <= "\uf8ff" for ch in p), (cmd, p)
+
+
+def test_shell_file_ops_does_not_change_shell_verb():
+    # `_shell_verb` keeps its own assignment rule (array subscripts included)
+    assert sm._shell_verb("arr[0]=1; npm test") == "npm test"

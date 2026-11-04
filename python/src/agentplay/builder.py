@@ -31,6 +31,7 @@ import hmac
 import json
 import os
 import re
+import shlex
 from collections.abc import Iterable
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -993,6 +994,488 @@ def pr_create_intent(tool: str, inp: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+# ---------------------------------------------------------------- shell file ops
+# Which files a shell command changes is read from the command the way the shell
+# reads it, never from raw text: heredoc bodies are file content (not commands),
+# quoted text is one argument (a `;` or `>` inside it is not syntax), and pipes and
+# redirects are operators (not file names). Anything that can't be known from the
+# text alone — `$VAR`, globs, command substitution, an unparseable command — records
+# nothing: a missing entry undercounts, a wrong one is false information.
+_SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+# Programs that run a script given as an argument: `bash -lc S`, `cmd /c S`, …
+_WRAPPER_SHELLS = _SHELLS | {"powershell", "pwsh", "cmd"}
+_SCRIPT_FLAG_RE = re.compile(r"-[a-z]*c|-command|/c|/k", re.I)
+_SHELL_PREFIXES = {"sudo", "command", "builtin", "exec", "nohup", "time", "then", "do",
+                   "else", "elif", "if", "while", "until", "!", "{", "}"}
+_SEPARATOR_CHARS = set(";&|\n()")
+_HEREDOC_RE = re.compile(r"<<(-?)[ \t]*\\?(['\"]?)([^\s'\";&|<>()\\]+)\2")
+_UNKNOWN_ARG_RE = re.compile("[$`*?\\[\\]{}\ue0ff]")
+_NUMBER_RE = re.compile(r"[\d.]+(s|ms|h|m|x|%)?")
+_SHELL_ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
+# `$NAME` / `${NAME}`; inside double quotes the `$` is the _QUOTED_DOLLAR marker.
+_VAR_RE = re.compile(
+    "([$\ue0ff])(?:[{\ue00b]([A-Za-z_][A-Za-z0-9_]*)[}\ue00c]|([A-Za-z_][A-Za-z0-9_]*))"
+)
+_WINDOWS_BASE_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
+_WINDOWS_PATH_RE = re.compile(r"(?<![\w$:])[A-Za-z]:\\\w")
+# Options that take the next word as their value, so it isn't a file operand.
+_VALUE_OPTIONS = {"touch": {"-d", "-r", "-t"}, "cp": {"-S"}, "mv": {"-S"}}
+# A shell token parse is quadratic in the longest word; past this, give up.
+_MAX_SHELL_CHARS = 100_000
+_SUBSHELL_OPEN, _SUBSHELL_CLOSE = "(", ")"
+_PUNCT_CHARS = set("();<>|&\n")
+_PUNCT_SPLIT_RE = re.compile(r"\(+|\)+|[;\n]+|[<>&|]+")
+_QUOTED_OR_COMMENT_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"|(?:^|(?<=\s))#[^\n]*")
+# Quoted or backslash-escaped punctuation is text, not syntax: it's swapped for
+# private-use characters before tokenizing so `grep ">" f` never reads as a redirect.
+_MASK = {c: chr(0xE000 + k) for k, c in enumerate("();<>|&[]*?{}~$\"")}
+# A `$` inside double quotes still expands, but its value isn't word-split or globbed.
+_QUOTED_DOLLAR = "\ue0ff"
+_UNMASK = str.maketrans({**{v: k for k, v in _MASK.items()}, _QUOTED_DOLLAR: "$"})
+_GLOB_OR_SPACE_RE = re.compile("[\\s*?\\[" + _MASK["*"] + _MASK["?"] + _MASK["["] + "]")
+
+
+def _unmask(text: str) -> str:
+    return text.translate(_UNMASK)
+
+
+def _program_name(word: str) -> str:
+    name = re.split(r"[\\/]", word)[-1].lower()
+    return name[:-4] if name.endswith(".exe") else name
+
+
+def _shell_script(argv: list[str]) -> str | None:
+    """The script a wrapper runs: `bash -lc S`, `env bash -c S`, `pwsh -Command S`, `cmd /c S`."""
+    i = 0
+    if argv and _program_name(argv[0]) == "env":
+        i = 1
+        while i < len(argv) and (argv[i].startswith("-") or "=" in argv[i]):
+            i += 1
+    if i >= len(argv) or _program_name(argv[i]) not in _WRAPPER_SHELLS:
+        return None
+    powershell = _program_name(argv[i]) in ("powershell", "pwsh")
+    j = i + 1
+    while j < len(argv) - 1:
+        a = argv[j]
+        if _SCRIPT_FLAG_RE.fullmatch(a) and not (powershell and a.lower() == "/c"):
+            return argv[j + 1]
+        if powershell:
+            j += 1  # `-ExecutionPolicy Bypass`, `-NoProfile`: options may come first
+            continue
+        if a in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
+            j += 2  # `bash -o pipefail -c S`
+            continue
+        if not a.startswith(("-", "/")):
+            return None  # `bash script.sh`: the script's contents aren't in the text
+        j += 1
+    return None
+
+
+def _strip_heredocs(cmd: str, windows: bool = False) -> str:
+    """Prepare a command for tokenizing: drop heredoc bodies and `#` comments, and mask
+    quoted or escaped punctuation.
+
+    The `<<WORD` operator itself is replaced by a space: it feeds stdin and names
+    no file. Only a `<<` outside quotes and arithmetic opens a heredoc, so Python's
+    `x << 2` in a quoted script or `$((1<<2))` is left alone — but `"$( … )"` is shell
+    again, so `git commit -m "$(cat <<'EOF' … EOF)"` loses its body too. On Windows a
+    backslash is a path separator, not an escape.
+    """
+    out: list[str] = []
+    pending: list[tuple[str, bool]] = []
+    # Context stack: "" top level, "$(" a substitution inside double quotes (with
+    # its paren depth and where its text starts), "((" arithmetic (paren depth),
+    # or the open quote character.
+    stack: list[list[Any]] = [["", 0]]
+    i, n = 0, len(cmd)
+    while i < n:
+        c = cmd[i]
+        kind = stack[-1][0]
+        if kind == "'":
+            if c == "'":
+                stack.pop()
+                out.append(c)
+            else:
+                out.append(_MASK.get(c, c))
+            i += 1
+            continue
+        if kind == '"':
+            if c == "\\" and i + 1 < n:
+                nxt = cmd[i + 1]
+                if windows:
+                    if nxt == '"':  # `\"` is a literal quote even to PowerShell and cmd
+                        out.append(_MASK['"'])
+                        i += 2
+                        continue
+                elif nxt in '"\\`':
+                    out.append(c + nxt)  # the tokenizer applies these escapes itself
+                    i += 2
+                    continue
+                elif nxt in "$\n" or nxt in _MASK:
+                    out.append("" if nxt == "\n" else _MASK[nxt])
+                    i += 2
+                    continue
+            if cmd.startswith("$(", i) and not cmd.startswith("$((", i):
+                out.append(_QUOTED_DOLLAR + "(")
+                stack.append(["$(", 0, len(out)])
+                i += 2
+                continue
+            if c == '"':
+                stack.pop()
+                out.append(c)
+            else:
+                out.append(_QUOTED_DOLLAR if c == "$" else _MASK.get(c, c))
+            i += 1
+            continue
+        if kind == "((":
+            if c == "(":
+                stack[-1][1] += 1
+            elif c == ")":
+                if stack[-1][1] == 0 and cmd.startswith("))", i):
+                    stack.pop()
+                    out.append("))")
+                    i += 2
+                    continue
+                stack[-1][1] = max(stack[-1][1] - 1, 0)
+            out.append(c)
+            i += 1
+            continue
+        # Unquoted: the top level or inside `"$( … )"`.
+        if c == "\\" and not windows and i + 1 < n:
+            nxt = cmd[i + 1]
+            out.append(_MASK[nxt] if nxt in _MASK else cmd[i : i + 2])
+            i += 2
+            continue
+        if c in "'\"":
+            stack.append([c, 0])
+            out.append(c)
+            i += 1
+            continue
+        if cmd.startswith("((", i):
+            stack.append(["((", 0])
+            out.append("((")
+            i += 2
+            continue
+        if kind == "$(":
+            if c == "(":
+                stack[-1][1] += 1
+            elif c == ")":
+                if stack[-1][1] == 0:
+                    # `"… $(cmd "arg") …"` is one quoted word to the tokenizer, which
+                    # can't nest quotes: keep the word, drop the substitution's text.
+                    del out[stack.pop()[2] :]
+                    out.append(":)")
+                    i += 1
+                    continue
+                stack[-1][1] -= 1
+        if c == "#" and (i == 0 or cmd[i - 1] in " \t\n;&|("):
+            j = cmd.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if cmd.startswith("<<", i) and not cmd.startswith("<<<", i):
+            m = _HEREDOC_RE.match(cmd, i)
+            if m:
+                pending.append((m.group(3), bool(m.group(1))))
+                out.append(" ")
+                i = m.end()
+                continue
+        if c == "\n" and pending:
+            out.append("\n")
+            i += 1
+            for delim, strip_tabs in pending:
+                while i < n:
+                    j = cmd.find("\n", i)
+                    line = cmd[i : n if j < 0 else j].rstrip("\r")
+                    i = n if j < 0 else j + 1
+                    if (line.lstrip("\t") if strip_tabs else line) == delim:
+                        break
+            pending = []
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _shell_tokens(cmd: str, windows: bool = False) -> list[str] | None:
+    """Shell words and operators; None when the command can't be parsed.
+
+    Words keep quoted punctuation masked; `_unmask` a word before using it as text.
+    """
+    text = _strip_heredocs(cmd, windows)
+    if not windows:
+        text = text.replace("\\\n", "")  # a line continuation joins the two lines
+    if len(text) > _MAX_SHELL_CHARS:
+        return None
+    lex = shlex.shlex(text, posix=True, punctuation_chars="();<>|&\n")
+    lex.whitespace = " \t\r"
+    lex.whitespace_split = True
+    lex.commenters = ""
+    if windows:
+        lex.escape = ""
+    try:
+        tokens = list(lex)
+    except ValueError:  # unbalanced quotes, e.g. a truncated command
+        return None
+    # shlex glues neighbouring punctuation (`)>`, `))>`, `&&(`): split it into
+    # parens, separators and redirect operators.
+    out: list[str] = []
+    for t in tokens:
+        if t and set(t) <= _PUNCT_CHARS and len(t) > 1:
+            out.extend(_PUNCT_SPLIT_RE.findall(t))
+        else:
+            out.append(t)
+    return out
+
+
+def _shell_file_ops(cmd: str, base: str | None, depth: int = 0) -> dict[str, str]:
+    # A Windows path in the base folder or the command means `\` separates paths.
+    windows = bool(base and _WINDOWS_BASE_RE.match(base)) or bool(
+        _WINDOWS_PATH_RE.search(_QUOTED_OR_COMMENT_RE.sub(" ", cmd))
+        or (not base and os.name == "nt")
+    )
+    tokens = _shell_tokens(cmd, windows)
+    if tokens is None:
+        return {}
+    ops: dict[str, str] = {}
+    base_known = True  # False after `cd $VAR`: relative paths can't be resolved
+    env: dict[str, str] = {}  # `S=/abs/dir` set earlier in this same command
+    dirstack: list[tuple[str | None, bool]] = []  # `pushd` / `popd`
+
+    def _expand(a: str, split_check: bool = True) -> str | None:
+        """Substitute known variables; None if an unquoted one would be word-split or globbed."""
+        unsafe = False
+
+        def sub(m: re.Match[str]) -> str:
+            nonlocal unsafe
+            value = env.get(m.group(2) or m.group(3))
+            if value is None:
+                return m.group(0)
+            if split_check and m.group(1) == "$" and _GLOB_OR_SPACE_RE.search(value):
+                unsafe = True
+            return value
+
+        out = _VAR_RE.sub(sub, a)
+        return None if unsafe else out
+
+    def _path(a: str) -> str | None:
+        # Variables expand to their still-masked values; quoted `[`, `*`, `{` or `~`
+        # stay masked through the checks, so only a bare glob fails and only a bare
+        # `~` expands to the home folder.
+        a = _expand(a) if _VAR_RE.search(a) else a
+        if not a or _UNKNOWN_ARG_RE.search(a):
+            return None
+        a = _unmask(os.path.expanduser(a))
+        if a == "/dev" or a.startswith("/dev/"):
+            return None  # checked before normpath, which turns it into `\dev\…` on Windows
+        if _isabs(a):
+            return os.path.normpath(a)
+        if not base_known:
+            return None
+        return os.path.normpath(os.path.join(base, a) if base else a)
+
+    # Split into simple commands: (words, [(redirect operator, target)]), with
+    # subshell open/close markers between them.
+    commands: list[tuple[list[str], list[tuple[str, str]]] | str] = []
+    words: list[str] = []
+    redirects: list[tuple[str, str]] = []
+    i, arith, test = 0, 0, False
+    case: list[str] = []  # per open `case`: "head", "pattern" or "body"
+    while i < len(tokens):
+        t = tokens[i]
+        operator = bool(t) and set(t) <= _SEPARATOR_CHARS
+        # `(( a > b ))` and `$(( … ))` compare, they don't redirect.
+        if not arith and operator and "((" in t:
+            arith = t.count("(") - t.count(")")
+            i += 1
+            continue
+        if arith:
+            if operator:
+                arith += t.count("(") - t.count(")")
+                if arith <= 0:
+                    # Parens left over close enclosing subshells, as in `$(… $((1+2)))`.
+                    commands.append((words, redirects))
+                    words, redirects = [], []
+                    commands.extend(_SUBSHELL_CLOSE for _ in range(-arith))
+                    arith = 0
+            i += 1
+            continue
+        if t == "[[":
+            test = True  # `&&` and `||` inside `[[ … ]]` don't end it
+        elif t == "]]":
+            test = False
+        elif t == "case" and not words:
+            case.append("head")
+        elif t == "in" and case and case[-1] == "head":
+            case[-1] = "pattern"
+        elif t == "esac" and case:
+            case.pop()
+        if operator:
+            commands.append((words, redirects))
+            words, redirects = [], []
+            parens = [ch for ch in t if ch in "()"]
+            if case and case[-1] == "pattern" and ")" in parens:
+                parens = []  # `a)` / `(a)` end a case pattern, not a subshell
+                case[-1] = "body"
+            elif case and case[-1] == "body" and t.startswith((";;", ";&")):
+                case[-1] = "pattern"
+            commands.extend(parens)
+            i += 1
+            continue
+        if t and set(t) <= set("<>&|") and ("<" in t or ">" in t):
+            target = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if words and words[-1].isdigit():
+                words.pop()  # the fd number in `2>`
+            if target and set(target) <= _PUNCT_CHARS:
+                i += 1  # `<(cmd)` / `>(cmd)`: process substitution, no file
+                continue
+            if not test:  # inside `[[ a > b ]]`, `>` compares strings
+                redirects.append((t, target))
+            i += 2
+            continue
+        words.append(t)
+        i += 1
+    commands.append((words, redirects))
+
+    # `( … )` and `$( … )` run in a subshell: a `cd` or variable set inside
+    # doesn't outlive it.
+    saved: list[tuple[str | None, bool, dict[str, str]]] = []
+    for item in commands:
+        if item == _SUBSHELL_OPEN:
+            saved.append((base, base_known, dict(env)))
+            continue
+        if item == _SUBSHELL_CLOSE:
+            if saved:
+                base, base_known, env = saved.pop()
+            continue
+        w, reds = item
+        if w and w[0] == "export":
+            w = w[1:]
+        if w and not reds and all(_SHELL_ASSIGN_RE.match(x) for x in w):
+            # A bare `NAME=value` sets a shell variable; only a literal value is kept.
+            for x in w:
+                name, value = x.split("=", 1)
+                if name.endswith("+"):  # `NAME+=more` appends: no longer a known literal
+                    env.pop(name[:-1], None)
+                    continue
+                value = _expand(value, split_check=False) if _VAR_RE.search(value) else value
+                if value and not _UNKNOWN_ARG_RE.search(value):
+                    env[name] = value
+                else:
+                    env.pop(name, None)
+            continue
+        for op, target in reds:
+            if (
+                ">" in op
+                and not op.startswith("<")
+                and target
+                and not set(target) <= _SEPARATOR_CHARS | set("<>&")
+                and not target.startswith(("/dev/", "&"))
+                and not (op.endswith("&") and (target.isdigit() or target == "-"))
+                and not _NUMBER_RE.fullmatch(target)
+            ):
+                p = _path(target)
+                if p:
+                    ops.setdefault(p, "modify" if ">>" in op else "create")
+        while w and _SHELL_ASSIGN_RE.match(w[0]):
+            w = w[1:]  # `A=1 rm x`
+        while w and w[0] in _SHELL_PREFIXES:
+            w = w[1:]
+        if not w:
+            continue
+        head = os.path.basename(w[0])
+        if head in ("for", "select", "read"):
+            # A loop or `read` rebinds its variables: a literal set earlier is stale.
+            for name in (w[1:2] if head != "read" else w[1:]):
+                env.pop(name, None)
+            continue
+        script = _shell_script(w)
+        if script is not None:
+            if depth < 3:
+                # The outer double quotes expand `$X` before the inner shell runs: put in
+                # what's known, and make the rest unknown (a backtick) rather than `$`.
+                script = _expand(script, split_check=False) if _VAR_RE.search(script) else script
+                script = _unmask((script or "").replace(_QUOTED_DOLLAR, "`"))
+                inner = _shell_file_ops(script, base if base_known else None, depth + 1)
+                for p, op in inner.items():
+                    if base_known or _isabs(p):  # unknown folder: relative paths can't resolve
+                        ops.setdefault(p, op)
+            continue
+        if head in ("cd", "pushd", "popd"):
+            rest = [a for a in w[1:] if not a.startswith("-") or a == "-"]
+            if head == "popd":
+                base, base_known = dirstack.pop() if dirstack else (base, False)
+                continue
+            if "-" in rest or (head == "pushd" and not rest):
+                base_known = False  # back to a folder the text doesn't name
+                continue
+            if head == "pushd":
+                dirstack.append((base, base_known))
+            new_base = _path(rest[0] if rest else "~")
+            base, base_known = (new_base, True) if new_base else (base, False)
+            continue
+        if head == "git" and len(w) > 1:
+            sub = [a for a in w[1:] if not a.startswith("-")]
+            if sub[:1] not in (["rm"], ["mv"]):
+                continue
+            if sub[0] == "rm" and "--cached" in w:
+                continue  # only unstages: the file stays on disk
+            w = w[w.index(sub[0]) :]
+            head = sub[0]
+        if head in ("cp", "mv") and any(
+            re.match(r"-[A-Za-z]*t|--target", a) for a in w[1:]
+        ):
+            continue  # `-t DIR` names the target first: not worth guessing
+        args: list[str] = []
+        options_done, skip_next = False, False
+        value_opts = _VALUE_OPTIONS.get(head, set())
+        for a in w[1:]:
+            if skip_next:
+                skip_next = False
+            elif a == "--" and not options_done:
+                options_done = True
+            elif options_done or not a.startswith("-"):
+                args.append(a)  # `foo=bar` is a valid file name
+            elif a in value_opts:
+                skip_next = True
+        paths = [_path(a) for a in args]
+        if head in ("cp", "mv") and len(paths) >= 2 and paths[-1]:
+            raw_dest = _unmask(args[-1])
+            raw_sources = [_unmask(a) for a in args[:-1]]
+            if any(
+                r in (".", "..") or r.endswith(("/", "\\", "/.", "/..")) for r in raw_sources
+            ):
+                # `cp -r src/. dest/` copies contents; `cp -r a/ b/` depends on whether
+                # b exists. Only the two-operand form is kept, naming the destination.
+                if len(paths) != 2:
+                    continue
+            elif len(paths) > 2 or raw_dest.endswith(("/", "\\")) or raw_dest in (".", ".."):
+                # Into a folder: each source keeps its name there.
+                sources = [p for p in paths[:-1] if p]
+                if len(sources) != len(paths) - 1:
+                    continue
+                for src in sources:
+                    if head == "mv":
+                        ops[src] = "rename-from"
+                    dest = os.path.join(paths[-1], os.path.basename(src))
+                    ops[os.path.normpath(dest)] = "rename-to" if head == "mv" else "create"
+                continue
+        if head in ("rm", "rmdir", "unlink"):
+            for p in paths:
+                if p:
+                    ops[p] = "delete"
+        elif head == "mv" and len(paths) >= 2 and all(paths):
+            for p in paths[:-1]:
+                ops[p] = "rename-from"
+            ops[paths[-1]] = "rename-to"
+        elif head == "cp" and len(paths) >= 2 and paths[-1]:
+            ops[paths[-1]] = "create"
+        elif head == "touch":
+            for p in paths:
+                if p:
+                    ops.setdefault(p, "create")
+    return ops
+
+
 def file_ops(tool: str, inp: dict[str, Any], cwd: str | None) -> dict[str, str]:
     """abs path -> create | modify | delete | rename-from | rename-to for file-changing calls."""
 
@@ -1012,57 +1495,15 @@ def file_ops(tool: str, inp: dict[str, Any], cwd: str | None) -> dict[str, str]:
     if tool in SHELL_TOOLS:
         cmd = inp.get("command") or inp.get("cmd") or ""
         if isinstance(cmd, list):
-            cmd = " ".join(str(c) for c in cmd)
-        base = inp.get("workdir") or cwd
-        m = _CD_RE.match(str(cmd))
-        if m:
-            base = os.path.expanduser(m.group(2).strip())
-        for seg in re.split(r"&&|;|\|\||\n", str(cmd)):
-            w = _cmd_words(seg)
-            if not w:
-                continue
-            h = os.path.basename(w[0])
-            args = [a for a in w[1:] if not a.startswith("-")]
-            if h == "git" and args[:1] in (["rm"], ["mv"]):
-                h, args = args[0], args[1:]
-            ab = [
-                os.path.normpath(a if _isabs(a) or not base else os.path.join(base, a))
-                for a in args
-            ]
-            if h in ("rm", "rmdir", "unlink"):
-                for a in ab:
-                    ops[a] = "delete"
-            elif h == "mv" and len(ab) >= 2:
-                for a in ab[:-1]:
-                    ops[a] = "rename-from"
-                ops[ab[-1]] = "rename-to"
-            elif h == "cp" and len(ab) >= 2:
-                ops[ab[-1]] = "create"
-            elif h == "touch":
-                for a in ab:
-                    ops.setdefault(a, "create")
-            # Path-safe characters only: a permissive class also matches Python f-string
-            # alignment specs (`{x:>7.0f}`) as a false "redirect target"; this excludes
-            # {}, (), quotes, $ outright. `:` is excluded from the lookbehind too, since
-            # a real shell redirect is never preceded by one, but an f-string spec always is.
-            # Nor by another `>`: a merge-conflict marker (`>>>>>>> <sha>`) in a heredoc
-            # is not a write.
-            for red in re.findall(r"(?<![0-9&:>])>{1,2}\s*([\w./@+-]+)", seg):
-                # Excludes bare numbers, incl. decimals/durations: `[ "$rc" > 1 ]`, and
-                # `echo "$val > $threshold" | bc -l` (a common bash float-comparison
-                # idiom) are numeric comparisons, not redirects — a real redirect
-                # target is never a bare number in practice, so this is a safe, cheap
-                # guard against exactly that ambiguity (regex alone can't tell `>`
-                # apart from a comparison operator).
-                if (
-                    red in ("/dev/null", "&1", "&2")
-                    or re.fullmatch(r"[\d.]+(s|ms|h|m|x|%)?", red)
-                ):
-                    continue
-                ops.setdefault(
-                    _abs(red if _isabs(red) or not base else os.path.join(base, red)),
-                    "modify" if ">>" in seg else "create",
-                )
+            argv = [str(c) for c in cmd]
+            # Codex passes `["bash", "-lc", "<script>"]`: the script is the command.
+            script = _shell_script(argv)
+            if script is None and len(argv) == 1:
+                script = argv[0]  # `["rm a.txt"]`: one string is already a command line
+            cmd = script if script is not None else shlex.join(argv)
+        base = inp.get("workdir")
+        base = base if isinstance(base, str) and base else cwd
+        ops.update(_shell_file_ops(str(cmd), base if isinstance(base, str) else None))
     return ops
 
 
