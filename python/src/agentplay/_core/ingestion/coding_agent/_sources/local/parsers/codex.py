@@ -55,7 +55,7 @@ _TOOL_OUTPUT_TYPES = ("function_call_output", "custom_tool_call_output")
 # section. Full-line MULTILINE match so a stray substring inside the
 # command's stdout can't trigger it, and `search` (first match) so the
 # header verdict wins even when the output body echoes a similar line.
-_RE_EXEC_EXIT_CODE = re.compile(r"^Process exited with code (\d+)$", re.MULTILINE)
+_RE_EXEC_EXIT_CODE = re.compile(r"^Process exited with code (-?\d{1,10})$", re.MULTILINE)
 
 # File headers inside an `apply_patch` body. The codex patch format brackets
 # hunks with `*** Begin Patch` / `*** End Patch` and names each touched file
@@ -264,6 +264,7 @@ def parse_codex(
                             "pr.create.output_url",
                             "pr.create.capture",
                             "provenance.capture",
+                            "process.exit_code",
                         )
                         if key in tool
                     },
@@ -1080,6 +1081,8 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
                         ),
                         **creation_command_attributes(arguments, name),
                     }
+                    if isinstance(result, dict) and type(result.get("exit_code")) is int:
+                        native["process.exit_code"] = result["exit_code"]
                     native.update(
                         creation_output_attributes(
                             result,
@@ -1114,6 +1117,9 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
                 # after a potentially long `output` text, so a truncated
                 # string would no longer parse.
                 pending_calls[call_id]["is_error"] = _tool_output_is_error(output)
+                exit_code = _tool_output_exit_code(output)
+                if exit_code is not None:
+                    pending_calls[call_id]["process.exit_code"] = exit_code
                 pending_calls[call_id]["end_ts"] = ts
                 try:
                     args = json.loads(pending_calls[call_id].get("_arguments") or "null")
@@ -1220,6 +1226,38 @@ def _tool_output_is_error(output: object) -> bool:
         return bool(parsed.get("error"))
     m = _RE_EXEC_EXIT_CODE.search(output)
     return bool(m and m.group(1) != "0")
+
+
+def _tool_output_exit_code(output: object) -> int | None:
+    """The exit code a `*_output` payload reports, read from the FULL payload.
+
+    Exec-style text carries a `Process exited with code N` line; apply_patch
+    JSON carries `exit_code` or `metadata.exit_code`, possibly after a long
+    `output` text that the stored copy truncates away.
+
+    Args:
+        output: The payload's `output` field, untruncated.
+
+    Returns:
+        The exit code, or None when the payload reports none.
+    """
+    if not isinstance(output, str) or not output:
+        return None
+    try:
+        parsed = json.loads(output)
+    except (ValueError, RecursionError):  # JSONDecodeError, and int() past 4300 digits
+        parsed = None
+    if isinstance(parsed, dict):
+        metadata = parsed.get("metadata")
+        codes = [
+            c
+            for c in (parsed.get("exit_code"), metadata.get("exit_code") if isinstance(metadata, dict) else None)
+            if type(c) is int
+        ]
+        # Same rule as _tool_output_is_error: any nonzero code is the failure.
+        return next((c for c in codes if c != 0), codes[0] if codes else None)
+    m = _RE_EXEC_EXIT_CODE.search(output)
+    return int(m.group(1)) if m else None
 
 
 __all__ = ["parse_codex"]

@@ -109,7 +109,7 @@ _ARG_KEYS: dict[str, dict[str, str]] = {
 _SHELL_TOOL = "run_command"
 
 _RE_USER_REQUEST = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.DOTALL)
-_RE_EXIT_CODE = re.compile(r"^(?:The c|C)ommand exited with code (-?\d+)\.?\s*$")
+_RE_EXIT_CODE = re.compile(r"^(?:The c|C)ommand exited with code (-?\d{1,10})\.?\s*$")
 # Result labels after which the program's own output starts.
 _OUTPUT_LABELS = ("Command output:", "Output:", "Stdout:", "Stderr:")
 _RE_CREATED = re.compile(r"^Created At: (\S+)\s*$")
@@ -406,6 +406,8 @@ def _tool_span(
             ),
         },
     )
+    if raw_name == _SHELL_TOOL and (exit_code := _exit_code(content)) is not None:
+        span.attributes["process.exit_code"] = exit_code
     span.attributes.update(source_attrs(result if result is not None else planner))
     return span
 

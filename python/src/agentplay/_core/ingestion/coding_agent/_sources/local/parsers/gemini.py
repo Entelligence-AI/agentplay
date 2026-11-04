@@ -95,7 +95,7 @@ _RE_TRAILER = (
     ("pgid", re.compile(r"^Process Group PGID: \S+\s*$")),
     ("pids", re.compile(r"^Background PIDs: .*$")),
     ("signal", re.compile(r"^Signal: (\S+)\s*$")),
-    ("exit", re.compile(r"^Exit Code: (-?\d+)\s*$")),
+    ("exit", re.compile(r"^Exit Code: (-?\d{1,10})\s*$")),
 )
 
 
@@ -377,6 +377,13 @@ def _tool_span(trace_id: str, turn: dict, msg: dict, call: dict, index: int) -> 
             ),
         },
     )
+    # The `Exit Code:` trailer follows the program output, past the truncation
+    # of a long result, so it is carried as its own attribute.
+    raw_output = response.get("output")
+    if raw_name == _SHELL_TOOL and isinstance(raw_output, str):
+        exit_text = _shell_trailer(raw_output).get("exit")
+        if exit_text is not None:
+            span.attributes["process.exit_code"] = int(exit_text)
     span.attributes.update(source_attrs(msg))
     return span
 
