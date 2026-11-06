@@ -73,6 +73,7 @@ export const GLOSSARY = {
       ['timeout', 'It ran too long and was stopped.'],
       ['permission_denied', 'The agent was not allowed to run it.'],
       ['not_found', 'The command, or a file it needed, does not exist.'],
+      ['needs_approval', 'Claude Code stopped it before it ran: it needed your approval, or a built-in check refused it.'],
     ],
   },
   whatFails: {

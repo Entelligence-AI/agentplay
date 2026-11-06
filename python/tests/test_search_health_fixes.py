@@ -124,6 +124,15 @@ def test_permission_fix_needs_three_sessions():
     assert not [f for f in health.fixes(rows[:2]) if f["rule"] == "allow_command"]
 
 
+def test_needs_approval_refusals_never_suggest_an_allow_rule():
+    # Claude Code's pre-run refusals (unverifiable variables, auto mode) are not
+    # fixed by a prefix allow rule, so they must not produce one.
+    ask = {"python": {"calls": 5, "fails": 5, "retries": 0, "byClass": {"needs_approval": 5}, "outBytes": 0}}
+    rows = [_row(f"s{i}", cmd=ask, verifyAfterLastEdit=True,
+                 errorsBySource={"tool": {"needs_approval": 5}}) for i in range(6)]
+    assert not [f for f in health.fixes(rows) if f["rule"] == "allow_command"]
+
+
 # ------------------------------------------------------------------ writing fixes
 
 

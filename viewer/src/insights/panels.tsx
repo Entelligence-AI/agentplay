@@ -315,7 +315,7 @@ export function SpendPanel({ rows }: { rows: InsightsSession[] }) {
 
 // ------------------------------------------------------------------ failures
 
-const ERR_CLASS_ORDER = ['exit_code', 'timeout', 'permission_denied', 'not_found', 'blocked'];
+const ERR_CLASS_ORDER = ['exit_code', 'timeout', 'permission_denied', 'not_found', 'blocked', 'needs_approval'];
 const classColor = (cls: string) => {
   const i = ERR_CLASS_ORDER.indexOf(cls);
   return i < 0 ? SERIES_OTHER : seriesColor(i);

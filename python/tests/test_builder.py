@@ -609,10 +609,108 @@ def test_tool_without_result_is_flagged(tmp_path):
         ("Command timed out", "timeout", None),
         ("claude-opus-5 is temporarily unavailable", "model_unavailable", None),
         ("weird", "other", None),
+        # Codex exec output: exit line comes after the header lines.
+        ("Chunk ID: ab12\nWall time: 0.4 seconds\nProcess exited with code 1\nOutput:\nboom", "exit_code", 1),
+        ("Process exited with code 0\nOutput:\nnot found", "not_found", None),
+        # Gemini CLI and Command Code exit lines.
+        ("Output: FAIL src/timeout.test.ts\nExit Code: 1", "exit_code", 1),
+        ("Exit code: 127\nsh: pnpm: command not found", "exit_code", 127),
+        ("Process exited with code -1", "exit_code", -1),
+        # JSON exit codes are read by the parser, not from text.
+        ('{"output": "x", "metadata": {"exit_code": 2}}', "other", None),
+        ("apply_patch verification failed: Failed to find expected lines", "patch_failed", None),
+        # Claude Code approval prompts and auto-mode denials.
+        ("This Bash command contains multiple operations. The following part requires approval: rm x", "needs_approval", None),
+        ("A variable in this command can't be checked before it runs", "needs_approval", None),
+        ("Commands that change directories and perform write operations require explicit approval to ensure paths are evaluated correctly.", "needs_approval", None),
+        ("Commands that change directories and write via output redirection require explicit approval to ensure paths are evaluated correctly.", "needs_approval", None),
+        ("The banner says large transfers require explicit approval", "other", None),
+        # Generic approval wording from a tool's own output is not Claude Code's refusal.
+        ("Error: deploys to prod require explicit approval from an admin", "other", None),
+        ("Permission for this action was denied by the Claude Code auto mode classifier.", "needs_approval", None),
+        ("Contains brace with quote character (expansion obfuscation)", "needs_approval", None),
+        ("Claude requested permissions to write to /tmp/x.py, but you haven't granted it yet.", "permission_denied", None),
+        ("Tool permission request aborted", "interrupted", None),
+        ("Output redirection to 'x.log' needs approval.", "needs_approval", None),
+        ("Permission to use Bash with command rm -rf x has been denied.", "permission_denied", None),
+        ("The user doesn't want to take this action right now. STOP what you are doing", "permission_denied", None),
+        ("cd /etc was blocked. For security, Claude Code may only change directories", "needs_approval", None),
+        ("Permission for this command was denied by a built-in Claude Code safety check (the prompt timed out)", "needs_approval", None),
+        # Ordinary text that only looks like a class.
+        ("Merge blocked: pull request requires approval from code owners", "other", None),
+        ("HTTP 405 Method Not Allowed", "other", None),
+        ("Pull request needs approval.", "other", None),
+        ("<tool_use_error>Blocked: sleep 150 followed by: curl x. To wait, use run_in_background: true.</tool_use_error>", "needs_approval", None),
+        ("PreToolUse:Bash hook error: [guard.sh]: Blocked: no prod db", "blocked", None),
+        ("PreToolUse:Bash hook error: [g]: Blocked: this command requires approval from ops", "blocked", None),
+        ("The server-side auto mode classifier reviewed it and declined.", "needs_approval", None),
+        ("<tool_use_error>Error: No such tool available: mcp__x__y</tool_use_error>", "not_found", None),
+        ("sed command requires approval (contains potentially dangerous operations)", "needs_approval", None),
+        # A huge number is not an exit code (and must not crash int()).
+        ("Process exited with code " + "9" * 5000, "other", None),
+        ("Exit code 3221225477\nSegmentation fault", "exit_code", 3221225477),
+        ('{"error": "Not Found"}', "not_found", None),
+        ("<error>Command was aborted before completion</error>", "interrupted", None),
+        # A grep quoting an exit code is not an exit code.
+        ("""This command requires approval: grep '"exit_code": 1' log""", "needs_approval", None),
     ],
 )
 def test_classify_tool_error(text, cls, code):
     assert sm.classify_tool_error(text) == (cls, code)
+
+
+@pytest.mark.parametrize(
+    ("server", "text", "cls"),
+    [
+        ("claude-in-chrome", 'The accessibility tree does not contain a "Start button".', "browser"),
+        ("Claude_Browser", "Failed to navigate: Navigation rejected.", "browser"),
+        ("playwright", "Element not found", "browser"),
+        ("claude-in-chrome", "Request timed out", "browser"),
+        # Claude Code's own wrapper still wins on a browser tool.
+        ("claude-in-chrome", "The user doesn't want to proceed", "permission_denied"),
+        ("claude-in-chrome", "InputValidationError: url is required", "validation"),
+        ("claude-in-chrome", "PreToolUse:navigate hook error: [guard.sh]: Blocked: no external sites", "blocked"),
+        # Page text the model wrote is not a refusal, whatever words it uses.
+        ("claude-in-chrome", "The Submit button is blocked by a cookie consent overlay.", "browser"),
+        ("claude-in-chrome", "Pasting is not allowed in this field.", "browser"),
+        ("claude-in-chrome", "The form shows invalid input on the email field.", "browser"),
+        ("claude-in-chrome", "Transfers over $500 require explicit approval.", "browser"),
+        ("claude-in-chrome", "Element 'Approve' needs approval.", "browser"),
+        # Claude Code's own auto-mode refusal still wins on a browser tool.
+        ("claude-in-chrome", "Permission for this action was denied by the Claude Code auto mode classifier.",
+         "needs_approval"),
+        ("remote-devices Claude_Browser", "Element missing", "browser"),
+        ("claude-in-chrome", "The following part requires approval: rm -rf x", "needs_approval"),
+        ("playwright", "A variable in this command can't be checked before it runs", "needs_approval"),
+        # The extension's own site-permission refusal is a denial, not a page failure.
+        ("claude-in-chrome", "Permission denied for this action on this domain", "permission_denied"),
+        ("claude-in-chrome", "Permission denied for reading page content on this domain", "permission_denied"),
+        ("claude-in-chrome", "Permission denied for reading pages on this domain", "permission_denied"),
+        ("browserbasehq", "Element missing", "browser"),
+        ("chromium-mcp", "Element missing", "browser"),
+        ("selenium", "Element missing", "browser"),
+        ("playwright.local", "Element missing", "browser"),
+        ("chromadb", "weird", "other"),
+        # The same words inside page text the model wrote are not the extension's refusal.
+        ("playwright", "The page says: Permission denied for users on this domain", "browser"),
+        ("claude-in-chrome", "The page says: Permission denied, please log in.", "browser"),
+        ("browsermcp", "Element missing", "browser"),
+        ("mcp-server-browserbase", "Element missing", "browser"),
+        ("browserless", "Element missing", "browser"),
+        ("hyperbrowser", "Element missing", "browser"),
+        ("stagehand", "Element missing", "browser"),
+        ("chrome-devtools", "Element missing", "browser"),
+        # Not browser servers, though a tool name might say "browser" or "preview".
+        (None, "Failed to navigate: Navigation rejected.", "other"),
+        ("vercel", "Project not found", "not_found"),
+        ("filesystem", "weird", "other"),
+        ("filebrowser", "weird", "other"),
+        ("browserstack", "weird", "other"),
+        ("github", "GitHub API error: 404 Not Found", "not_found"),
+    ],
+)
+def test_classify_tool_error_browser_tools(server, text, cls):
+    assert sm.classify_tool_error(text, server)[0] == cls
 
 
 # ---------------------------------------------------------------- misc detection
@@ -941,6 +1039,53 @@ def test_hex_named_files_are_still_file_operations():
     ops = sm.file_ops("Bash", {"command": "rm deadbeef1 && echo x > cafe1234"}, "/repo")
     assert ops.get(os.path.normpath("/repo/deadbeef1")) == "delete"
     assert ops.get(os.path.normpath("/repo/cafe1234")) == "create"
+
+
+def test_claude_transcript_errors_get_classes_from_mcp_server_and_text(tmp_path):
+    ts = lambda s: f"2026-09-10T01:00:{s:02d}Z"  # noqa: E731
+    calls = [
+        ("c1", "mcp__claude-in-chrome__find", {"query": "Start"}, 'The accessibility tree does not contain "Start".'),
+        ("c2", "mcp__vercel__get_preview_url", {}, "Project not found"),
+        ("c3", "Bash", {"command": "python - <<'PY'"}, "A variable in this command can't be checked before it runs"),
+        ("c4", "Bash", {"command": "rm -rf x"}, "Permission to use Bash with command rm -rf x has been denied."),
+        ("c5", "mcp__remote-devices__Claude_Browser__click", {}, "Element missing"),
+        ("c6", "Bash", {"command": "echo $X"}, "A variable in this command can't be checked before it runs"),
+    ]
+    rows = [{"type": "user", "timestamp": ts(0), "message": {"role": "user", "content": "go"}}]
+    for n, (cid, name, inp, err) in enumerate(calls):
+        rows.append({
+            "type": "assistant",
+            "timestamp": ts(2 * n + 1),
+            "message": {
+                "id": f"m{n}",
+                "model": "claude-sonnet-5",
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "content": [{"type": "tool_use", "id": cid, "name": name, "input": inp}],
+            },
+        })
+        rows.append({
+            "type": "user",
+            "timestamp": ts(2 * n + 2),
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": cid, "content": err, "is_error": True}],
+            },
+        })
+    path = tmp_path / "p" / "s.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    doc = sm.build_claude_code_map(path)
+    got = [e["errClass"] for e in doc["events"] if e.get("err") and e.get("kind") != "error"]
+    assert got == ["browser", "not_found", "needs_approval", "permission_denied", "browser", "needs_approval"]
+
+
+def test_approval_refusal_near_the_end_is_not_a_blocked_outcome():
+    # Claude Code asks before running; agents usually rewrite the command and go on.
+    evs = [{"kind": "exec", "seq": 0, "err": True, "errClass": "needs_approval"},
+           {"kind": "exec", "seq": 1, "err": False}]
+    assert sm.classify_outcome(evs, "") != "blocked"
+    assert sm.classify_outcome([{**evs[0], "errClass": "permission_denied"}, evs[1]], "") == "blocked"
 
 
 # ---------------------------------------------------------------- shell file ops (F2)

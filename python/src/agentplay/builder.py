@@ -715,27 +715,94 @@ def classify(
 # Closed vocabularies: only these class names (and an exit code) ever leave the
 # machine; the error text itself is read locally to classify and then dropped.
 _TOOL_ERROR_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # Claude Code refused before running: a command it can't statically check,
+    # a compound command with a part needing approval, a built-in guard, or the
+    # auto-mode classifier. Kept apart from permission_denied and blocked, whose
+    # per-command counts drive "allow <verb>" suggestions an allow rule can't fix.
+    (
+        "needs_approval",
+        (
+            "following part requires approval",
+            "following parts require approval",
+            "command requires approval",
+            "require explicit approval to ensure paths are evaluated correctly",
+            "' needs approval.",
+            "can't be checked before it runs",
+            "(expansion obfuscation)",
+            "backslash-escaped whitespace",
+            "built-in Claude Code safety check",
+            "auto mode classifier",
+            "auto mode cannot determine",
+            "was blocked. For security, Claude Code",
+            # Bash's foreground-sleep guard; an allow rule can't lift it.
+            "<tool_use_error>Blocked: sleep ",
+            "Do not chain shorter sleeps",
+        ),
+    ),
     (
         "permission_denied",
         (
             "doesn't want to proceed",
+            "doesn't want to take this action",
             "user rejected",
             "Permission denied",
+            "permission denied",
             "permission to use",
+            "Permission to use",
             "not allowed",
+            "Claude requested permissions to",
         ),
     ),
     ("blocked", ("<tool_use_error>Blocked", "blocked by", "Blocked:")),
+    ("patch_failed", ("apply_patch verification failed",)),
     ("validation", ("InputValidationError", "invalid input", "Invalid tool parameters")),
     ("timeout", ("timed out", "Timeout", "timeout")),
     ("model_unavailable", ("temporarily unavailable", "model is unavailable")),
     ("rate_limit", ("rate limit", "Rate limit", " 429")),
     ("api_error", ("API Error",)),
     ("stale_file", ("has been modified since", "File has not been read yet")),
-    ("not_found", ("not found", "No such file", "does not exist", "ENOENT")),
-    ("interrupted", ("interrupted", "Interrupted")),
+    ("not_found", ("not found", "Not Found", "No such file", "No such tool available", "does not exist", "ENOENT")),
+    (
+        "interrupted",
+        ("interrupted", "Interrupted", "aborted before completion", "permission request aborted"),
+    ),
 )
-_EXIT_RE = re.compile(r"^\s*Exit code (\d+)")
+# Browser-driving MCP servers (Claude in Chrome, Claude's browser, Playwright,
+# Puppeteer, Browser MCP, Browserbase/Stagehand, Browserless, Hyperbrowser),
+# matched on the server name only: their failures are "browser"
+# whatever the message says, because much of that text is written by the model.
+_BROWSER_SERVER_RE = re.compile(r"(?:^|[-_. ])(?:chrome|chromium|selenium|webdriver|browser|playwright|puppeteer|browsermcp|browserbase|browserbasehq|browserless|hyperbrowser|stagehand)(?:$|[-_. ])", re.I)
+# Text that only Claude Code's own wrapper writes (approval, rejection, argument
+# validation, hooks, guards). On a browser tool only these beat "browser": the
+# rest is page description, where "blocked by an overlay" is not a refusal.
+_WRAPPER_MARKERS: tuple[str, ...] = (
+    "doesn't want to proceed",
+    "doesn't want to take this action",
+    "Permission to use",
+    "Claude requested permissions to",
+    "InputValidationError",
+    "<tool_use_error>",
+    "hook error",
+    "permission request aborted",
+    "auto mode classifier",
+    "auto mode cannot determine",
+    "built-in Claude Code safety check",
+    # Claude Code's own approval refusals; looser phrasing such as
+    # "' needs approval." stays out because page text can say it too.
+    "following part requires approval",
+    "following parts require approval",
+    "require explicit approval to ensure paths are evaluated correctly",
+    "can't be checked before it runs",
+    "was blocked. For security, Claude Code",
+)
+# Claude in Chrome's per-site permission refusals ("Permission denied for
+# reading pages on this domain", ...): the extension's text, not page text.
+_SITE_DENIED_RE = re.compile(r"\s*(?:Error: )?Permission denied for [^\n]{1,80}? on this domain")
+# Claude Code starts a failed Bash result with "Exit code N".
+_EXIT_RE = re.compile(r"^\s*Exit code (-?\d{1,10})\b")
+# A line of its own elsewhere in the output: Codex "Process exited with code N",
+# Gemini CLI "Exit Code: N", Command Code "Exit code: N".
+_LATER_EXIT_RE = re.compile(r"^(?:Process exited with code|Exit [Cc]ode:?) (-?\d{1,10})\s*$", re.M)
 _API_ERROR_FIELD = {
     "rate_limit": "rate_limit",
     "server_error": "server_error",
@@ -763,11 +830,27 @@ def _flat_text(content: Any, limit: int = 600) -> str:
     return str(content or "")[:limit]
 
 
-def classify_tool_error(text: str) -> tuple[str, int | None]:
+def classify_tool_error(text: str, server: str | None = None) -> tuple[str, int | None]:
+    """Error class (and exit code) of a failed call; `server` is its MCP server, if any."""
+    cls, code = _classify_error_text(text)
+    if server and _BROWSER_SERVER_RE.search(server):
+        wrapper = any(m in text for m in _WRAPPER_MARKERS) or bool(_SITE_DENIED_RE.match(text))
+        return (cls, code) if wrapper else ("browser", None)
+    return cls, code
+
+
+def _classify_error_text(text: str) -> tuple[str, int | None]:
     m = _EXIT_RE.match(text)
     if m:
         return "exit_code", int(m.group(1))
+    m = _LATER_EXIT_RE.search(text)
+    if m and int(m.group(1)) != 0:
+        return "exit_code", int(m.group(1))
+    # A user's own hook text is theirs, not Claude Code's: never needs_approval.
+    hook = "hook error" in text
     for cls, pats in _TOOL_ERROR_PATTERNS:
+        if hook and cls == "needs_approval":
+            continue
         if any(p in text for p in pats):
             return cls, None
     return "other", None
@@ -2775,6 +2858,7 @@ def _read_claude_transcript(
     msgs: dict[str, dict[str, Any]] = {}
     pending: dict[str, dict[str, Any]] = {}
     tool_events: dict[str, dict[str, Any]] = {}  # tool_use id -> event; hook errors link back to it
+    mcp_routes: dict[str, str] = {}  # tool_use id -> every server segment of an MCP tool name
     ready_ts: float | None = None  # when the agent last had new input (user turn / tool result)
     last_text = ""  # last assistant text block; only its length feeds classify_outcome, never stored
     with path.open(encoding="utf-8", errors="replace") as fh:
@@ -2873,13 +2957,14 @@ def _read_claude_transcript(
                         if not isinstance(x, dict) or x.get("type") != "tool_result":
                             continue
                         ready_ts = ts
+                        route = mcp_routes.pop(x.get("tool_use_id"), None)
                         ev = pending.pop(x.get("tool_use_id"), None)
                         if ev is None:
                             continue
                         body = x.get("content")
                         ev["err"] = bool(x.get("is_error"))
                         if ev["err"]:
-                            cls, code = classify_tool_error(_flat_text(body))
+                            cls, code = classify_tool_error(_flat_text(body), route or ev.get("server"))
                             ev["errClass"] = cls
                             if code is not None:
                                 ev["exitCode"] = code
@@ -2988,6 +3073,11 @@ def _read_claude_transcript(
                     if c.get("id"):
                         pending[c["id"]] = ev
                         tool_events[c["id"]] = ev
+                        name = str(c.get("name") or "")
+                        if name.startswith("mcp__"):
+                            # mcp__remote-devices__Claude_Browser__click: the
+                            # server that drives the browser is not the first.
+                            mcp_routes[c["id"]] = " ".join(name.split("__")[1:-1])
     for m in msgs.values():
         if not m["usage"]:
             continue
@@ -3307,6 +3397,16 @@ def _read_spans(
         if ts is not None and end_ts is not None and end_ts >= ts:
             ev["dur"] = int((end_ts - ts) * 1000)
         out = attrs.get("output.value")
+        if ev["err"]:
+            exit_attr = attrs.get("process.exit_code")
+            if type(exit_attr) is int and exit_attr != 0:
+                # An edit tool's nonzero exit is a patch that did not apply.
+                cls, code = ("patch_failed", None) if tool_name == "Edit" else ("exit_code", exit_attr)
+            else:
+                cls, code = classify_tool_error(str(out or "")[:2000], ev.get("server"))
+            ev["errClass"] = cls
+            if code is not None:
+                ev["exitCode"] = code
         if out is not None:
             ev["outBytes"] = len(str(out))
         if ev["kind"] == "subagent" and (path := _spawned_path(out)):

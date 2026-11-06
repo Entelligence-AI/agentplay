@@ -185,7 +185,7 @@ def shell_result(output: str) -> dict[str, Any] | None:
     if len(parts) != 2:
         return None
     header, body = parts
-    exited = re.search(r"^Process exited with code (\d+)$", header, re.MULTILINE)
+    exited = re.search(r"^Process exited with code (-?\d{1,10})$", header, re.MULTILINE)
     running = re.search(r"^Process running with session ID (\d+)$", header, re.MULTILINE)
     if bool(exited) == bool(running):
         return None
@@ -260,6 +260,9 @@ class ProcessEvidence:
             self.pending.pop(process_id, None)
         if type(exit_code) is int:
             origin["provenance.capture"] = "completed_process"
+            # Code mode keeps the exit code out of the output text, so carry it
+            # separately for the error class.
+            origin["process.exit_code"] = exit_code
         if type(exit_code) is int and exit_code == 0:
             origin.update(
                 creation_output_attributes(

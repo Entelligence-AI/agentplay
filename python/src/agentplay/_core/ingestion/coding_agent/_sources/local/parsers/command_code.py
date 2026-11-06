@@ -101,8 +101,8 @@ _RE_REFUSAL = re.compile(
     )
 )
 
-_RE_EXIT_START = re.compile(r"Exit code: (-?\d+)")
-_RE_EXIT_LINE = re.compile(r"^Exit code: (-?\d+)\s*$", re.MULTILINE)
+_RE_EXIT_START = re.compile(r"Exit code: (-?\d{1,10})\b")
+_RE_EXIT_LINE = re.compile(r"^Exit code: (-?\d{1,10})\s*$", re.MULTILINE)
 
 
 def parse_command_code(
@@ -414,6 +414,8 @@ def _tool_span(
             ),
         },
     )
+    if (exit_code := _exit_code(raw_name, output_value)) is not None:
+        span.attributes["process.exit_code"] = exit_code
     span.attributes.update(source_attrs(msg))
     return span
 
@@ -445,6 +447,18 @@ def _failed(raw_name: str, output: str) -> bool:
     if raw_name == _SHELL_OUTPUT_TOOL:
         return any(code != "0" for code in _RE_EXIT_LINE.findall(output))
     return _RE_REFUSAL.match(output.lstrip()) is not None
+
+
+def _exit_code(raw_name: str, output: str) -> int | None:
+    """A shell result's exit code: the leading line, or the last poll line."""
+    if raw_name in _SHELL_TOOLS:
+        m = _RE_EXIT_START.match(output)
+        return int(m.group(1)) if m else None
+    if raw_name == _SHELL_OUTPUT_TOOL:
+        codes = _RE_EXIT_LINE.findall(output)
+        nonzero = [c for c in codes if c != "0"]
+        return int(nonzero[-1]) if nonzero else (int(codes[-1]) if codes else None)
+    return None
 
 
 __all__ = ["parse_command_code"]

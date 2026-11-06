@@ -766,3 +766,156 @@ def test_pr_state_requires_the_exact_repo(tmp_path):
     doc = sm.build_claude_code_map(path)
     assert _kinds(doc, "pr_merge")[0]["repo"] == "org-b/service"
     assert doc["prs"][0]["state"] == "open"
+
+
+def test_codex_failed_tool_spans_get_an_error_class():
+    spans = [
+        _span("root", "Session", _at(0), **{"harness.agent_session_id": "c2"}),
+        _span("t1", "Turn 1", _at(0), _at(60), parent="root", **{"input.value": "go"}),
+        _span(
+            "a", "Bash", _at(1), _at(2), parent="t1", status="ERROR",
+            **{
+                "tool.name": "Bash",
+                "input.value": json.dumps({"command": "pnpm test"}),
+                "output.value": "Chunk ID: 1\nWall time: 2 seconds\nProcess exited with code 1\nOutput:\nFAIL",
+            },
+        ),
+        _span(
+            "b", "apply_patch", _at(3), _at(4), parent="t1", status="ERROR",
+            **{
+                "tool.name": "apply_patch",
+                "input.value": "{}",
+                "output.value": "apply_patch verification failed: Failed to find expected lines in a.py",
+            },
+        ),
+        _span(
+            "c", "Bash", _at(5), _at(6), parent="t1", status="ERROR",
+            **{
+                "tool.name": "Bash",
+                "input.value": json.dumps({"command": "pnpm lint"}),
+                "output.value": "Script completed\nWall time 0.4 seconds\nOutput:\nlint failed",
+                "process.exit_code": 2,
+            },
+        ),
+    ]
+    doc = sm.build_map_from_spans(spans, session_id="local:codex:y", agent_tool="codex")
+    errs = [e for e in doc["events"] if e.get("err")]
+    assert [(e["errClass"], e.get("exitCode")) for e in errs] == [("exit_code", 1), ("patch_failed", None), ("exit_code", 2)]
+
+
+def test_codex_rollout_exit_codes_survive_output_truncation():
+    from agentplay._core.ingestion.coding_agent._sources.local.parsers.codex import parse_codex
+
+    long = "x" * 3000
+    calls = [
+        # Code mode: the exit code lives in the structured result, not the text.
+        ("cm", "custom_tool_call", "exec", 'text(await tools.exec_command({cmd:"pnpm lint"}));',
+         [{"type": "text", "text": json.dumps({"output": long, "exit_code": 2, "wall_time_seconds": 1})}]),
+        # apply_patch JSON: metadata.exit_code comes after a long output text.
+        ("ap", "function_call", "apply_patch", json.dumps({"input": "*** Begin Patch\n*** End Patch"}),
+         json.dumps({"output": long + " not found", "metadata": {"exit_code": 3}})),
+        # exec_command text: the exit line sits after the header lines.
+        ("ex", "function_call", "exec_command", json.dumps({"cmd": "pytest"}),
+         "Chunk ID: 1\nWall time: 1 seconds\nProcess exited with code 1\nOutput:\n" + long),
+    ]
+    rows = [
+        {"type": "session_meta", "payload": {"id": "s", "cwd": "/repo"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+                                              "content": [{"type": "input_text", "text": "go"}]}},
+    ]
+    for cid, kind, name, args, out in calls:
+        key = "input" if kind == "custom_tool_call" else "arguments"
+        rows.append({"type": "response_item", "payload": {"type": kind, "name": name, "call_id": cid, key: args}})
+        rows.append({"type": "response_item", "payload": {"type": kind + "_output", "call_id": cid, "output": out}})
+    for i, r in enumerate(rows):
+        r["timestamp"] = f"2026-09-21T01:00:{i:02d}Z"
+    _, spans = parse_codex(data="\n".join(json.dumps(r) for r in rows).encode(), trace_id="local:codex:s")
+    doc = sm.build_map_from_spans(spans, session_id="local:codex:s", agent_tool="codex")
+    errs = [(e["errClass"], e.get("exitCode")) for e in doc["events"] if e.get("err")]
+    assert errs == [("exit_code", 2), ("patch_failed", None), ("exit_code", 1)]
+
+
+@pytest.mark.parametrize(
+    ("agent", "fixture", "parse", "codes"),
+    [
+        ("gemini-cli", "gemini/failed_shell.jsonl", "gemini:parse_gemini", {1}),
+        ("command-code", "command_code/failed_shell.jsonl", "command_code:parse_command_code", {128}),
+        # A Windows crash code (0xC0000005) still counts as an exit code.
+        ("command-code-win", "command_code/failed_shell.jsonl", "command_code:parse_command_code", {3221225477}),
+        ("antigravity-cli", "antigravity/failed_command.jsonl", "antigravity:parse_antigravity", {1}),
+    ],
+)
+def test_span_agents_keep_exit_codes_past_long_output(agent, fixture, parse, codes):
+    import importlib
+    from pathlib import Path
+
+    mod, fn = parse.split(":")
+    parser = getattr(
+        importlib.import_module(f"agentplay._core.ingestion.coding_agent._sources.local.parsers.{mod}"), fn
+    )
+    data = (Path(__file__).parent / "core" / "fixtures" / fixture).read_bytes()
+    # Program output long enough to push a trailing exit line past truncation,
+    # full of words that would otherwise pick a wrong class.
+    noisy = "FAIL test_timeout.py rate limit not found Permission denied " + "x" * 2100
+    data = data.replace(b"OUTPUT-PLACEHOLDER", noisy.encode())
+    if agent.endswith("-win"):
+        data = data.replace(b"Exit code: 128", b"Exit code: 3221225477")
+    _, spans = parser(data, trace_id=f"local:{agent}:t")
+    doc = sm.build_map_from_spans(spans, session_id=f"local:{agent}:t", agent_tool=agent)
+    errs = [e for e in doc["events"] if e.get("err") and e.get("kind") != "error"]
+    assert errs and {e["errClass"] for e in errs} == {"exit_code"}
+    assert {e["exitCode"] for e in errs} == codes
+
+
+def test_codex_code_mode_poll_keeps_its_exit_code():
+    from agentplay._core.ingestion.coding_agent._sources.local.parsers.codex import parse_codex
+
+    calls = [
+        ("launch", 'text(await tools.exec_command({cmd:"pytest"}));',
+         {"output": "", "session_id": 77, "wall_time_seconds": 1}),
+        ("poll", 'text(await tools.write_stdin({session_id:77, chars:""}));',
+         {"output": "httpx.ReadTimeout: timeout", "exit_code": 1, "wall_time_seconds": 1}),
+    ]
+    rows = [
+        {"type": "session_meta", "payload": {"id": "p", "cwd": "/repo"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+                                              "content": [{"type": "input_text", "text": "go"}]}},
+    ]
+    for cid, code, result in calls:
+        rows.append({"type": "response_item",
+                     "payload": {"type": "custom_tool_call", "name": "exec", "call_id": cid, "input": code}})
+        rows.append({"type": "response_item",
+                     "payload": {"type": "custom_tool_call_output", "call_id": cid,
+                                 "output": [{"type": "text", "text": json.dumps(result)}]}})
+    for i, r in enumerate(rows):
+        r["timestamp"] = f"2026-09-21T01:00:{i:02d}Z"
+    _, spans = parse_codex(data="\n".join(json.dumps(r) for r in rows).encode(), trace_id="local:codex:p")
+    doc = sm.build_map_from_spans(spans, session_id="local:codex:p", agent_tool="codex")
+    errs = [(e["errClass"], e.get("exitCode")) for e in doc["events"] if e.get("err")]
+    assert errs and set(errs) == {("exit_code", 1)}
+
+
+def test_codex_polled_process_exiting_minus_one_fails_its_launch():
+    from agentplay._core.ingestion.coding_agent._sources.local.parsers.codex import parse_codex
+
+    calls = [
+        ("launch", "exec_command", {"cmd": "pnpm dev"}, "Chunk ID: 1\nProcess running with session ID 5\nOutput:\n"),
+        ("poll", "write_stdin", {"session_id": 5, "chars": ""},
+         "Chunk ID: 2\nWall time: 1 seconds\nProcess exited with code -1\nOutput:\nboom"),
+    ]
+    rows = [
+        {"type": "session_meta", "payload": {"id": "m", "cwd": "/repo"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+                                              "content": [{"type": "input_text", "text": "go"}]}},
+    ]
+    for cid, name, args, out in calls:
+        rows.append({"type": "response_item", "payload": {"type": "function_call", "name": name,
+                                                          "call_id": cid, "arguments": json.dumps(args)}})
+        rows.append({"type": "response_item", "payload": {"type": "function_call_output", "call_id": cid,
+                                                          "output": out}})
+    for i, r in enumerate(rows):
+        r["timestamp"] = f"2026-09-21T01:00:{i:02d}Z"
+    _, spans = parse_codex(data="\n".join(json.dumps(r) for r in rows).encode(), trace_id="local:codex:m")
+    doc = sm.build_map_from_spans(spans, session_id="local:codex:m", agent_tool="codex")
+    errs = [(e["errClass"], e.get("exitCode")) for e in doc["events"] if e.get("err")]
+    assert len(errs) == 2 and set(errs) == {("exit_code", -1)}
