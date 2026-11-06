@@ -554,3 +554,47 @@ def test_roo_parser_handles_json_assistant_response_with_non_string_text():
     assert '{"status": "success", "code": 0}' in out_val
     assert '["option_a", "option_b"]' in out_val
     assert '{"nested": true}' in out_val
+
+
+def test_roo_parser_handles_empty_question_falls_through_to_text():
+    session = [
+        {"ts": 1730000000000, "type": "say", "say": "task", "text": "Start task"},
+        # Branch 1: raw_text is a JSON string with question: "" and non-empty text
+        {
+            "ts": 1730000001000,
+            "type": "say",
+            "say": "text",
+            "text": json.dumps({"question": "", "text": "Valid text from JSON string"}),
+        },
+        # Branch 2: raw_text is a dict with question: "" and non-empty text
+        {
+            "ts": 1730000002000,
+            "type": "say",
+            "say": "text",
+            "text": {"question": "", "text": "Valid text from direct dict"},
+        },
+        # Empty question falling through to non-string text (preserving serialization)
+        {
+            "ts": 1730000003000,
+            "type": "ask",
+            "ask": "followup",
+            "text": json.dumps({"question": "", "text": 456}),
+        },
+        # Non-string question is not treated as empty-string (serialization preserved)
+        {
+            "ts": 1730000004000,
+            "type": "ask",
+            "ask": "followup",
+            "text": json.dumps({"question": 0, "text": "Ignored text"}),
+        },
+    ]
+    raw_bytes = json.dumps(session).encode("utf-8")
+    trace, spans = parse_roo(raw_bytes, trace_id="local:roo-code:empty-question-fallback")
+    turns = [s for s in spans if s.name.startswith("Turn ")]
+    assert len(turns) == 1
+    out_val = turns[0].attributes["output.value"]
+    assert "Valid text from JSON string" in out_val
+    assert "Valid text from direct dict" in out_val
+    assert "456" in out_val
+    assert "0" in out_val
+    assert "Ignored text" not in out_val

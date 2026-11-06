@@ -458,7 +458,7 @@ def _parse_ui_messages(
                 parsed_q = _safe_json(raw_text)
                 if isinstance(parsed_q, dict):
                     cand = parsed_q.get("question")
-                    if cand is None:
+                    if cand is None or cand == "":
                         cand = parsed_q.get("text")
                     if isinstance(cand, str):
                         q_text = cand
@@ -470,10 +470,11 @@ def _parse_ui_messages(
                         q_text = raw_text
                 else:
                     q_text = raw_text
-                turn["output"].append(q_text)
+                if q_text:
+                    turn["output"].append(q_text)
             elif isinstance(raw_text, dict):
                 cand = raw_text.get("question")
-                if cand is None:
+                if cand is None or cand == "":
                     cand = raw_text.get("text")
                 if isinstance(cand, str):
                     q_text = cand
