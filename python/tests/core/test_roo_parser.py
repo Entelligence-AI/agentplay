@@ -411,6 +411,79 @@ def test_roo_discovery_and_indexing(tmp_path: Path):
     assert spans[0].name == "Session"
 
 
+def test_roo_discovery_accepts_vscode_user_directory_override(tmp_path: Path):
+    user_dir = tmp_path / "User"
+    task_dir = user_dir / "globalStorage" / "rooveterinaryinc.roo-cline" / "tasks" / "task_user_dir"
+    task_dir.mkdir(parents=True)
+    ui_json = task_dir / "ui_messages.json"
+    ui_json.write_bytes(_fixture_bytes("read_and_edit.json"))
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        roo_homes=[user_dir],
+    )
+    index = source._build_index()
+    assert "local:roo-code:task_user_dir" in index
+
+    spans = source.get_spans_by_session("local:roo-code:task_user_dir")
+    assert len(spans) == 4
+    assert spans[0].name == "Session"
+
+
+def test_roo_discovery_accepts_api_history_without_roo_tool_markers(tmp_path: Path):
+    tasks_dir = tmp_path / "tasks" / "task_no_tools"
+    tasks_dir.mkdir(parents=True)
+    api_json = tasks_dir / "api_conversation_history.json"
+    history = [
+        {"role": "user", "content": [{"type": "text", "text": "What is Python?"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Python is a programming language."}]},
+    ]
+    raw_bytes = json.dumps(history).encode("utf-8")
+    api_json.write_bytes(raw_bytes)
+
+    # Prove that generic detect_agent returns None for this payload (no Roo tool markers)
+    assert detect_agent(raw_bytes) is None
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        roo_homes=[tmp_path],
+    )
+    index = source._build_index()
+    assert "local:roo-code:task_no_tools" in index
+
+    spans = source.get_spans_by_session("local:roo-code:task_no_tools")
+    assert len(spans) == 2  # Root Session + Turn 1
+    assert spans[0].name == "Session"
+    turn = spans[1]
+    assert turn.name == "Turn 1"
+    assert turn.attributes["input.value"] == "What is Python?"
+    assert turn.attributes["output.value"] == "Python is a programming language."
+
+
+def test_roo_discovery_skips_empty_api_history_and_empty_ui_messages(tmp_path: Path):
+    empty_api_dir = tmp_path / "tasks" / "task_empty_api"
+    empty_api_dir.mkdir(parents=True)
+    (empty_api_dir / "api_conversation_history.json").write_bytes(b"[]")
+
+    empty_ui_dir = tmp_path / "tasks" / "task_empty_ui"
+    empty_ui_dir.mkdir(parents=True)
+    (empty_ui_dir / "ui_messages.json").write_bytes(b"   []   ")
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        roo_homes=[tmp_path],
+    )
+    index = source._build_index()
+    assert "local:roo-code:task_empty_api" not in index
+    assert "local:roo-code:task_empty_ui" not in index
+
+    stats = source.discovery_stats()
+    assert stats["roo-code"]["skipped"].get("no_conversation") == 2
+
+
 def test_roo_parser_switch_mode_is_not_subagent():
     # ui_messages format
     session = [

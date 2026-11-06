@@ -1235,6 +1235,46 @@ def _copilot_vscode_json_session_id(head: bytes) -> tuple[str | None, bool]:
     return session_id, isinstance(requests, list) and len(requests) > 0
 
 
+def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
+    """Check if head is a Roo Code api_conversation_history.json document.
+
+    Returns (is_api_history, has_messages).
+    """
+    stripped = head.lstrip()
+    if not stripped.startswith(b"["):
+        return False, False
+    try:
+        obj = json.loads(head)
+        if isinstance(obj, list):
+            if len(obj) == 0:
+                return True, False
+            first = obj[0]
+            if isinstance(first, dict) and "role" in first and "content" in first:
+                return True, True
+            return False, False
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+        pass
+
+    try:
+        text = head.decode("utf-8", errors="replace")
+        idx = text.find("[")
+        if idx >= 0:
+            idx += 1
+            decoder = json.JSONDecoder()
+            n = len(text)
+            while idx < n and text[idx] in " \t\r\n,":
+                idx += 1
+            if idx < n and text[idx] == "]":
+                return True, False
+            if idx < n:
+                first_rec, _ = decoder.raw_decode(text, idx)
+                if isinstance(first_rec, dict) and "role" in first_rec and "content" in first_rec:
+                    return True, True
+    except Exception:
+        pass
+    return False, False
+
+
 def _gemini_header(head: bytes) -> dict | None:
     """The Gemini CLI session header: the first record with `sessionId` and no `type`."""
     for line in head.split(b"\n"):
@@ -1863,8 +1903,17 @@ class LocalSource:
             if not home.is_dir():
                 logger.debug("Skipping non-existent path: %s", home)
                 continue
+            vscode_tasks = home / "globalStorage" / "rooveterinaryinc.roo-cline" / "tasks"
+            vscode_storage = home / "globalStorage" / "rooveterinaryinc.roo-cline"
             tasks_dir = home / "tasks"
-            search_root = tasks_dir if tasks_dir.is_dir() else home
+            if vscode_tasks.is_dir():
+                search_root = vscode_tasks
+            elif vscode_storage.is_dir():
+                search_root = vscode_storage
+            elif tasks_dir.is_dir():
+                search_root = tasks_dir
+            else:
+                search_root = home
             for ui_file in search_root.glob("*/ui_messages.json"):
                 ref = self._index_roo_file(ui_file, home=home)
                 if ref:
@@ -1922,8 +1971,28 @@ class LocalSource:
 
         agent = detect_agent(head)
         if agent is None:
-            self._record_discovery("roo-code", "detection_failed")
-            return None
+            if json_file.name == "api_conversation_history.json":
+                is_api_hist, has_messages = _is_roo_api_history(head)
+                if is_api_hist:
+                    if not has_messages:
+                        self._record_discovery("roo-code", "no_conversation")
+                        return None
+                    agent = AgentType.ROO_CODE
+                else:
+                    self._record_discovery("roo-code", "detection_failed")
+                    return None
+            elif json_file.name == "ui_messages.json":
+                try:
+                    if json.loads(head) == []:
+                        self._record_discovery("roo-code", "no_conversation")
+                        return None
+                except Exception:
+                    pass
+                self._record_discovery("roo-code", "detection_failed")
+                return None
+            else:
+                self._record_discovery("roo-code", "detection_failed")
+                return None
         if agent != AgentType.ROO_CODE:
             self._record_discovery("roo-code", "different_agent")
             return None
