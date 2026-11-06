@@ -1235,6 +1235,87 @@ def _copilot_vscode_json_session_id(head: bytes) -> tuple[str | None, bool]:
     return session_id, isinstance(requests, list) and len(requests) > 0
 
 
+def _first_object_top_level_keys(head: bytes) -> tuple[set[str], bool]:
+    """Extract top-level keys of the first array object from a possibly truncated JSON head.
+
+    Returns (keys_found, is_empty_array).
+    """
+    stripped = head.lstrip()
+    if not stripped.startswith(b"["):
+        return set(), False
+
+    i = 1
+    n = len(stripped)
+    while i < n and stripped[i:i+1] in b" \t\r\n":
+        i += 1
+
+    if i < n and stripped[i:i+1] == b"]":
+        return set(), True
+
+    if i >= n or stripped[i:i+1] != b"{":
+        return set(), False
+
+    depth = 0
+    in_string = False
+    escape = False
+    keys: set[str] = set()
+
+    while i < n:
+        b = stripped[i:i+1]
+
+        if in_string:
+            if escape:
+                escape = False
+            elif b == b"\\":
+                escape = True
+            elif b == b'"':
+                in_string = False
+            i += 1
+            continue
+
+        if b == b'"':
+            if depth == 1:
+                start = i + 1
+                i += 1
+                str_escape = False
+                while i < n:
+                    ch = stripped[i:i+1]
+                    if str_escape:
+                        str_escape = False
+                    elif ch == b"\\":
+                        str_escape = True
+                    elif ch == b'"':
+                        break
+                    i += 1
+                if i < n and stripped[i:i+1] == b'"':
+                    key_bytes = stripped[start:i]
+                    i += 1
+                    while i < n and stripped[i:i+1] in b" \t\r\n":
+                        i += 1
+                    if i < n and stripped[i:i+1] == b":":
+                        try:
+                            keys.add(key_bytes.decode("utf-8", errors="replace"))
+                        except Exception:
+                            pass
+                        i += 1
+                    continue
+                else:
+                    break
+            else:
+                in_string = True
+                i += 1
+                continue
+        elif b in (b"{", b"["):
+            depth += 1
+        elif b in (b"}", b"]"):
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+
+    return keys, False
+
+
 def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
     """Check if head is a Roo Code api_conversation_history.json document.
 
@@ -1291,11 +1372,12 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
         pass
 
     # When the first record itself is truncated by the head read cap (e.g. > 5 MB prompt),
-    # identify its shape from the opening role and content keys without requiring
-    # raw_decode to parse the entire multi-megabyte record.
-    has_role = bool(re.search(rb'"role"\s*:\s*"(?:user|assistant|system|developer|tool)"', head))
-    has_content = bool(re.search(rb'"content"\s*:', head))
-    if has_role and has_content:
+    # verify that 'role' and 'content' are top-level keys of the first array object,
+    # rather than nested keys anywhere in the head.
+    keys, is_empty = _first_object_top_level_keys(head)
+    if is_empty:
+        return True, False
+    if "role" in keys and "content" in keys:
         return True, True
 
     return False, False

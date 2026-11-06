@@ -523,9 +523,22 @@ def test_is_roo_api_history_truncated_first_record():
     truncated_head = b'[{"role": "user", "content": "giant string without end'
     assert _is_roo_api_history(truncated_head) == (True, True)
 
+    # Truncated first message with content as nested block array
+    truncated_blocks = b'[{"role": "assistant", "content": [{"type": "text", "text": "giant string'
+    assert _is_roo_api_history(truncated_blocks) == (True, True)
+
     # Empty array variations
     assert _is_roo_api_history(b"[]") == (True, False)
     assert _is_roo_api_history(b"  [   \n\t  ]  ") == (True, False)
+
+    # Reject nested-only role and content
+    assert _is_roo_api_history(b'[{"metadata": {"role": "user", "content": "truncated text...') == (False, False)
+    assert _is_roo_api_history(b'[{"items": [{"role": "user", "content": "truncated text...') == (False, False)
+    assert _is_roo_api_history(b'[{"metadata": {"role": "user", "content": "complete text"}}]') == (False, False)
+
+    # Reject when role or content is missing at top-level
+    assert _is_roo_api_history(b'[{"role": "user", "other": "truncated text...') == (False, False)
+    assert _is_roo_api_history(b'[{"content": "giant text...", "other": 123') == (False, False)
 
     # Truncated non-API object
     truncated_non_api = b'[{"random_key": "some value without end'
