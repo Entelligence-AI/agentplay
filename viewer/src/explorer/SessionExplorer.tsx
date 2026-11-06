@@ -452,6 +452,13 @@ function mapErrorCopy(error: unknown): {
       retry: false,
     };
   }
+  if (code === 'invalid_map') {
+    return {
+      title: 'This session map has a field this page cannot read',
+      description: `${(error as Error).message}.`,
+      retry: false,
+    };
+  }
   if (code === 'unsupported_schema') {
     return {
       title: 'This session map needs a newer page',
