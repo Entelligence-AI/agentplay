@@ -33,6 +33,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
     parse_claude_code,
+    parse_cline,
     parse_codex,
     parse_command_code,
     parse_copilot,
@@ -1156,6 +1157,8 @@ def _branch_from_copilot_head(start: dict | None) -> str | None:
 # covers any realistic preamble while keeping a cwd-less legacy file (a folder
 # already trusted earlier emits no notice at all) from costing a 5 MB read.
 _COPILOT_CWD_SCAN_MAX_BYTES = 1_000_000
+# Cline's `<id>.json` holds a cwd and a little metadata; real ones are a few KB.
+_CLINE_META_MAX_BYTES = 1_000_000
 
 
 def _copilot_cwd_present(buf: bytes) -> bool:
@@ -1530,6 +1533,7 @@ class LocalSource:
         antigravity_homes: list[Path] | None = None,
         command_code_homes: list[Path] | None = None,
         goose_homes: list[Path] | None = None,
+        cline_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1577,6 +1581,11 @@ class LocalSource:
         # per session, laid out flat as `<home>/<session_id>.jsonl`. The cwd
         # comes from the synthesized `goose_session` header.
         self.goose_homes = goose_homes or []
+        # Cline (CLI and VS Code extension) keeps one directory per session:
+        # `<home>/data/sessions/<id>/<id>.messages.json` (the conversation) next
+        # to `<id>.json` (metadata with the cwd), plus `agent_*.messages.json`
+        # for spawned subagents, which are not sessions of their own.
+        self.cline_homes = cline_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1604,6 +1613,7 @@ class LocalSource:
             *self.antigravity_homes,
             *self.command_code_homes,
             *self.goose_homes,
+            *self.cline_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1853,6 +1863,18 @@ class LocalSource:
                 ref = self._index_goose_file(jsonl_file, home=home)
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
+        # Cline: `<home>/data/sessions/<id>/<id>.messages.json`.
+        for home in self.cline_homes:
+            sessions_dir = home / "data" / "sessions"
+            if not sessions_dir.is_dir():
+                logger.debug("Skipping non-existent path: %s", sessions_dir)
+                continue
+            for messages_file in sessions_dir.glob("*/*.messages.json"):
+                if messages_file.name.startswith("agent_"):
+                    continue
+                ref = self._index_cline_file(messages_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
 
         _carry_collision_mtimes(index, newest)
         self._file_index = index
@@ -1869,7 +1891,8 @@ class LocalSource:
             + len(self.gemini_homes)
             + len(self.antigravity_homes)
             + len(self.command_code_homes)
-            + len(self.goose_homes),
+            + len(self.goose_homes)
+            + len(self.cline_homes),
         )
         return index
 
@@ -2394,6 +2417,62 @@ class LocalSource:
             home=home,
         )
 
+    def _index_cline_file(
+        self,
+        messages_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Cline ``<id>.messages.json``; cwd comes from ``<id>.json``."""
+        if not messages_file.is_file():
+            return None
+        size = messages_file.stat().st_size
+        if size == 0:
+            self._record_discovery("cline", "empty_or_unreadable")
+            return None
+        # Same cap as the byte-capped agents: skip before reading the file.
+        if size > MAX_SOURCE_BYTES:
+            logger.debug("cline: %s exceeds the source byte cap; session skipped", messages_file)
+            self._record_discovery("cline", "too_large")
+            return None
+        # A pretty-printed document has no JSONL line for `detect_agent`, so
+        # confirm the shape from its first bytes: the id and the `messages` key
+        # precede the (large) message list and the system prompt.
+        try:
+            with messages_file.open("rb") as handle:
+                head = handle.read(4096)
+        except OSError:
+            self._record_discovery("cline", "empty_or_unreadable")
+            return None
+        if b'"sessionId"' not in head or b'"messages"' not in head:
+            self._record_discovery("cline", "different_agent")
+            return None
+        if re.search(rb'"messages":\s*\[\s*\]', head):
+            self._record_discovery("cline", "empty_events")
+            return None
+
+        native_id = messages_file.name.removesuffix(".messages.json")
+        cwd = None
+        try:
+            with messages_file.with_name(f"{native_id}.json").open("rb") as handle:
+                raw_meta = handle.read(_CLINE_META_MAX_BYTES + 1)
+            # An oversized metadata file is treated as missing: cwd is optional.
+            meta = json.loads(raw_meta) if len(raw_meta) <= _CLINE_META_MAX_BYTES else None
+        except (OSError, ValueError, RecursionError):
+            meta = None
+        if isinstance(meta, dict) and isinstance(meta.get("cwd"), str) and meta["cwd"]:
+            cwd = meta["cwd"]
+
+        self._record_discovery("cline", "indexed")
+        return f"local:{AgentType.CLINE}:{native_id}", _FileRef(
+            path=messages_file,
+            agent=AgentType.CLINE,
+            mtime=datetime.fromtimestamp(messages_file.stat().st_mtime, tz=UTC),
+            project_name=_project_from_cwd(cwd) if cwd else None,
+            cwd=cwd,
+            home=home,
+        )
+
     def _index_copilot_file(
         self,
         jsonl_file: Path,
@@ -2814,6 +2893,7 @@ class LocalSource:
             AgentType.ANTIGRAVITY_CLI: parse_antigravity,
             AgentType.COMMAND_CODE: parse_command_code,
             AgentType.GOOSE: parse_goose,
+            AgentType.CLINE: parse_cline,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label
@@ -2832,10 +2912,11 @@ class LocalSource:
             user_id=user_id,
             project_name=ref.project_name,
         )
-        if ref.agent in (AgentType.GEMINI_CLI, AgentType.ANTIGRAVITY_CLI) and ref.cwd:
+        if ref.agent in (AgentType.GEMINI_CLI, AgentType.ANTIGRAVITY_CLI, AgentType.CLINE) and ref.cwd:
             # Gemini CLI's transcript records no cwd; the indexer read the
             # project root from `.project_root`. Every call ran there.
             # Antigravity CLI's cwd comes from `conversation_summaries.db`.
+            # Cline's messages file has none; it is in the sibling metadata.
             for span in spans:
                 if span.parent_id is not None and not span.attributes.get("cwd"):
                     span.attributes["cwd"] = ref.cwd

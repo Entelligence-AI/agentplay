@@ -30,6 +30,7 @@ class AgentType(StrEnum):
     ANTIGRAVITY_CLI = "antigravity-cli"
     COMMAND_CODE = "command-code"
     GOOSE = "goose"
+    CLINE = "cline"
 
 
 def detect_agent(data: bytes) -> AgentType | None:

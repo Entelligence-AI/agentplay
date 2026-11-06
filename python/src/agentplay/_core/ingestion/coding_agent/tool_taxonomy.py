@@ -314,8 +314,27 @@ _GOOSE: dict[str, str] = {
     "todo__todo_write": "TodoWrite",
 }
 
+# Cline's built-in tool names, all seen in real Cline sessions
+# (`~/.cline/data/sessions`). `run_commands` / `shell` run one or more shell
+# commands; `editor` / `edit` do an old_text -> new_text replace (the parser
+# renames an `editor` call with no `old_text` to `Write`); `read_files` reads
+# one or more files; `search_codebase` takes a list of queries. Meta and team
+# tools (`ask_question`, `skills`, `team_*`, ...) pass through unaliased.
+_CLINE: dict[str, str] = {
+    "run_commands": "Bash",
+    "shell": "Bash",
+    "read_files": "Read",
+    "editor": "Edit",
+    "edit": "Edit",
+    "write_file": "Write",
+    "search_codebase": "Grep",
+    "fetch_web_content": "WebFetch",
+    "spawn_agent": "Task",
+}
+
 TOOL_ALIASES: dict[str, dict[str, str]] = {
     "antigravity-cli": _ANTIGRAVITY_ALIASES,
+    "cline": _CLINE,
     "codex": _CODEX,
     "command-code": _COMMAND_CODE,
     "gemini-cli": _GEMINI_CLI,
