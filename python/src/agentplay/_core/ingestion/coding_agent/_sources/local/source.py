@@ -1899,6 +1899,7 @@ class LocalSource:
                     _index_put(index, ref[0], ref[1], newest)
 
         # Roo Code: <home>/tasks/*/ui_messages.json (or api_conversation_history.json, or *.json).
+        seen_files: set[Path] = set()
         for home in self.roo_homes:
             if not home.is_dir():
                 logger.debug("Skipping non-existent path: %s", home)
@@ -1906,29 +1907,45 @@ class LocalSource:
             vscode_tasks = home / "globalStorage" / "rooveterinaryinc.roo-cline" / "tasks"
             vscode_storage = home / "globalStorage" / "rooveterinaryinc.roo-cline"
             tasks_dir = home / "tasks"
+
+            search_roots: list[Path] = []
             if vscode_tasks.is_dir():
-                search_root = vscode_tasks
+                search_roots.append(vscode_tasks)
             elif vscode_storage.is_dir():
-                search_root = vscode_storage
-            elif tasks_dir.is_dir():
-                search_root = tasks_dir
-            else:
-                search_root = home
-            for ui_file in search_root.glob("*/ui_messages.json"):
-                ref = self._index_roo_file(ui_file, home=home)
-                if ref:
-                    _index_put(index, ref[0], ref[1], newest)
-            for api_file in search_root.glob("*/api_conversation_history.json"):
-                ui_sibling = api_file.parent / "ui_messages.json"
-                if not ui_sibling.is_file():
-                    ref = self._index_roo_file(api_file, home=home)
+                search_roots.append(vscode_storage)
+            if tasks_dir.is_dir() and tasks_dir not in search_roots:
+                search_roots.append(tasks_dir)
+            if not search_roots:
+                search_roots.append(home)
+
+            for search_root in search_roots:
+                for ui_file in search_root.glob("*/ui_messages.json"):
+                    canonical = ui_file.resolve()
+                    if canonical in seen_files:
+                        continue
+                    seen_files.add(canonical)
+                    ref = self._index_roo_file(ui_file, home=home)
                     if ref:
                         _index_put(index, ref[0], ref[1], newest)
-            for direct_file in search_root.glob("*.json"):
-                if direct_file.name not in ("index.json", "manifest.json"):
-                    ref = self._index_roo_file(direct_file, home=home)
-                    if ref:
-                        _index_put(index, ref[0], ref[1], newest)
+                for api_file in search_root.glob("*/api_conversation_history.json"):
+                    canonical = api_file.resolve()
+                    if canonical in seen_files:
+                        continue
+                    seen_files.add(canonical)
+                    ui_sibling = api_file.parent / "ui_messages.json"
+                    if not ui_sibling.is_file():
+                        ref = self._index_roo_file(api_file, home=home)
+                        if ref:
+                            _index_put(index, ref[0], ref[1], newest)
+                for direct_file in search_root.glob("*.json"):
+                    if direct_file.name not in ("index.json", "manifest.json"):
+                        canonical = direct_file.resolve()
+                        if canonical in seen_files:
+                            continue
+                        seen_files.add(canonical)
+                        ref = self._index_roo_file(direct_file, home=home)
+                        if ref:
+                            _index_put(index, ref[0], ref[1], newest)
 
         _carry_collision_mtimes(index, newest)
         self._file_index = index

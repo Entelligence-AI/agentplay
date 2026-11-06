@@ -431,6 +431,36 @@ def test_roo_discovery_accepts_vscode_user_directory_override(tmp_path: Path):
     assert spans[0].name == "Session"
 
 
+def test_roo_discovery_scans_both_vscode_tasks_and_home_tasks_with_deduplication(tmp_path: Path):
+    home_dir = tmp_path / "home"
+
+    # 1. Session under vscode_tasks: home/globalStorage/rooveterinaryinc.roo-cline/tasks/task_vscode
+    vscode_task_dir = home_dir / "globalStorage" / "rooveterinaryinc.roo-cline" / "tasks" / "task_vscode"
+    vscode_task_dir.mkdir(parents=True)
+    (vscode_task_dir / "ui_messages.json").write_bytes(_fixture_bytes("read_and_edit.json"))
+
+    # 2. Session under home/tasks: home/tasks/task_home
+    home_task_dir = home_dir / "tasks" / "task_home"
+    home_task_dir.mkdir(parents=True)
+    (home_task_dir / "ui_messages.json").write_bytes(_fixture_bytes("failed_command.json"))
+
+    # Configure LocalSource with home_dir and also explicitly with vscode_tasks to verify overlapping file deduplication
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        roo_homes=[home_dir, home_dir / "globalStorage" / "rooveterinaryinc.roo-cline" / "tasks"],
+    )
+    index = source._build_index()
+
+    # Both sessions must be indexed
+    assert "local:roo-code:task_vscode" in index
+    assert "local:roo-code:task_home" in index
+
+    # Verify deduplication: task_vscode was not indexed twice
+    stats = source.discovery_stats()
+    assert stats["roo-code"]["indexed"] == 2
+
+
 def test_roo_discovery_accepts_api_history_without_roo_tool_markers(tmp_path: Path):
     tasks_dir = tmp_path / "tasks" / "task_no_tools"
     tasks_dir.mkdir(parents=True)
