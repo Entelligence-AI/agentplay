@@ -550,10 +550,15 @@ def test_roo_parser_handles_json_assistant_response_with_non_string_text():
     assert len(turns) == 1
     turn = turns[0]
     out_val = turn.attributes["output.value"]
-    assert "123" in out_val
-    assert '{"status": "success", "code": 0}' in out_val
-    assert '["option_a", "option_b"]' in out_val
-    assert '{"nested": true}' in out_val
+    expected_output = (
+        "123\n"
+        '{"status": "success", "code": 0}\n'
+        '["option_a", "option_b"]\n'
+        '{"nested": true}'
+    )
+    assert out_val == expected_output
+    assert '"text":' not in out_val
+    assert '"question":' not in out_val
 
 
 def test_roo_parser_handles_empty_question_falls_through_to_text():
