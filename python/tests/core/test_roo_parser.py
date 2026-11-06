@@ -16,7 +16,10 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.base import (
     _ROO_API_TOOLS,
 )
-from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+from agentplay._core.ingestion.coding_agent._sources.local.source import (
+    LocalSource,
+    _is_roo_api_history,
+)
 from agentplay._core.ingestion.coding_agent.metrics import compute_task_counters
 from agentplay._core.ingestion.coding_agent.session_pure import build_session_metrics
 
@@ -490,6 +493,49 @@ def test_roo_discovery_accepts_api_history_without_roo_tool_markers(tmp_path: Pa
     assert turn.name == "Turn 1"
     assert turn.attributes["input.value"] == "What is Python?"
     assert turn.attributes["output.value"] == "Python is a programming language."
+
+
+def test_roo_discovery_accepts_api_history_with_first_message_larger_than_head_cap(tmp_path: Path):
+    tasks_dir = tmp_path / "tasks" / "task_large_first_msg"
+    tasks_dir.mkdir(parents=True)
+    api_json = tasks_dir / "api_conversation_history.json"
+
+    # First message larger than 5 MB head cap (5 MB + 128 KB)
+    large_payload = "A" * (5 * 1024 * 1024 + 128 * 1024)
+    history = [
+        {"role": "user", "content": [{"type": "text", "text": large_payload}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Received giant payload."}]},
+    ]
+    with api_json.open("w", encoding="utf-8") as f:
+        json.dump(history, f)
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        roo_homes=[tmp_path],
+    )
+    index = source._build_index()
+    assert "local:roo-code:task_large_first_msg" in index
+
+
+def test_is_roo_api_history_truncated_first_record():
+    # Truncated first message without closing bracket or object brace
+    truncated_head = b'[{"role": "user", "content": "giant string without end'
+    assert _is_roo_api_history(truncated_head) == (True, True)
+
+    # Empty array variations
+    assert _is_roo_api_history(b"[]") == (True, False)
+    assert _is_roo_api_history(b"  [   \n\t  ]  ") == (True, False)
+
+    # Truncated non-API object
+    truncated_non_api = b'[{"random_key": "some value without end'
+    assert _is_roo_api_history(truncated_non_api) == (False, False)
+
+    # Array of primitives
+    assert _is_roo_api_history(b"[1, 2, 3]") == (False, False)
+
+    # Non-array
+    assert _is_roo_api_history(b'{"role": "user", "content": "hi"}') == (False, False)
 
 
 def test_roo_discovery_skips_empty_api_history_and_empty_ui_messages(tmp_path: Path):

@@ -1243,6 +1243,17 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
     stripped = head.lstrip()
     if not stripped.startswith(b"["):
         return False, False
+
+    # Check for empty array: [] or [ \n ]
+    after_bracket = stripped[1:].lstrip()
+    if after_bracket.startswith(b"]"):
+        return True, False
+
+    # If non-empty, the first array element must begin an object
+    if not after_bracket.startswith(b"{"):
+        return False, False
+
+    # Complete document check (fits within head read)
     try:
         obj = json.loads(head)
         if isinstance(obj, list):
@@ -1255,23 +1266,38 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
     except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
         pass
 
+    # If head is truncated after a complete first record, decode it directly
     try:
         text = head.decode("utf-8", errors="replace")
         idx = text.find("[")
         if idx >= 0:
             idx += 1
-            decoder = json.JSONDecoder()
             n = len(text)
             while idx < n and text[idx] in " \t\r\n,":
                 idx += 1
             if idx < n and text[idx] == "]":
                 return True, False
-            if idx < n:
-                first_rec, _ = decoder.raw_decode(text, idx)
-                if isinstance(first_rec, dict) and "role" in first_rec and "content" in first_rec:
-                    return True, True
+            if idx < n and text[idx] == "{":
+                try:
+                    first_rec, _ = json.JSONDecoder().raw_decode(text, idx)
+                    if isinstance(first_rec, dict):
+                        if "role" in first_rec and "content" in first_rec:
+                            return True, True
+                        return False, False
+                except json.JSONDecodeError:
+                    # First record is truncated by the head read cap (e.g. first message > 5 MB)
+                    pass
     except Exception:
         pass
+
+    # When the first record itself is truncated by the head read cap (e.g. > 5 MB prompt),
+    # identify its shape from the opening role and content keys without requiring
+    # raw_decode to parse the entire multi-megabyte record.
+    has_role = bool(re.search(rb'"role"\s*:\s*"(?:user|assistant|system|developer|tool)"', head))
+    has_content = bool(re.search(rb'"content"\s*:', head))
+    if has_role and has_content:
+        return True, True
+
     return False, False
 
 
