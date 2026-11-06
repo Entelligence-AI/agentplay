@@ -1235,14 +1235,19 @@ def _copilot_vscode_json_session_id(head: bytes) -> tuple[str | None, bool]:
     return session_id, isinstance(requests, list) and len(requests) > 0
 
 
-def _first_object_top_level_keys(head: bytes) -> tuple[set[str], bool]:
-    """Extract top-level keys of the first array object from a possibly truncated JSON head.
+_ROO_SUPPORTED_ROLES: frozenset[str] = frozenset(
+    {"user", "assistant", "system", "developer", "tool"}
+)
 
-    Returns (keys_found, is_empty_array).
+
+def _first_object_top_level_keys(head: bytes) -> tuple[set[str], str | None, bool]:
+    """Extract top-level keys and role value of the first array object from a possibly truncated JSON head.
+
+    Returns (keys_found, role_value, is_empty_array).
     """
     stripped = head.lstrip()
     if not stripped.startswith(b"["):
-        return set(), False
+        return set(), None, False
 
     i = 1
     n = len(stripped)
@@ -1250,15 +1255,16 @@ def _first_object_top_level_keys(head: bytes) -> tuple[set[str], bool]:
         i += 1
 
     if i < n and stripped[i:i+1] == b"]":
-        return set(), True
+        return set(), None, True
 
     if i >= n or stripped[i:i+1] != b"{":
-        return set(), False
+        return set(), None, False
 
     depth = 0
     in_string = False
     escape = False
     keys: set[str] = set()
+    role_val: str | None = None
 
     while i < n:
         b = stripped[i:i+1]
@@ -1294,11 +1300,34 @@ def _first_object_top_level_keys(head: bytes) -> tuple[set[str], bool]:
                         i += 1
                     if i < n and stripped[i:i+1] == b":":
                         try:
-                            keys.add(key_bytes.decode("utf-8", errors="replace"))
+                            key_str = key_bytes.decode("utf-8", errors="replace")
+                            keys.add(key_str)
                         except Exception:
-                            pass
+                            key_str = ""
                         i += 1
-                    continue
+                        if key_str == "role":
+                            while i < n and stripped[i:i+1] in b" \t\r\n":
+                                i += 1
+                            if i < n and stripped[i:i+1] == b'"':
+                                val_start = i + 1
+                                i += 1
+                                val_escape = False
+                                while i < n:
+                                    ch = stripped[i:i+1]
+                                    if val_escape:
+                                        val_escape = False
+                                    elif ch == b"\\":
+                                        val_escape = True
+                                    elif ch == b'"':
+                                        break
+                                    i += 1
+                                if i < n and stripped[i:i+1] == b'"':
+                                    try:
+                                        role_val = stripped[val_start:i].decode("utf-8", errors="replace")
+                                    except Exception:
+                                        role_val = None
+                                    i += 1
+                        continue
                 else:
                     break
             else:
@@ -1313,7 +1342,7 @@ def _first_object_top_level_keys(head: bytes) -> tuple[set[str], bool]:
                 break
         i += 1
 
-    return keys, False
+    return keys, role_val, False
 
 
 def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
@@ -1341,7 +1370,12 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
             if len(obj) == 0:
                 return True, False
             first = obj[0]
-            if isinstance(first, dict) and "role" in first and "content" in first:
+            if (
+                isinstance(first, dict)
+                and "role" in first
+                and "content" in first
+                and first.get("role") in _ROO_SUPPORTED_ROLES
+            ):
                 return True, True
             return False, False
     except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
@@ -1362,7 +1396,11 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
                 try:
                     first_rec, _ = json.JSONDecoder().raw_decode(text, idx)
                     if isinstance(first_rec, dict):
-                        if "role" in first_rec and "content" in first_rec:
+                        if (
+                            "role" in first_rec
+                            and "content" in first_rec
+                            and first_rec.get("role") in _ROO_SUPPORTED_ROLES
+                        ):
                             return True, True
                         return False, False
                 except json.JSONDecodeError:
@@ -1373,11 +1411,11 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
 
     # When the first record itself is truncated by the head read cap (e.g. > 5 MB prompt),
     # verify that 'role' and 'content' are top-level keys of the first array object,
-    # rather than nested keys anywhere in the head.
-    keys, is_empty = _first_object_top_level_keys(head)
+    # rather than nested keys anywhere in the head, and validate that the role is supported.
+    keys, role_val, is_empty = _first_object_top_level_keys(head)
     if is_empty:
         return True, False
-    if "role" in keys and "content" in keys:
+    if "role" in keys and "content" in keys and role_val in _ROO_SUPPORTED_ROLES:
         return True, True
 
     return False, False

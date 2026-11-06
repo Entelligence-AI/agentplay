@@ -527,6 +527,16 @@ def test_is_roo_api_history_truncated_first_record():
     truncated_blocks = b'[{"role": "assistant", "content": [{"type": "text", "text": "giant string'
     assert _is_roo_api_history(truncated_blocks) == (True, True)
 
+    # Supported roles in truncated first record: user, assistant, system, developer, tool
+    assert _is_roo_api_history(b'[{"role": "system", "content": "giant string without end') == (True, True)
+    assert _is_roo_api_history(b'[{"role": "developer", "content": "giant string without end') == (True, True)
+    assert _is_roo_api_history(b'[{"role": "tool", "content": "giant string without end') == (True, True)
+
+    # Reject truncated record with unsupported role
+    assert _is_roo_api_history(b'[{"role": "invalid_role", "content": "giant string without end') == (False, False)
+    assert _is_roo_api_history(b'[{"role": "custom_agent", "content": "giant string without end') == (False, False)
+    assert _is_roo_api_history(b'[{"role": "model", "content": "giant string without end') == (False, False)
+
     # Empty array variations
     assert _is_roo_api_history(b"[]") == (True, False)
     assert _is_roo_api_history(b"  [   \n\t  ]  ") == (True, False)
