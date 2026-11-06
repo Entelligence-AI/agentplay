@@ -198,6 +198,7 @@ def test_roo_parser_read_and_edit():
     assert turn.attributes["llm.token_count.prompt"] == 1500
     assert turn.attributes["llm.token_count.completion"] == 220
     assert turn.attributes["llm.token_count.cache_read"] == 500
+    assert turn.attributes["llm.token_count.cache_write"] == 0
 
     tool1 = spans[2]
     assert tool1.name == "Read"
@@ -321,6 +322,7 @@ def test_roo_parser_handles_null_and_malformed_token_metrics():
     assert turn.attributes["llm.token_count.prompt"] == 50
     assert turn.attributes["llm.token_count.completion"] == 20
     assert turn.attributes["llm.token_count.cache_read"] == 10
+    assert turn.attributes["llm.token_count.cache_write"] == 0
     cost_events = turn.attributes["llm.cost_events"]
     assert len(cost_events) == 1
     assert cost_events[0]["cache_write_5m_tokens"] == 0
@@ -603,3 +605,46 @@ def test_roo_parser_handles_empty_question_falls_through_to_text():
     assert "456" in out_val
     assert "0" in out_val
     assert "Ignored text" not in out_val
+
+
+def test_roo_parser_accumulates_cache_writes_matching_cost_events():
+    session = [
+        {"ts": 1730000000000, "type": "say", "say": "task", "text": "Execute task"},
+        {
+            "ts": 1730000001000,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps({
+                "tokensIn": 1000,
+                "tokensOut": 150,
+                "cacheReads": 200,
+                "cacheWrites": 350,
+                "model": "claude-3-7-sonnet",
+            }),
+        },
+        {
+            "ts": 1730000002000,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps({
+                "tokensIn": 800,
+                "tokensOut": 100,
+                "cacheReads": 100,
+                "cacheWrites": 250,
+                "model": "claude-3-7-sonnet",
+            }),
+        },
+        {"ts": 1730000003000, "type": "say", "say": "text", "text": "Finished task"},
+    ]
+    raw_bytes = json.dumps(session).encode("utf-8")
+    trace, spans = parse_roo(raw_bytes, trace_id="local:roo-code:cache-writes")
+    turn = spans[1]
+    assert turn.name == "Turn 1"
+    assert turn.attributes["llm.token_count.cache_write"] == 600
+    cost_events = turn.attributes["llm.cost_events"]
+    assert len(cost_events) == 2
+    assert cost_events[0]["cache_write_5m_tokens"] == 350
+    assert cost_events[1]["cache_write_5m_tokens"] == 250
+    assert turn.attributes["llm.token_count.cache_write"] == sum(
+        e["cache_write_5m_tokens"] for e in cost_events
+    )

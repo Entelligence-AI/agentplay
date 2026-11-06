@@ -175,6 +175,7 @@ def _parse_ui_messages(
             turn["prompt_tokens"] += p_tokens
             turn["completion_tokens"] += c_tokens
             turn["cache_read"] += cr_tokens
+            turn["cache_write"] += cw_tokens
             turn["cost_events"].append(
                 {
                     "timestamp": req_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -203,6 +204,7 @@ def _parse_ui_messages(
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "cache_read": 0,
+            "cache_write": 0,
             "cost_events": [],
             "tools": [],
             "model": last_model,
@@ -553,6 +555,7 @@ def _parse_api_history(
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "cache_read": 0,
+            "cache_write": 0,
             "cost_events": [],
             "tools": [],
             "model": last_model,
@@ -672,6 +675,7 @@ def _build_turn_span(trace_id: str, root_id: str, turn: dict[str, Any]) -> SpanD
     p_tokens = turn["prompt_tokens"]
     c_tokens = turn["completion_tokens"]
     cr_tokens = turn["cache_read"]
+    cw_tokens = turn.get("cache_write", 0)
     return SpanData(
         span_id=turn["span_id"],
         trace_id=trace_id,
@@ -689,7 +693,7 @@ def _build_turn_span(trace_id: str, root_id: str, turn: dict[str, Any]) -> SpanD
             "llm.token_count.completion": c_tokens,
             "llm.token_count.reasoning": 0,
             "llm.token_count.cache_read": cr_tokens,
-            "llm.token_count.cache_write": 0,
+            "llm.token_count.cache_write": cw_tokens,
             "llm.token_count.input_fresh": max(0, p_tokens - cr_tokens),
             "llm.cost_events": turn["cost_events"],
             "llm.model_name": turn["model"] or "",
