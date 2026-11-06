@@ -21,6 +21,9 @@ returns the agent type by sniffing for marker lines:
   (`~/.commandcode/projects/<project>/<session-id>.jsonl`).
 - Goose: synthesized `type="goose_session"` header or `type="goose_message"`
   lines, decoded from `sessions.db`.
+- Qwen Code: `type` + `sessionId` + `uuid` records whose `message` has a
+  Gemini-style `parts` list, or whose `systemPayload` is an object
+  (`~/.qwen/projects/<project>/chats/<session-id>.jsonl`).
 - opencode: materialized records carrying a `message` object and a `parts` list.
 
 Each parser exposes `parse_X(data, trace_id, user_id=None,
@@ -55,6 +58,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers.gemini import
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.goose import parse_goose
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.kiro import parse_kiro
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.opencode import parse_opencode
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.qwen_code import parse_qwen_code
 
 __all__ = [
     "AgentType",
@@ -71,4 +75,5 @@ __all__ = [
     "parse_goose",
     "parse_kiro",
     "parse_opencode",
+    "parse_qwen_code",
 ]

@@ -19,6 +19,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     goose,
     kiro,
     opencode,
+    qwen_code,
 )
 
 
@@ -34,6 +35,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
         (goose, "goose"),
         (kiro, "kiro"),
         (opencode, "opencode"),
+        (qwen_code, "qwen-code"),
     ],
 )
 def test_every_parser_reads_the_shared_table(module, agent) -> None:
@@ -65,6 +67,10 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
         ("goose", "delegate", "Task"),
         ("kiro", "execute_bash", "Bash"),
         ("opencode", "todowrite", "TodoWrite"),
+        ("qwen-code", "run_shell_command", "Bash"),
+        ("qwen-code", "edit", "Edit"),
+        ("qwen-code", "write_file", "Write"),
+        ("qwen-code", "agent", "Task"),
     ],
 )
 def test_known_raw_names_resolve(agent, raw, canonical) -> None:
@@ -83,7 +89,8 @@ def test_table_sizes_are_pinned() -> None:
     # These counts are pinned; a changed count means a row was added or dropped on purpose -- update here.
     # copilot-vscode's 12 rows are pinned against real tool names; gemini-cli's
     # 12 against real sessions plus the 0.65 bundle's tool-name constants;
-    # command-code's 12 against real sessions; goose's 8 against Goose's source.
+    # command-code's 12 against real sessions; goose's 8 against Goose's source;
+    # qwen-code's 11 against the 0.26 `ToolNames` constants.
     assert {a: len(t) for a, t in tt.TOOL_ALIASES.items() if a != "antigravity-cli"} == {  # own test pins it
         "codex": 7,
         "command-code": 12,
@@ -94,4 +101,5 @@ def test_table_sizes_are_pinned() -> None:
         "goose": 8,
         "kiro": 12,
         "opencode": 14,
+        "qwen-code": 11,
     }
