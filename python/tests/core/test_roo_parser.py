@@ -18,6 +18,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers.base import (
 )
 from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
 from agentplay._core.ingestion.coding_agent.metrics import compute_task_counters
+from agentplay._core.ingestion.coding_agent.session_pure import build_session_metrics
 
 FIXTURES = Path(__file__).parent / "fixtures" / "roo"
 
@@ -641,10 +642,95 @@ def test_roo_parser_accumulates_cache_writes_matching_cost_events():
     turn = spans[1]
     assert turn.name == "Turn 1"
     assert turn.attributes["llm.token_count.cache_write"] == 600
+    assert turn.attributes["llm.token_count.input_fresh"] == 900
+    assert (
+        turn.attributes["llm.token_count.input_fresh"]
+        + turn.attributes["llm.token_count.cache_read"]
+        + turn.attributes["llm.token_count.cache_write"]
+        == turn.attributes["llm.token_count.prompt"]
+    )
     cost_events = turn.attributes["llm.cost_events"]
     assert len(cost_events) == 2
+    assert cost_events[0]["input_tokens"] == 450
+    assert cost_events[0]["cache_read_tokens"] == 200
     assert cost_events[0]["cache_write_5m_tokens"] == 350
+    assert (
+        cost_events[0]["input_tokens"]
+        + cost_events[0]["cache_read_tokens"]
+        + cost_events[0]["cache_write_5m_tokens"]
+        == 1000
+    )
+    assert cost_events[1]["input_tokens"] == 450
+    assert cost_events[1]["cache_read_tokens"] == 100
     assert cost_events[1]["cache_write_5m_tokens"] == 250
+    assert (
+        cost_events[1]["input_tokens"]
+        + cost_events[1]["cache_read_tokens"]
+        + cost_events[1]["cache_write_5m_tokens"]
+        == 800
+    )
     assert turn.attributes["llm.token_count.cache_write"] == sum(
         e["cache_write_5m_tokens"] for e in cost_events
     )
+
+
+def test_roo_parser_nonzero_cache_writes_reconcile_request_totals_and_session_metrics():
+    session = [
+        {"ts": 1730000000000, "type": "say", "say": "task", "text": "Run analysis"},
+        {
+            "ts": 1730000001000,
+            "type": "say",
+            "say": "api_req_started",
+            "text": json.dumps({
+                "tokensIn": 1000,
+                "tokensOut": 150,
+                "cacheReads": 200,
+                "cacheWrites": 300,
+                "model": "claude-3-7-sonnet",
+            }),
+        },
+        {"ts": 1730000002000, "type": "say", "say": "text", "text": "Analysis complete"},
+    ]
+    raw_bytes = json.dumps(session).encode("utf-8")
+    trace, spans = parse_roo(raw_bytes, trace_id="local:roo-code:reconcile-cache-writes")
+    turn = spans[1]
+    assert turn.name == "Turn 1"
+
+    # Turn token counts
+    assert turn.attributes["llm.token_count.prompt"] == 1000
+    assert turn.attributes["llm.token_count.completion"] == 150
+    assert turn.attributes["llm.token_count.cache_read"] == 200
+    assert turn.attributes["llm.token_count.cache_write"] == 300
+    assert turn.attributes["llm.token_count.input_fresh"] == 500
+    assert (
+        turn.attributes["llm.token_count.input_fresh"]
+        + turn.attributes["llm.token_count.cache_read"]
+        + turn.attributes["llm.token_count.cache_write"]
+        == turn.attributes["llm.token_count.prompt"]
+    )
+
+    # Request cost-event totals reconcile with tokensIn
+    cost_events = turn.attributes["llm.cost_events"]
+    assert len(cost_events) == 1
+    ev = cost_events[0]
+    assert ev["input_tokens"] == 500
+    assert ev["cache_read_tokens"] == 200
+    assert ev["cache_write_5m_tokens"] == 300
+    assert ev["input_tokens"] + ev["cache_read_tokens"] + ev["cache_write_5m_tokens"] == 1000
+
+    # Aggregate session metrics reconcile
+    metrics = build_session_metrics(spans)
+    assert metrics["input_tokens"] == 1000
+    assert metrics["input_fresh"] == 500
+    assert metrics["cache_read_tokens"] == 200
+    assert metrics["cache_write_tokens"] == 300
+    assert (
+        metrics["input_fresh"] + metrics["cache_read_tokens"] + metrics["cache_write_tokens"]
+        == metrics["input_tokens"]
+    )
+
+    row = metrics["model_usage"][0]
+    assert row["input_tokens"] == 500
+    assert row["cache_read_tokens"] == 200
+    assert row["cache_write_5m_tokens"] == 300
+    assert row["input_tokens"] + row["cache_read_tokens"] + row["cache_write_5m_tokens"] == 1000

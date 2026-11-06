@@ -180,7 +180,7 @@ def _parse_ui_messages(
                 {
                     "timestamp": req_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "model": req_model,
-                    "input_tokens": max(0, p_tokens - cr_tokens),
+                    "input_tokens": max(0, p_tokens - cr_tokens - cw_tokens),
                     "cache_read_tokens": cr_tokens,
                     "cache_write_5m_tokens": cw_tokens,
                     "cache_write_1h_tokens": 0,
@@ -694,7 +694,7 @@ def _build_turn_span(trace_id: str, root_id: str, turn: dict[str, Any]) -> SpanD
             "llm.token_count.reasoning": 0,
             "llm.token_count.cache_read": cr_tokens,
             "llm.token_count.cache_write": cw_tokens,
-            "llm.token_count.input_fresh": max(0, p_tokens - cr_tokens),
+            "llm.token_count.input_fresh": max(0, p_tokens - cr_tokens - cw_tokens),
             "llm.cost_events": turn["cost_events"],
             "llm.model_name": turn["model"] or "",
             **_source_attrs(turn.get("_src")),
