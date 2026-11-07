@@ -48,7 +48,7 @@ from ._util import captured
 logger = logging.getLogger("agentplay.discover")
 
 AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro", "gemini-cli",
-          "antigravity-cli", "command-code", "goose")
+          "antigravity-cli", "command-code", "goose", "roo-code")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
 # applies anyway; this keeps one pathological file from stalling a run).
@@ -111,6 +111,7 @@ class Homes:
     antigravity_cli: list[Path]
     command_code: list[Path]
     goose: list[Path]
+    roo_code: list[Path]
 
     @classmethod
     def default(cls) -> Homes:
@@ -127,6 +128,10 @@ class Homes:
             antigravity_cli=_homes_from_env("AGENTPLAY_ANTIGRAVITY_HOMES", ["~/.gemini/antigravity-cli"]),
             command_code=_homes_from_env("AGENTPLAY_COMMANDCODE_HOMES", ["~/.commandcode"]),
             goose=_homes_from_env("AGENTPLAY_GOOSE_HOMES", _goose_data_dirs()),
+            roo_code=_homes_from_env(
+                "AGENTPLAY_ROO_HOMES",
+                [d / "globalStorage" / "rooveterinaryinc.roo-cline" for d in _vscode_user_dirs()],
+            ),
         )
 
     def present(self) -> dict[str, list[Path]]:
@@ -144,6 +149,7 @@ class Homes:
             ("antigravity-cli", self.antigravity_cli),
             ("command-code", self.command_code),
             ("goose", self.goose),
+            ("roo-code", self.roo_code),
         ):
             found = [p for p in paths if p.is_dir()]
             if found:
@@ -234,6 +240,7 @@ def local_source(homes: Homes, agents: set[str]) -> Any:
         antigravity_homes=pick("antigravity-cli", homes.antigravity_cli),
         command_code_homes=pick("command-code", homes.command_code),
         goose_homes=pick("goose", _cache_dirs("goose")),
+        roo_homes=pick("roo-code", homes.roo_code),
     )
 
 
@@ -249,7 +256,7 @@ class Candidate:
 
 def _agent_name(raw: Any) -> str:
     name = str(getattr(raw, "value", raw) or "")
-    return {"claude_code": "claude-code", "copilot_vscode": "copilot-vscode"}.get(name, name)
+    return {"claude_code": "claude-code", "copilot_vscode": "copilot-vscode", "roo_code": "roo-code"}.get(name, name)
 
 
 def candidates(source: Any, *, since: datetime | None = None) -> list[Candidate]:

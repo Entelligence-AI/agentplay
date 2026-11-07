@@ -42,6 +42,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_antigravity,
     parse_gemini,
     parse_goose,
+    parse_roo,
     parse_kiro,
     parse_opencode,
 )
@@ -1234,6 +1235,199 @@ def _copilot_vscode_json_session_id(head: bytes) -> tuple[str | None, bool]:
     return session_id, isinstance(requests, list) and len(requests) > 0
 
 
+_ROO_SUPPORTED_ROLES: frozenset[str] = frozenset(
+    {"user", "assistant", "system", "developer", "tool"}
+)
+
+
+def _first_object_top_level_keys(head: bytes) -> tuple[set[str], str | None, bool]:
+    """Extract top-level keys and role value of the first array object from a possibly truncated JSON head.
+
+    Returns (keys_found, role_value, is_empty_array).
+    """
+    stripped = head.lstrip()
+    if not stripped.startswith(b"["):
+        return set(), None, False
+
+    i = 1
+    n = len(stripped)
+    while i < n and stripped[i:i+1] in b" \t\r\n":
+        i += 1
+
+    if i < n and stripped[i:i+1] == b"]":
+        return set(), None, True
+
+    if i >= n or stripped[i:i+1] != b"{":
+        return set(), None, False
+
+    depth = 0
+    in_string = False
+    escape = False
+    keys: set[str] = set()
+    role_val: str | None = None
+
+    while i < n:
+        b = stripped[i:i+1]
+
+        if in_string:
+            if escape:
+                escape = False
+            elif b == b"\\":
+                escape = True
+            elif b == b'"':
+                in_string = False
+            i += 1
+            continue
+
+        if b == b'"':
+            if depth == 1:
+                start = i + 1
+                i += 1
+                str_escape = False
+                while i < n:
+                    ch = stripped[i:i+1]
+                    if str_escape:
+                        str_escape = False
+                    elif ch == b"\\":
+                        str_escape = True
+                    elif ch == b'"':
+                        break
+                    i += 1
+                if i < n and stripped[i:i+1] == b'"':
+                    key_bytes = stripped[start:i]
+                    i += 1
+                    while i < n and stripped[i:i+1] in b" \t\r\n":
+                        i += 1
+                    if i < n and stripped[i:i+1] == b":":
+                        try:
+                            key_str = key_bytes.decode("utf-8", errors="replace")
+                            keys.add(key_str)
+                        except Exception:
+                            key_str = ""
+                        i += 1
+                        if key_str == "role":
+                            while i < n and stripped[i:i+1] in b" \t\r\n":
+                                i += 1
+                            if i < n and stripped[i:i+1] == b'"':
+                                val_start = i + 1
+                                i += 1
+                                val_escape = False
+                                while i < n:
+                                    ch = stripped[i:i+1]
+                                    if val_escape:
+                                        val_escape = False
+                                    elif ch == b"\\":
+                                        val_escape = True
+                                    elif ch == b'"':
+                                        break
+                                    i += 1
+                                if i < n and stripped[i:i+1] == b'"':
+                                    try:
+                                        role_val = stripped[val_start:i].decode("utf-8", errors="replace")
+                                    except Exception:
+                                        role_val = None
+                                    i += 1
+                        continue
+                else:
+                    break
+            else:
+                in_string = True
+                i += 1
+                continue
+        elif b in (b"{", b"["):
+            depth += 1
+        elif b in (b"}", b"]"):
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+
+    return keys, role_val, False
+
+
+def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
+    """Check if head is a Roo Code api_conversation_history.json document.
+
+    Returns (is_api_history, has_messages).
+    """
+    stripped = head.lstrip()
+    if not stripped.startswith(b"["):
+        return False, False
+
+    # Check for empty array: [] or [ \n ]
+    after_bracket = stripped[1:].lstrip()
+    if after_bracket.startswith(b"]"):
+        return True, False
+
+    # If non-empty, the first array element must begin an object
+    if not after_bracket.startswith(b"{"):
+        return False, False
+
+    # Complete document check (fits within head read)
+    try:
+        obj = json.loads(head)
+        if isinstance(obj, list):
+            if len(obj) == 0:
+                return True, False
+            first = obj[0]
+            if (
+                isinstance(first, dict)
+                and "role" in first
+                and "content" in first
+                and isinstance(first.get("role"), str)
+                and first.get("role") in _ROO_SUPPORTED_ROLES
+            ):
+                return True, True
+            return False, False
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError, TypeError):
+        pass
+
+    # If head is truncated after a complete first record, decode it directly
+    try:
+        text = head.decode("utf-8", errors="replace")
+        idx = text.find("[")
+        if idx >= 0:
+            idx += 1
+            n = len(text)
+            while idx < n and text[idx] in " \t\r\n,":
+                idx += 1
+            if idx < n and text[idx] == "]":
+                return True, False
+            if idx < n and text[idx] == "{":
+                try:
+                    first_rec, _ = json.JSONDecoder().raw_decode(text, idx)
+                    if isinstance(first_rec, dict):
+                        if (
+                            "role" in first_rec
+                            and "content" in first_rec
+                            and isinstance(first_rec.get("role"), str)
+                            and first_rec.get("role") in _ROO_SUPPORTED_ROLES
+                        ):
+                            return True, True
+                        return False, False
+                except (json.JSONDecodeError, TypeError):
+                    # First record is truncated by the head read cap (e.g. first message > 5 MB)
+                    pass
+    except Exception:
+        pass
+
+    # When the first record itself is truncated by the head read cap (e.g. > 5 MB prompt),
+    # verify that 'role' and 'content' are top-level keys of the first array object,
+    # rather than nested keys anywhere in the head, and validate that the role is supported.
+    keys, role_val, is_empty = _first_object_top_level_keys(head)
+    if is_empty:
+        return True, False
+    if (
+        "role" in keys
+        and "content" in keys
+        and isinstance(role_val, str)
+        and role_val in _ROO_SUPPORTED_ROLES
+    ):
+        return True, True
+
+    return False, False
+
+
 def _gemini_header(head: bytes) -> dict | None:
     """The Gemini CLI session header: the first record with `sessionId` and no `type`."""
     for line in head.split(b"\n"):
@@ -1530,6 +1724,7 @@ class LocalSource:
         antigravity_homes: list[Path] | None = None,
         command_code_homes: list[Path] | None = None,
         goose_homes: list[Path] | None = None,
+        roo_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1577,6 +1772,7 @@ class LocalSource:
         # per session, laid out flat as `<home>/<session_id>.jsonl`. The cwd
         # comes from the synthesized `goose_session` header.
         self.goose_homes = goose_homes or []
+        self.roo_homes = roo_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1604,6 +1800,7 @@ class LocalSource:
             *self.antigravity_homes,
             *self.command_code_homes,
             *self.goose_homes,
+            *self.roo_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1854,6 +2051,55 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Roo Code: <home>/tasks/*/ui_messages.json (or api_conversation_history.json, or *.json).
+        seen_files: set[Path] = set()
+        for home in self.roo_homes:
+            if not home.is_dir():
+                logger.debug("Skipping non-existent path: %s", home)
+                continue
+            vscode_tasks = home / "globalStorage" / "rooveterinaryinc.roo-cline" / "tasks"
+            vscode_storage = home / "globalStorage" / "rooveterinaryinc.roo-cline"
+            tasks_dir = home / "tasks"
+
+            search_roots: list[Path] = []
+            if vscode_tasks.is_dir():
+                search_roots.append(vscode_tasks)
+            elif vscode_storage.is_dir():
+                search_roots.append(vscode_storage)
+            if tasks_dir.is_dir() and tasks_dir not in search_roots:
+                search_roots.append(tasks_dir)
+            if not search_roots:
+                search_roots.append(home)
+
+            for search_root in search_roots:
+                for ui_file in search_root.glob("*/ui_messages.json"):
+                    canonical = ui_file.resolve()
+                    if canonical in seen_files:
+                        continue
+                    seen_files.add(canonical)
+                    ref = self._index_roo_file(ui_file, home=home)
+                    if ref:
+                        _index_put(index, ref[0], ref[1], newest)
+                for api_file in search_root.glob("*/api_conversation_history.json"):
+                    canonical = api_file.resolve()
+                    if canonical in seen_files:
+                        continue
+                    seen_files.add(canonical)
+                    ui_sibling = api_file.parent / "ui_messages.json"
+                    if not ui_sibling.is_file():
+                        ref = self._index_roo_file(api_file, home=home)
+                        if ref:
+                            _index_put(index, ref[0], ref[1], newest)
+                for direct_file in search_root.glob("*.json"):
+                    if direct_file.name not in ("index.json", "manifest.json"):
+                        canonical = direct_file.resolve()
+                        if canonical in seen_files:
+                            continue
+                        seen_files.add(canonical)
+                        ref = self._index_roo_file(direct_file, home=home)
+                        if ref:
+                            _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1869,9 +2115,68 @@ class LocalSource:
             + len(self.gemini_homes)
             + len(self.antigravity_homes)
             + len(self.command_code_homes)
-            + len(self.goose_homes),
+            + len(self.goose_homes)
+            + len(self.roo_homes),
         )
         return index
+
+    def _index_roo_file(
+        self,
+        json_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Roo Code task transcript."""
+        if not json_file.is_file():
+            return None
+        size = json_file.stat().st_size
+        if size == 0:
+            self._record_discovery("roo-code", "empty_or_unreadable")
+            return None
+        try:
+            head = _read_head(json_file, stop_when=lambda _buf: False)
+        except OSError:
+            self._record_discovery("roo-code", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            if json_file.name == "api_conversation_history.json":
+                is_api_hist, has_messages = _is_roo_api_history(head)
+                if is_api_hist:
+                    if not has_messages:
+                        self._record_discovery("roo-code", "no_conversation")
+                        return None
+                    agent = AgentType.ROO_CODE
+                else:
+                    self._record_discovery("roo-code", "detection_failed")
+                    return None
+            elif json_file.name == "ui_messages.json":
+                try:
+                    if json.loads(head) == []:
+                        self._record_discovery("roo-code", "no_conversation")
+                        return None
+                except Exception:
+                    pass
+                self._record_discovery("roo-code", "detection_failed")
+                return None
+            else:
+                self._record_discovery("roo-code", "detection_failed")
+                return None
+        if agent != AgentType.ROO_CODE:
+            self._record_discovery("roo-code", "different_agent")
+            return None
+
+        task_id = json_file.parent.name if json_file.name in ("ui_messages.json", "api_conversation_history.json") else json_file.stem
+        session_id = f"local:{agent}:{task_id}"
+        mtime = datetime.fromtimestamp(json_file.stat().st_mtime, tz=UTC)
+        self._record_discovery("roo-code", "indexed")
+        return session_id, _FileRef(
+            path=json_file,
+            agent=agent,
+            mtime=mtime,
+            home=home,
+        )
 
     def _index_cc_file(
         self,
@@ -2814,6 +3119,7 @@ class LocalSource:
             AgentType.ANTIGRAVITY_CLI: parse_antigravity,
             AgentType.COMMAND_CODE: parse_command_code,
             AgentType.GOOSE: parse_goose,
+            AgentType.ROO_CODE: parse_roo,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label

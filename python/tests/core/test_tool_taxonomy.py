@@ -19,6 +19,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     goose,
     kiro,
     opencode,
+    roo,
 )
 
 
@@ -34,6 +35,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
         (goose, "goose"),
         (kiro, "kiro"),
         (opencode, "opencode"),
+        (roo, "roo-code"),
     ],
 )
 def test_every_parser_reads_the_shared_table(module, agent) -> None:
@@ -65,6 +67,12 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
         ("goose", "delegate", "Task"),
         ("kiro", "execute_bash", "Bash"),
         ("opencode", "todowrite", "TodoWrite"),
+        ("roo-code", "execute_command", "Bash"),
+        ("roo-code", "read_file", "Read"),
+        ("roo-code", "replace_in_file", "Edit"),
+        ("roo-code", "list_files", "ListDir"),
+        ("roo-code", "switch_mode", "SwitchMode"),
+        ("roo-code", "switchMode", "SwitchMode"),
     ],
 )
 def test_known_raw_names_resolve(agent, raw, canonical) -> None:
@@ -94,4 +102,5 @@ def test_table_sizes_are_pinned() -> None:
         "goose": 8,
         "kiro": 12,
         "opencode": 14,
+        "roo-code": 21,
     }
