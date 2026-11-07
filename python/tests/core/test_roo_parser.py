@@ -537,6 +537,14 @@ def test_is_roo_api_history_truncated_first_record():
     assert _is_roo_api_history(b'[{"role": "custom_agent", "content": "giant string without end') == (False, False)
     assert _is_roo_api_history(b'[{"role": "model", "content": "giant string without end') == (False, False)
 
+    # Reject non-string / unhashable role (list or dict) across complete, raw-decode, and truncated branches
+    assert _is_roo_api_history(b'[{"role": ["user"], "content": "hello"}]') == (False, False)
+    assert _is_roo_api_history(b'[{"role": {"name": "user"}, "content": "hello"}]') == (False, False)
+    assert _is_roo_api_history(b'[{"role": ["user"], "content": "hello"}, {"role": "user", "content": "trunc') == (False, False)
+    assert _is_roo_api_history(b'[{"role": {"name": "user"}, "content": "hello"}, {"role": "user", "content": "trunc') == (False, False)
+    assert _is_roo_api_history(b'[{"role": ["user"], "content": "giant string without end') == (False, False)
+    assert _is_roo_api_history(b'[{"role": {"name": "user"}, "content": "giant string without end') == (False, False)
+
     # Empty array variations
     assert _is_roo_api_history(b"[]") == (True, False)
     assert _is_roo_api_history(b"  [   \n\t  ]  ") == (True, False)
@@ -581,6 +589,33 @@ def test_roo_discovery_skips_empty_api_history_and_empty_ui_messages(tmp_path: P
 
     stats = source.discovery_stats()
     assert stats["roo-code"]["skipped"].get("no_conversation") == 2
+
+
+def test_roo_discovery_handles_unhashable_role_without_raising_typeerror(tmp_path: Path):
+    dict_role_dir = tmp_path / "tasks" / "task_dict_role"
+    dict_role_dir.mkdir(parents=True)
+    (dict_role_dir / "api_conversation_history.json").write_bytes(
+        b'[{"role": {"complex": "role"}, "content": "hi"}]'
+    )
+
+    list_role_dir = tmp_path / "tasks" / "task_list_role"
+    list_role_dir.mkdir(parents=True)
+    (list_role_dir / "api_conversation_history.json").write_bytes(
+        b'[{"role": ["user"], "content": "hi"}]'
+    )
+
+    source = LocalSource(
+        claude_code_homes=[],
+        codex_homes=[],
+        roo_homes=[tmp_path],
+    )
+    # _build_index must not raise TypeError and must successfully complete
+    index = source._build_index()
+    assert "local:roo-code:task_dict_role" not in index
+    assert "local:roo-code:task_list_role" not in index
+
+    stats = source.discovery_stats()
+    assert stats["roo-code"]["skipped"].get("detection_failed") == 2
 
 
 def test_roo_parser_switch_mode_is_not_subagent():

@@ -1374,11 +1374,12 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
                 isinstance(first, dict)
                 and "role" in first
                 and "content" in first
+                and isinstance(first.get("role"), str)
                 and first.get("role") in _ROO_SUPPORTED_ROLES
             ):
                 return True, True
             return False, False
-    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError, TypeError):
         pass
 
     # If head is truncated after a complete first record, decode it directly
@@ -1399,11 +1400,12 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
                         if (
                             "role" in first_rec
                             and "content" in first_rec
+                            and isinstance(first_rec.get("role"), str)
                             and first_rec.get("role") in _ROO_SUPPORTED_ROLES
                         ):
                             return True, True
                         return False, False
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, TypeError):
                     # First record is truncated by the head read cap (e.g. first message > 5 MB)
                     pass
     except Exception:
@@ -1415,7 +1417,12 @@ def _is_roo_api_history(head: bytes) -> tuple[bool, bool]:
     keys, role_val, is_empty = _first_object_top_level_keys(head)
     if is_empty:
         return True, False
-    if "role" in keys and "content" in keys and role_val in _ROO_SUPPORTED_ROLES:
+    if (
+        "role" in keys
+        and "content" in keys
+        and isinstance(role_val, str)
+        and role_val in _ROO_SUPPORTED_ROLES
+    ):
         return True, True
 
     return False, False
