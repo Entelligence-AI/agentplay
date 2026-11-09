@@ -176,8 +176,10 @@ _KIRO: dict[str, str] = {
 _OPENCODE: dict[str, str] = {
     "bash": "Bash",
     "edit": "Edit",
-    # opencode's `patch` is its apply-a-diff mutation tool — same Edit
-    # bucket as Codex's `apply_patch` / Cursor's `ApplyPatch`.
+    # opencode's `apply_patch` (and `patch`, its older name) is its
+    # apply-a-diff mutation tool — same Edit bucket as Codex's `apply_patch` /
+    # Cursor's `ApplyPatch`.
+    "apply_patch": "Edit",
     "patch": "Edit",
     "write": "Write",
     "read": "Read",

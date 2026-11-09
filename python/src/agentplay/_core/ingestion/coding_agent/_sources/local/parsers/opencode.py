@@ -28,6 +28,7 @@ from agentplay._core.ingestion.coding_agent._sources._jsonl_utils import (
     parse_jsonl_records,
     source_attrs,
 )
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.codex import _apply_patch_input
 from agentplay._core.ingestion.coding_agent.produced import (
     creation_command_attributes,
     creation_output_attributes,
@@ -39,6 +40,10 @@ logger = logging.getLogger(__name__)
 
 # Raw -> canonical tool names live in the shared table (tool_taxonomy.py).
 _TOOL_ALIASES: dict[str, str] = aliases_for("opencode")
+
+# opencode's patch tools: `apply_patch` (current) and `patch` (older builds). Both
+# take the body as `{"patchText": "*** Begin Patch ..."}`.
+_PATCH_TOOLS = frozenset({"apply_patch", "patch"})
 
 
 def _source_attrs(record: dict | None) -> dict:
@@ -395,6 +400,8 @@ def _tool_from_part(part: dict, created: datetime | None) -> dict:
         raw_name = "unknown"
     name = _TOOL_ALIASES.get(raw_name, raw_name)
     tool_input = state.get("input", part.get("input"))
+    if isinstance(tool_input, dict) and raw_name in _PATCH_TOOLS:
+        tool_input = _patch_input(tool_input)
     if isinstance(tool_input, dict):
         tool_input = _normalize_file_path_arg(tool_input)
     if isinstance(tool_input, dict | list):
@@ -411,7 +418,7 @@ def _tool_from_part(part: dict, created: datetime | None) -> dict:
             command_attrs.get("pr.create.repository"),
         ),
         "edit_evidence": extract_edit_evidence(
-            "apply_patch" if raw_name == "patch" else name,
+            "apply_patch" if raw_name in _PATCH_TOOLS else name,
             tool_input,
             successful=state.get("status") == "completed",
         ),
@@ -421,6 +428,22 @@ def _tool_from_part(part: dict, created: datetime | None) -> dict:
         "start": _epoch_ms((state.get("time") or {}).get("start")) or created,
         "end": _epoch_ms((state.get("time") or {}).get("end")) or created,
     }
+
+
+def _patch_input(args: dict) -> dict | str:
+    """Rewrite a patch tool's `{"patchText": ...}` args the way Codex's apply_patch is.
+
+    The shared consumers read a patch body only under `patch`/`input`, and the
+    files-touched extractors only match `"file_path"` keys, so a `patchText` body
+    gave no edit evidence, no files and no line counts. `_apply_patch_input`
+    puts the line counts and one `"file_path"` per patched file ahead of the body,
+    so they survive the 2,000-character `input.value` cut. Args without a string
+    `patchText` are returned unchanged.
+    """
+    patch_text = args.get("patchText")
+    if not isinstance(patch_text, str) or not patch_text:
+        return args
+    return _apply_patch_input(patch_text)
 
 
 def _normalize_file_path_arg(args: dict) -> dict:

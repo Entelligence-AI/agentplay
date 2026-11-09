@@ -65,6 +65,7 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
         ("goose", "delegate", "Task"),
         ("kiro", "execute_bash", "Bash"),
         ("opencode", "todowrite", "TodoWrite"),
+        ("opencode", "apply_patch", "Edit"),
     ],
 )
 def test_known_raw_names_resolve(agent, raw, canonical) -> None:
@@ -93,5 +94,5 @@ def test_table_sizes_are_pinned() -> None:
         "gemini-cli": 12,
         "goose": 8,
         "kiro": 12,
-        "opencode": 14,
+        "opencode": 15,
     }
