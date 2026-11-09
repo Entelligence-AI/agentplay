@@ -51,6 +51,33 @@ def test_opencode_session_with_out_of_range_time_does_not_abort_discovery(tmp_pa
     assert sorted(s.rel_path.name for s in sessions) == ["bad.jsonl", "good.jsonl"]
 
 
+def test_opencode_sessions_still_in_the_wal_are_read(tmp_path, monkeypatch):
+    # opencode keeps opencode.db in WAL mode; while it runs, new commits live only
+    # in opencode.db-wal until a checkpoint.
+    home = tmp_path / "opencode"
+    home.mkdir()
+    db = home / "opencode.db"
+    writer = sqlite3.connect(db)
+    try:
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        writer.execute("CREATE TABLE session (id TEXT, project_id TEXT, directory TEXT, time_updated INTEGER)")
+        writer.execute("INSERT INTO session VALUES ('old', 'p', '/w', 1700000000000)")
+        writer.commit()
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        writer.execute("INSERT INTO session VALUES ('new', 'p', '/w', 1700000001000)")
+        writer.commit()
+        assert (home / "opencode.db-wal").stat().st_size > 0
+        monkeypatch.setattr(materialize, "_opencode_synthesize", lambda _con, _sid: b"x\n")
+
+        spec = HomeSpec(AgentKind.OPENCODE, home)
+        sessions = list(materialize.find_opencode_candidates(spec, cache_root=tmp_path / "c"))
+    finally:
+        writer.close()
+
+    assert sorted(s.rel_path.name for s in sessions) == ["new.jsonl", "old.jsonl"]
+
+
 def test_kiro_cache_survives_a_failed_rewrite(tmp_path, monkeypatch):
     home = tmp_path / "kiro"
     session_dir = home / "sessions" / "ws" / "s1"

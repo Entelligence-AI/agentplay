@@ -8,8 +8,8 @@ and writes one NDJSON transcript per session into a local cache under
 read like any other transcript. Consuming the generator performs the writes.
 
 Everything here is read-only against the agent's own files: SQLite stores are
-opened ``mode=ro&immutable=1`` or copied to a temp dir first. Nothing here makes
-a network call.
+opened ``mode=ro``, or snapshotted to a temp dir first when they may be live.
+Nothing here makes a network call.
 """
 
 from __future__ import annotations
@@ -155,14 +155,6 @@ def _opencode_db(home: Path) -> Path | None:
     return others[0] if others else None
 
 
-def _sqlite_ro_uri(db: Path) -> str:
-    """Read-only, immutable SQLite URI. Percent-encode the path so a home dir containing
-    ``?`` or ``#`` (URI delimiters) doesn't make SQLite open the wrong file."""
-    from urllib.parse import quote
-
-    return f"file:{quote(str(db))}?mode=ro&immutable=1"
-
-
 def _safe_component(value: object, fallback: str) -> str:
     """A single, filesystem-safe path component: no separators or ``.``/``..`` traversal, so an
     absolute or dotted opencode id can't escape the cache root when joined with ``/``."""
@@ -263,9 +255,16 @@ def find_opencode_candidates(
         logger.debug("Skipping %s (no opencode db)", home.path)
         return
     root = (cache_root or opencode_cache_root()) / home.label
+    # opencode keeps opencode.db in WAL mode. While it runs, its latest commits
+    # live only in opencode.db-wal, which an immutable read of the bare file
+    # ignores, so read a snapshot that includes the WAL instead.
+    tmp = tempfile.TemporaryDirectory(prefix="opencode_db_")
+    copy = Path(tmp.name) / "opencode.db"
     try:
-        con = sqlite3.connect(_sqlite_ro_uri(db), uri=True)
-    except sqlite3.Error as exc:
+        _sqlite_snapshot(db, copy)
+        con = sqlite3.connect(f"{copy.resolve().as_uri()}?mode=ro", uri=True)
+    except (OSError, sqlite3.Error) as exc:
+        tmp.cleanup()
         _warn_unreadable_db("opencode", db, exc)
         return
     try:
@@ -361,6 +360,7 @@ def find_opencode_candidates(
             )
     finally:
         con.close()
+        tmp.cleanup()
 
 
 # ----- Discovery: Cursor store.db -------------------------------------------
@@ -1727,11 +1727,11 @@ def _goose_write(abs_path: Path, data: bytes, updated_s: float | None) -> bool:
     return True
 
 
-def _goose_snapshot(db: Path, copy: Path) -> None:
+def _sqlite_snapshot(db: Path, copy: Path) -> None:
     """Write one consistent snapshot of the live ``db`` to ``copy``.
 
     SQLite's backup API copies the database as one read transaction sees it,
-    WAL included, so a commit or checkpoint by a running Goose cannot leave
+    WAL included, so a commit or checkpoint by a running agent cannot leave
     the copy and its WAL describing different states (copying the files one by
     one can). The source is opened read-only. Should SQLite refuse to open it
     that way (a WAL file without its -shm in a read-only directory), the
@@ -1750,7 +1750,7 @@ def _goose_snapshot(db: Path, copy: Path) -> None:
             source.close()
         return
     except sqlite3.Error as exc:
-        logger.debug("goose: snapshot of %s failed (%s); copying the files", db, exc)
+        logger.debug("snapshot of %s failed (%s); copying the files", db, exc)
     for path in (copy, copy.with_name(copy.name + "-wal"), copy.with_name(copy.name + "-shm")):
         with contextlib.suppress(OSError):
             path.unlink()
@@ -1776,7 +1776,7 @@ def find_goose_candidates(home: HomeSpec, *, cache_root: Path | None = None) -> 
     with tempfile.TemporaryDirectory(prefix="goose_sessions_") as tmp:
         copy = Path(tmp) / "sessions.db"
         try:
-            _goose_snapshot(db, copy)
+            _sqlite_snapshot(db, copy)
             con = sqlite3.connect(f"{copy.resolve().as_uri()}?mode=ro", uri=True)
         except (OSError, sqlite3.Error) as exc:
             _warn_unreadable_db("goose", db, exc)
