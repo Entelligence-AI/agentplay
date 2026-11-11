@@ -184,22 +184,92 @@ def _opencode_json(raw: str) -> dict:
 def _opencode_synthesize(con: sqlite3.Connection, session_id: str) -> bytes:
     """One NDJSON line per message (parts merged), ordered by creation time. b'' if empty."""
     lines: list[str] = []
-    messages = con.execute(
-        "SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created, id",
-        (session_id,),
-    ).fetchall()
-    for msg_id, msg_data in messages:
-        parts = con.execute(
-            "SELECT data FROM part WHERE message_id = ? ORDER BY time_created, id",
-            (msg_id,),
+    is_v2 = con.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='session_message'").fetchone()[0] > 0
+    if is_v2:
+        cur_dir = con.execute("SELECT directory FROM session_v2 WHERE id = ?", (session_id,)).fetchone()
+        session_cwd = cur_dir[0] if cur_dir and cur_dir[0] else ""
+
+        messages = con.execute(
+            "SELECT id, type, time_created, data FROM session_message WHERE session_id = ? ORDER BY time_created, id",
+            (session_id,),
         ).fetchall()
-        record = {
-            "id": msg_id,
-            "sessionID": session_id,
-            "message": _opencode_json(msg_data),
-            "parts": [_opencode_json(p[0]) for p in parts],
-        }
-        lines.append(json.dumps(record, separators=(",", ":")))
+        for msg_id, msg_type, time_created, msg_data in messages:
+            msg_obj = _opencode_json(msg_data)
+            if not isinstance(msg_obj, dict):
+                msg_obj = {}
+
+            if "role" not in msg_obj:
+                msg_obj["role"] = msg_type if msg_type in ("user", "assistant") else "user"
+
+            if "modelID" not in msg_obj and isinstance(msg_obj.get("model"), dict):
+                msg_obj["modelID"] = msg_obj["model"].get("modelID")
+
+            if session_cwd and "path" not in msg_obj:
+                msg_obj["path"] = {"cwd": session_cwd}
+
+            if time_created:
+                if "time" not in msg_obj or not isinstance(msg_obj.get("time"), dict):
+                    msg_obj["time"] = {"created": time_created}
+                elif "created" not in msg_obj["time"]:
+                    msg_obj["time"]["created"] = time_created
+
+            parts_list = []
+            if msg_obj["role"] == "user":
+                user_text = msg_obj.get("text") or ""
+                if user_text:
+                    parts_list.append({"type": "text", "text": str(user_text)})
+                elif isinstance(msg_obj.get("content"), list):
+                    for c in msg_obj["content"]:
+                        if isinstance(c, dict):
+                            parts_list.append(dict(c))
+            else:
+                content = msg_obj.get("content")
+                if isinstance(content, list):
+                    for item in content:
+                        if not isinstance(item, dict):
+                            continue
+                        p = dict(item)
+                        if p.get("type") == "tool":
+                            st = dict(p.get("state") or {})
+                            if "output" not in st and "content" in st:
+                                cnt = st["content"]
+                                if isinstance(cnt, list):
+                                    st["output"] = "\n".join(
+                                        str(c.get("text", ""))
+                                        for c in cnt
+                                        if isinstance(c, dict) and "text" in c
+                                    )
+                                elif isinstance(cnt, str):
+                                    st["output"] = str(cnt)
+                            p["state"] = st
+                        parts_list.append(p)
+                elif isinstance(content, str):
+                    parts_list.append({"type": "text", "text": content})
+
+            record = {
+                "id": msg_id,
+                "sessionID": session_id,
+                "message": msg_obj,
+                "parts": parts_list,
+            }
+            lines.append(json.dumps(record, separators=(",", ":")))
+    else:
+        messages = con.execute(
+            "SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created, id",
+            (session_id,),
+        ).fetchall()
+        for msg_id, msg_data in messages:
+            parts = con.execute(
+                "SELECT data FROM part WHERE message_id = ? ORDER BY time_created, id",
+                (msg_id,),
+            ).fetchall()
+            record = {
+                "id": msg_id,
+                "sessionID": session_id,
+                "message": _opencode_json(msg_data),
+                "parts": [_opencode_json(p[0]) for p in parts],
+            }
+            lines.append(json.dumps(record, separators=(",", ":")))
     return ("\n".join(lines) + "\n").encode() if lines else b""
 
 
@@ -271,8 +341,10 @@ def find_opencode_candidates(
     try:
         con.row_factory = sqlite3.Row
         try:
+            is_v2 = con.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='session_v2'").fetchone()[0] > 0
+            session_tbl = "session_v2" if is_v2 else "session"
             rows = con.execute(
-                "SELECT id, project_id, directory, time_updated FROM session"
+                f"SELECT id, project_id, directory, time_updated FROM {session_tbl}"
             ).fetchall()
         except sqlite3.Error as exc:
             _warn_unreadable_db("opencode", db, exc)
