@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from ._core.ingestion.coding_agent.file_paths import extract_all_file_paths
 from ._util import captured
 
 SCHEMA = "agentplay/v1"
@@ -1559,6 +1560,20 @@ def _shell_file_ops(cmd: str, base: str | None, depth: int = 0) -> dict[str, str
     return ops
 
 
+def _patch_body(tool: str, inp: dict[str, Any]) -> str:
+    """The patch text an edit call carries, or "" when it carries none.
+
+    A patch body, not the tool name, is what says how a call changed each file.
+    Codex's ``apply_patch`` arrives under the canonical name ``Edit``
+    (``tool_taxonomy`` maps it), so keying the header read on the literal
+    ``apply_patch`` name named one file of many and called every one of them a
+    ``modify`` — including the files the patch added.
+    """
+    if tool == "apply_patch":
+        return str(inp.get("input") or inp.get("patch") or "")
+    return str(inp.get("patch") or "") if tool in EDIT_TOOLS else ""
+
+
 def file_ops(tool: str, inp: dict[str, Any], cwd: str | None) -> dict[str, str]:
     """abs path -> create | modify | delete | rename-from | rename-to for file-changing calls."""
 
@@ -1566,8 +1581,8 @@ def file_ops(tool: str, inp: dict[str, Any], cwd: str | None) -> dict[str, str]:
         return os.path.normpath(p if _isabs(p) or not cwd else os.path.join(cwd, p))
 
     ops: dict[str, str] = {}
-    if tool == "apply_patch":
-        patch = str(inp.get("input") or inp.get("patch") or "")
+    patch = _patch_body(tool, inp)
+    if patch:
         for kind, path in re.findall(r"^\*\*\* (Add|Delete|Update) File: (.+)$", patch, re.M):
             ops[_abs(path.strip())] = {"Add": "create", "Delete": "delete", "Update": "modify"}[
                 kind
@@ -2197,7 +2212,14 @@ class MapBuilder:
         return ev
 
     def tool_event(
-        self, *, tool: str, inp: dict[str, Any], cwd: str | None, agent: str, ts: float | None
+        self,
+        *,
+        tool: str,
+        inp: dict[str, Any],
+        cwd: str | None,
+        agent: str,
+        ts: float | None,
+        extra_paths: Iterable[str] = (),
     ) -> dict[str, Any]:
         inp = inp if isinstance(inp, dict) else {}
         if tool in SHELL_TOOLS or tool == "js":
@@ -2210,6 +2232,15 @@ class MapBuilder:
                         inp["workdir"] = wd
                     tool = "Bash" if tool == "js" else tool
         kind, paths, touch, verb = classify(tool, inp, cwd)
+        # Paths a truncated input could not be decoded into (`_recovered_edit_paths`)
+        # are still files the call touched; they carry no op, which is what an
+        # undecidable create / modify / delete looks like everywhere else here.
+        # A patch header names its file relative to the call's cwd, as `classify` does.
+        paths = list(paths) + [
+            p if _isabs(p) or not cwd else os.path.join(cwd, p)
+            for p in extra_paths
+            if p not in paths
+        ]
         ev: dict[str, Any] = {"kind": kind, "tool": tool, "agent": agent}
         if verb:
             ev["verb"] = verb
@@ -3295,6 +3326,29 @@ def _spawned_path(out: Any) -> str:
         return m.group(1)
 
 
+def _recovered_edit_paths(raw: Any, inp: dict[str, Any], tool: str) -> list[str]:
+    """The files a truncated edit span still names, when the decode lost them.
+
+    Every parser caps ``input.value`` at 2,000 characters, and every parser
+    writes the path keys first so they survive that cut
+    (``codex._apply_patch_input``, ``opencode._normalize_file_path_arg``). A cut
+    input is not JSON: ``json.loads`` raises, so the call used to reach the map
+    with no target at all -- the written file disappeared from ``files[]`` and
+    from ``filesTouched``, however long the write was. ``file_paths`` is the
+    narrow ``"file_path"``-key reader those parsers' contract names, so every
+    path still in the retained prefix is recoverable from it.
+
+    Nothing is recovered once the decode names a file: the decode is then the
+    whole input, and the same regex over the same text cannot know more than it
+    does (it would also miss the create / modify / delete a patch header gives).
+    """
+    if tool not in EDIT_TOOLS or not isinstance(raw, str) or not raw:
+        return []
+    if inp.get("file_path"):
+        return []
+    return sorted(extract_all_file_paths(raw))
+
+
 def _read_spans(
     b: MapBuilder, spans: list[Any], agent: str, *, per_request: bool
 ) -> dict[str, list[dict[str, Any]]]:
@@ -3385,12 +3439,14 @@ def _read_spans(
                 if tool_name in SHELL_TOOLS or tool_name == "js"
                 else {}
             )
+        inp = inp if isinstance(inp, dict) else {}
         ev = b.tool_event(
             tool=tool_name,
-            inp=inp if isinstance(inp, dict) else {},
+            inp=inp,
             cwd=attrs.get("cwd"),
             agent=agent,
             ts=ts,
+            extra_paths=_recovered_edit_paths(raw, inp, tool_name),
         )
         ev["err"] = getattr(s, "status_code", "") == "ERROR"
         end_ts = _span_ts(getattr(s, "end_time", None))
