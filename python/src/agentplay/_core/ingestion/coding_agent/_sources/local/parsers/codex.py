@@ -1063,12 +1063,17 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
                 ):
                     arguments = args if isinstance(args, str) else json.dumps(args)
                     failed = _tool_output_is_error(json.dumps(result))
+                    # Same rewrite as a direct apply_patch call: put the line counts
+                    # and file paths ahead of the raw body, before the cut.
+                    input_value = (
+                        _apply_patch_input(arguments) if name == "apply_patch" else arguments
+                    )
                     native = {
                         "_src": pending["_src"],
                         "call_id": f"{call_id}:op:{index}",
                         "name": name,
                         "provenance.capture": "literal_operation",
-                        "input": arguments[:2000],
+                        "input": input_value[:2000],
                         "cwd": args.get("workdir", pending["cwd"])
                         if isinstance(args, dict)
                         else pending["cwd"],
