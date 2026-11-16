@@ -536,7 +536,7 @@ def test_built_map_classifies_reads_edits_shell_and_the_failures(decoded):
         ("read", None, False),
         ("edit", None, False),
         ("tool", None, True),
-        ("tool", None, False),
+        ("search", None, False),  # the ListDir call
     ]
     doc = _map(decoded, "s-edit")
     assert doc["totals"]["errors"] == 1

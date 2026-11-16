@@ -49,7 +49,10 @@ ROLE_READ_MAX_BYTES = 64 * 1024 * 1024
 PATH_MODES = ("relative", "dirs_only", "hashed")
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
-SEARCH_TOOLS = {"Grep", "Glob", "LS", "view_image"}
+# `ListDir` and `Search` are the canonical names tool_taxonomy gives other agents'
+# directory listings and semantic searches (metrics.py buckets them the same way).
+SEARCH_TOOLS = {"Grep", "Glob", "LS", "ListDir", "Search", "view_image"}
+READ_TOOLS = {"Read", "NotebookRead"}
 SHELL_TOOLS = {"Bash", "exec_command", "shell", "local_shell", "run_terminal_cmd"}
 SUBAGENT_TOOLS = {"Agent", "Task", "spawn_agent"}
 WEB_TOOLS = {"WebFetch", "WebSearch", "web_search"}
@@ -672,8 +675,8 @@ def classify(
     def _abs(p: str) -> str:
         return p if _isabs(p) or not cwd else os.path.join(cwd, p)
 
-    if tool == "Read":
-        p = inp.get("file_path") or inp.get("path") or ""
+    if tool in READ_TOOLS:
+        p = inp.get("file_path") or inp.get("notebook_path") or inp.get("path") or ""
         return "read", [_abs(p)] if p else [], "read", None
     if tool in EDIT_TOOLS:
         p = inp.get("file_path") or inp.get("notebook_path") or ""

@@ -734,6 +734,29 @@ def test_verify_only_matches_the_command_word(cmd, kind):
     assert sm.classify("Bash", {"command": cmd}, None)[0] == kind
 
 
+def test_canonical_search_and_read_names_get_the_map_kind_metrics_counts():
+    # tool_taxonomy maps other agents' directory listings, semantic searches and
+    # notebook reads onto these names; the map must bucket them as metrics does.
+    from agentplay._core.ingestion.coding_agent import metrics
+
+    for tool in metrics.SEARCH_TOOLS:
+        assert sm.classify(tool, {}, None)[0] == "search", tool
+    for tool in metrics.READ_TOOLS:
+        assert sm.classify(tool, {}, None)[0] == "read", tool
+
+
+@pytest.mark.parametrize(
+    ("tool", "inp", "expected"),
+    [
+        ("ListDir", {"path": "src"}, ("search", ["/repo/src"], "hit")),
+        ("Search", {"query": "where is auth"}, ("search", [], "hit")),
+        ("NotebookRead", {"notebook_path": "nb.ipynb"}, ("read", ["/repo/nb.ipynb"], "read")),
+    ],
+)
+def test_listdir_search_and_notebook_read_targets(tool, inp, expected):
+    assert sm.classify(tool, inp, "/repo")[:3] == expected
+
+
 def test_repo_dot_claude_stays_repo_relative(tmp_path, fake_home):
     repo = tmp_path / "work" / "svc"
     (repo / ".git").mkdir(parents=True)
