@@ -5,11 +5,14 @@ import json
 import pytest
 
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.codex import parse_codex
+from agentplay._core.ingestion.coding_agent.edit_lines import edit_line_counts
+from agentplay._core.ingestion.coding_agent.file_paths import extract_all_file_paths
 from agentplay._core.ingestion.coding_agent.native_operations import literal_operations
 from agentplay._core.ingestion.coding_agent.produced import (
     creation_command_attributes,
     extract_created_prs,
 )
+from agentplay.builder import build_map_from_spans
 
 
 @pytest.mark.parametrize(
@@ -195,16 +198,7 @@ def test_json_exponent_literal_preserves_operation():
     ) == [("exec_command", {"cmd": "pwd", "yield_time_ms": 1000})]
 
 
-@pytest.mark.parametrize(
-    "result",
-    [
-        {"exit_code": 1, "output": "failed"},
-        {"isError": True, "output": "failed"},
-        {"metadata": {"exit_code": 1}, "output": "failed"},
-    ],
-)
-def test_failed_literal_patch_never_captures_edits(result):
-    patch = "*** Begin Patch\n*** Update File: /repo/app.py\n@@\n-old\n+new\n*** End Patch"
+def _literal_patch_spans(patch, result):
     records = [
         {"type": "session_meta", "payload": {"id": "native", "cwd": "/repo"}},
         {
@@ -238,9 +232,49 @@ def test_failed_literal_patch_never_captures_edits(result):
     _, spans = parse_codex(
         data="\n".join(json.dumps(row) for row in records).encode(), trace_id="native"
     )
+    return spans
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"exit_code": 1, "output": "failed"},
+        {"isError": True, "output": "failed"},
+        {"metadata": {"exit_code": 1}, "output": "failed"},
+    ],
+)
+def test_failed_literal_patch_never_captures_edits(result):
+    patch = "*** Begin Patch\n*** Update File: /repo/app.py\n@@\n-old\n+new\n*** End Patch"
+    spans = _literal_patch_spans(patch, result)
     operation = next(span for span in spans if span.span_id.endswith(":op:0"))
     assert operation.status_code == "ERROR"
     assert operation.attributes["code.edit_evidence"]["edits"] == []
+
+
+def test_literal_patch_names_its_files_like_a_direct_patch():
+    patch = (
+        "*** Begin Patch\n"
+        "*** Update File: /repo/app.py\n@@\n-old\n+new\n"
+        "*** Add File: /repo/new.py\n+x = 1\n"
+        "*** End Patch"
+    )
+    spans = _literal_patch_spans(patch, {"exit_code": 0, "output": "Success."})
+    operation = next(span for span in spans if span.span_id.endswith(":op:0"))
+    value = operation.attributes["input.value"]
+
+    assert extract_all_file_paths(value) == {"/repo/app.py", "/repo/new.py"}
+    assert edit_line_counts(operation.name, value) == (2, 1)
+
+
+def test_literal_patch_edit_reaches_the_map(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    patch = f"*** Begin Patch\n*** Update File: {repo}/app.py\n@@\n-old\n+new\n*** End Patch"
+    spans = _literal_patch_spans(patch, {"exit_code": 0, "output": "Success."})
+
+    doc = build_map_from_spans(spans, session_id="native", agent_tool="codex")
+
+    assert [f["path"] for f in doc["files"]] == ["app.py"]
 
 
 def test_nested_arguments_do_not_abort_codex_transcript():
